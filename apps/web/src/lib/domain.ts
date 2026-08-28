@@ -1,0 +1,358 @@
+export type IsoDateTime = string
+
+export interface DataEnvelope<T> {
+  data: T
+}
+
+export interface PaginationMeta {
+  page: number
+  pageSize: number
+  total: number
+}
+
+export interface PaginatedEnvelope<T> extends DataEnvelope<T[]> {
+  meta: PaginationMeta
+}
+
+export interface ApiFailure {
+  code: string
+  message: string
+  requestId: string
+}
+
+export type TeacherRole = "HEAD_TEACHER" | "SUBJECT_TEACHER"
+export type RelationStatus = "ACTIVE" | "REVOKED"
+export type UserStatus = "ACTIVE" | "INACTIVE"
+export type StudentStatus = "ACTIVE" | "INACTIVE"
+export type ScoreRecordType = "NORMAL" | "REVERT"
+export type DeviceStatus = "ACTIVE" | "REVOKED"
+
+export interface ClassroomSummary {
+  id: string
+  name: string
+  grade: string
+  schoolYear: string
+  gridRows: number
+  gridCols: number
+  role: TeacherRole
+  subject: string | null
+}
+
+export interface Classroom extends ClassroomSummary {
+  currentLayoutVersionId: string | null
+  createdAt: IsoDateTime
+  updatedAt: IsoDateTime
+}
+
+export interface UpdateClassroomInput {
+  name?: string
+  grade?: string
+  schoolYear?: string
+  gridRows?: number
+  gridCols?: number
+}
+
+export interface Student {
+  id: string
+  classId: string
+  name: string
+  studentNo: string | null
+  status: StudentStatus
+  createdAt: IsoDateTime
+  updatedAt: IsoDateTime
+}
+
+export interface StudentListQuery {
+  status?: StudentStatus
+  keyword?: string
+  page?: number
+  pageSize?: number
+}
+
+export interface CreateStudentInput {
+  name: string
+  studentNo?: string
+}
+
+export interface UpdateStudentInput {
+  name?: string
+  studentNo?: string | null
+}
+
+export interface TeacherIdentity {
+  id: string
+  name: string
+  status: UserStatus
+}
+
+export interface ClassTeacher {
+  id: string
+  classId: string
+  teacherId: string
+  role: TeacherRole
+  subject: string | null
+  status: RelationStatus
+  createdAt: IsoDateTime
+  updatedAt: IsoDateTime
+  teacher: TeacherIdentity
+}
+
+export interface CreateTeacherInput {
+  name: string
+  subject: string
+}
+
+export interface UpdateTeacherInput {
+  name?: string
+  subject?: string
+}
+
+export interface CreateTeacherResult {
+  classTeacherId: string
+  teacherId: string
+}
+
+export interface TeacherInvitation {
+  inviteUrl: string
+  expiresAt: IsoDateTime
+}
+
+export interface NamedEntity {
+  id: string
+  name: string
+}
+
+export interface Seat {
+  id: string
+  row: number
+  col: number
+  cellType?: SeatCellType
+  student: NamedEntity | null
+}
+
+export type SeatCellType = "seat" | "aisle" | "podium" | "empty"
+
+export interface SeatLayout {
+  versionId: string | null
+  version: number | null
+  rows: number
+  cols: number
+  seats: Seat[]
+}
+
+export interface SeatLayoutVersion extends Omit<SeatLayout, "versionId" | "version"> {
+  versionId: string
+  version: number
+  classId: string
+  sourceVersionId: string | null
+  createdBy: string
+  createdAt: IsoDateTime
+}
+
+export interface SeatLayoutVersionSummary {
+  versionId: string
+  version: number
+  sourceVersionId: string | null
+  createdBy: string
+  createdAt: IsoDateTime
+}
+
+export interface SeatDraft {
+  row: number
+  col: number
+  cellType?: SeatCellType
+  studentId: string | null
+}
+
+export interface SaveSeatLayoutInput {
+  seats: SeatDraft[]
+  baseVersion?: number
+}
+
+export interface SeatLayoutMutation {
+  versionId: string
+  version: number
+  sourceVersionId?: string
+}
+
+export interface ScoreRule {
+  id: string
+  classId: string
+  name: string
+  delta: number
+  description: string | null
+  enabled: boolean
+  createdBy: string
+  createdAt: IsoDateTime
+  updatedAt: IsoDateTime
+}
+
+export interface CreateScoreRuleInput {
+  name: string
+  delta: number
+  description?: string | null
+}
+
+export interface UpdateScoreRuleInput {
+  name?: string
+  delta?: number
+  description?: string | null
+  enabled?: boolean
+}
+
+export interface ScoreRecord {
+  id: string
+  student: NamedEntity
+  operator: NamedEntity
+  subject: string | null
+  rule: NamedEntity | null
+  delta: number
+  reason: string | null
+  recordType: ScoreRecordType
+  reverted: boolean
+  createdAt: IsoDateTime
+}
+
+export interface ScoreRecordListQuery {
+  studentId?: string
+  operatorId?: string
+  from?: IsoDateTime
+  to?: IsoDateTime
+  page?: number
+  pageSize?: number
+}
+
+export interface CreateRuleScoreInput {
+  studentId: string
+  ruleId: string
+  operatorId?: string
+}
+
+export interface CreateCustomScoreInput {
+  studentId: string
+  delta: number
+  reason: string
+  operatorId?: string
+}
+
+export interface RankingPeriod {
+  type: "WEEK"
+  startAt: IsoDateTime
+  endAt: IsoDateTime
+}
+
+export interface TopRankingItem {
+  studentId: string
+  name: string
+  rank: number
+}
+
+export interface ProgressRankingItem {
+  studentId: string
+  name: string
+  previousRank: number
+  currentRank: number
+  change: number
+}
+
+export interface WeeklyRanking {
+  period: RankingPeriod
+  top3: TopRankingItem[]
+  progress: ProgressRankingItem[]
+  strategy: string
+}
+
+export interface RandomPickInput {
+  excludeStudentIds?: string[]
+}
+
+export interface RandomPickResult {
+  student: NamedEntity
+}
+
+export interface DisplayDevice {
+  id: string
+  name: string
+  status: DeviceStatus
+  lastSeenAt: IsoDateTime | null
+  createdAt: IsoDateTime
+  revokedAt: IsoDateTime | null
+  online: boolean
+}
+
+export interface CreateBindingCodeResult {
+  code: string
+  expiresAt: IsoDateTime
+  bindingSessionId: string
+  nonce: string
+}
+
+export interface BindDisplayInput {
+  code: string
+  name: string
+}
+
+export interface BindDisplayResult {
+  deviceId: string
+}
+
+export interface PollBindingSessionInput {
+  nonce: string
+}
+
+export type PollBindingSessionResult =
+  | { status: "PENDING" }
+  | { status: "READY"; deviceId: string; credential: string }
+
+export interface DeviceTokenInput {
+  deviceId: string
+  credential: string
+}
+
+export interface DeviceTokenResult {
+  accessToken: string
+  expiresIn: number
+}
+
+export interface DisplayBootstrap {
+  classroom: Pick<ClassroomSummary, "id" | "name" | "gridRows" | "gridCols">
+  layout: {
+    version: number | null
+    seats: Array<Omit<Seat, "id">>
+  }
+  ranking: {
+    top3: TopRankingItem[]
+    progress: Array<Pick<ProgressRankingItem, "studentId" | "name" | "change">>
+  }
+}
+
+export interface LoginInput {
+  account: string
+  password: string
+}
+
+export interface RefreshInput {
+  refreshToken: string
+}
+
+export interface TokenPair {
+  accessToken: string
+  refreshToken: string
+}
+
+export interface LoginResult extends TokenPair {
+  user: NamedEntity
+}
+
+export interface ConsumeInvitationInput {
+  deviceName: string
+}
+
+export interface InvitationConsumeResult extends TokenPair {
+  classroom: Pick<ClassroomSummary, "id" | "name">
+  teacher: {
+    id: string
+    name: string
+    subject: string | null
+  }
+}

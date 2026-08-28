@@ -1,0 +1,171 @@
+{
+  "objective": "Implement the complete NestJS backend MVP described by docs/01-requirements.md through docs/05-realtime-protocol.md",
+  "mode": "durable",
+  "projectId": "efe87eb3-b7f3-418e-aadb-553d4b60736f",
+  "environment": "local",
+  "plannedWorkers": 5,
+  "reservedSlots": 2,
+  "createdCount": 6,
+  "runningCount": 0,
+  "threads": [
+    {
+      "threadId": "01a03743-1168-7181-b536-2517402d9132",
+      "hostId": "local",
+      "role": "foundation-and-data-layer",
+      "model": "gpt-5.6-sol",
+      "thinking": "high",
+      "ownership": [
+        "package/config",
+        "prisma",
+        "src/common",
+        "src/config",
+        "src/prisma",
+        "src/redis",
+        "src/main.ts",
+        "src/app.module.ts"
+      ],
+      "status": "completed",
+      "attempts": 1,
+      "output": "NestJS scaffold, Prisma schema, common/config/prisma/redis infrastructure; build/lint/test/prisma validate passed",
+      "adopted": true,
+      "archived": true
+    },
+    {
+      "threadId": "01a03758-5e9d-7d00-9a5b-13c7affe8ec2",
+      "hostId": "local",
+      "role": "auth-core",
+      "model": "gpt-5.6-sol",
+      "thinking": "high",
+      "ownership": ["src/auth", "src/users", "src/classrooms", "src/teachers", "src/students"],
+      "status": "completed",
+      "attempts": 1,
+      "output": "Auth, classroom, teacher invitation/relations and student APIs; integrated with immutable layout clone fix",
+      "adopted": true,
+      "archived": true
+    },
+    {
+      "threadId": "01a03758-6ab0-7381-adc3-a1b251eff398",
+      "hostId": "local",
+      "role": "scores-ranking",
+      "model": "gpt-5.6-sol",
+      "thinking": "high",
+      "ownership": ["src/scores", "src/ranking"],
+      "status": "completed",
+      "attempts": 1,
+      "output": "Score rules, score records/revert, weekly ranking and progress strategy",
+      "adopted": true,
+      "archived": true
+    },
+    {
+      "threadId": "01a03758-757f-7462-bad3-a5306a4fb0e4",
+      "hostId": "local",
+      "role": "seating",
+      "model": "gpt-5.6-luna",
+      "thinking": "xhigh",
+      "ownership": ["src/seating"],
+      "status": "completed",
+      "attempts": 1,
+      "output": "Versioned seating APIs and transaction logic; main agent added best-effort event isolation",
+      "adopted": true,
+      "archived": true
+    },
+    {
+      "threadId": "01a0375a-6484-7af1-b414-8f33060cac63",
+      "hostId": "local",
+      "role": "realtime-displays-random-pick",
+      "model": "gpt-5.6-sol",
+      "thinking": "high",
+      "ownership": ["src/realtime", "src/displays", "src/random-pick"],
+      "status": "completed",
+      "attempts": 1,
+      "output": "Realtime gateway, display binding/auth/bootstrap and random pick",
+      "adopted": true,
+      "archived": true
+    },
+    {
+      "threadId": "01a0376d-d58c-7800-a322-87a60a52b7a3",
+      "hostId": "local",
+      "role": "independent-final-review",
+      "model": "gpt-5.6-sol",
+      "thinking": "xhigh",
+      "ownership": [],
+      "status": "completed",
+      "attempts": 1,
+      "output": "Independent read-only review found 1 P0, 5 P1 and 2 P2 issues; all findings were addressed and covered by final verification",
+      "adopted": true,
+      "archived": true
+    }
+  ],
+  "approvals": [],
+  "blockers": [],
+  "frontendRun": {
+    "objective": "Implement the complete mock-first Next.js frontend described by docs/01-requirements.md and docs/06-ui-design.md",
+    "mode": "durable",
+    "projectId": "efe87eb3-b7f3-418e-aadb-553d4b60736f",
+    "environment": "local",
+    "plannedWorkers": 3,
+    "reservedSlots": 2,
+    "createdCount": 3,
+    "runningCount": 0,
+    "threads": [
+      {
+        "threadId": "01a03baa-fc49-7142-ab97-6cb89e7d1851",
+        "hostId": "local",
+        "role": "shared-mock-foundation",
+        "model": "gpt-5.6-sol",
+        "thinking": "high",
+        "ownership": ["apps/web/src/lib", "apps/web/src/mocks", "apps/web/src/components/providers", "apps/web/src/components/shared"],
+        "status": "completed",
+        "attempts": 1,
+        "output": "Typed Mock repository, MSW handlers, client providers and realtime foundation; typecheck and lint passed",
+        "adopted": true,
+        "archived": true
+      },
+      {
+        "threadId": "01a03bac-b15d-7f81-ab9c-2ad89ae5b225",
+        "hostId": "local",
+        "role": "admin-surfaces",
+        "model": "gpt-5.6-luna",
+        "thinking": "xhigh",
+        "ownership": ["apps/web/src/app/admin", "apps/web/src/features/admin"],
+        "status": "completed",
+        "attempts": 1,
+        "output": "Admin shell and seven management routes with functional Mock workflows; lint and route smoke tests passed",
+        "adopted": true,
+        "archived": true
+      },
+      {
+        "threadId": "01a03bad-13c1-7853-8efa-ae0edb9fb613",
+        "hostId": "local",
+        "role": "teacher-invite-display-surfaces",
+        "model": "gpt-5.6-luna",
+        "thinking": "xhigh",
+        "ownership": ["apps/web/src/app/teacher", "apps/web/src/app/invite", "apps/web/src/app/display", "apps/web/src/features/classroom"],
+        "status": "completed",
+        "attempts": 1,
+        "output": "Teacher, invitation and display routes with responsive interactions and privacy-safe rankings; lint and route smoke tests passed",
+        "adopted": true,
+        "archived": true
+      }
+    ],
+    "approvals": [],
+    "blockers": [],
+    "validation": {
+      "typescriptNoEmit": "passed",
+      "lint": "passed",
+      "build": "passed: 16 pages generated",
+      "staticGuardScan": "passed: no explicit any, inline SVG, or Emoji icons",
+      "browser": "passed: key workflows, responsive layouts, display privacy, and cross-tab random-pick broadcast"
+    }
+  },
+  "validation": {
+    "build": "passed",
+    "lint": "passed",
+    "format": "passed",
+    "typescriptNoEmit": "passed",
+    "tests": "12 suites, 51 tests passed",
+    "prismaValidate": "passed",
+    "composeConfig": "passed",
+    "livePostgresRedis": "not run: local Docker daemon unavailable"
+  }
+}

@@ -1,0 +1,267 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum TeacherRole {
+  HEAD_TEACHER
+  SUBJECT_TEACHER
+}
+
+enum RelationStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum InvitationStatus {
+  PENDING
+  USED
+  EXPIRED
+  REVOKED
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SeatCellType {
+  SEAT
+  AISLE
+  PODIUM
+  EMPTY
+}
+
+enum ScoreRecordType {
+  NORMAL
+  REVERT
+}
+
+enum DeviceStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum SessionClientType {
+  ADMIN_WEB
+  TEACHER_MOBILE
+}
+
+model User {
+  id             String              @id @default(cuid())
+  name           String              @db.VarChar(100)
+  account        String              @unique @db.VarChar(100)
+  passwordHash   String              @db.VarChar(255)
+  status         UserStatus          @default(ACTIVE)
+  classLinks     ClassTeacher[]
+  sessions       Session[]
+  createdLayouts SeatLayoutVersion[] @relation("LayoutCreator")
+  createdRules   ScoreRule[]         @relation("RuleCreator")
+  scoreRecords   ScoreRecord[]       @relation("ScoreOperator")
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime            @updatedAt @db.Timestamptz(3)
+}
+
+model Classroom {
+  id                     String              @id @default(cuid())
+  name                   String              @db.VarChar(120)
+  grade                  String?             @db.VarChar(50)
+  schoolYear             String?             @db.VarChar(20)
+  gridRows               Int                 @default(6)
+  gridCols               Int                 @default(8)
+  currentLayoutVersionId String?             @unique
+  status                 String              @default("ACTIVE") @db.VarChar(30)
+  currentLayout          SeatLayoutVersion?  @relation("CurrentClassroomLayout", fields: [currentLayoutVersionId], references: [id], onDelete: SetNull)
+  teachers               ClassTeacher[]
+  students               Student[]
+  layouts                SeatLayoutVersion[] @relation("ClassroomLayoutVersions")
+  scoreRules             ScoreRule[]
+  scoreRecords           ScoreRecord[]
+  displayDevices         DisplayDevice[]
+  createdAt              DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime            @updatedAt @db.Timestamptz(3)
+
+  @@index([status])
+}
+
+model ClassTeacher {
+  id          String              @id @default(cuid())
+  classId     String
+  teacherId   String
+  role        TeacherRole
+  subject     String?             @db.VarChar(100)
+  status      RelationStatus      @default(ACTIVE)
+  classroom   Classroom           @relation(fields: [classId], references: [id], onDelete: Restrict)
+  teacher     User                @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  invitations TeacherInvitation[]
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
+
+  @@index([classId, status])
+  @@index([teacherId, status])
+  @@index([classId, role, status])
+}
+
+model TeacherInvitation {
+  id             String           @id @default(cuid())
+  classTeacherId String
+  tokenHash      String           @unique @db.VarChar(255)
+  expiresAt      DateTime         @db.Timestamptz(3)
+  usedAt         DateTime?        @db.Timestamptz(3)
+  status         InvitationStatus @default(PENDING)
+  classTeacher   ClassTeacher     @relation(fields: [classTeacherId], references: [id], onDelete: Restrict)
+  createdAt      DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([classTeacherId])
+  @@index([expiresAt])
+  @@index([status, expiresAt])
+}
+
+model Student {
+  id        String        @id @default(cuid())
+  classId   String
+  name      String        @db.VarChar(100)
+  studentNo String?       @db.VarChar(50)
+  status    StudentStatus @default(ACTIVE)
+  classroom Classroom     @relation(fields: [classId], references: [id], onDelete: Restrict)
+  seats     Seat[]
+  scores    ScoreRecord[]
+  createdAt DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@unique([classId, studentNo])
+  @@index([classId, status])
+}
+
+model SeatLayoutVersion {
+  id                  String              @id @default(cuid())
+  classId             String
+  version             Int
+  sourceVersionId     String?
+  createdBy           String
+  classroom           Classroom           @relation("ClassroomLayoutVersions", fields: [classId], references: [id], onDelete: Restrict)
+  currentForClassroom Classroom?          @relation("CurrentClassroomLayout")
+  sourceVersion       SeatLayoutVersion?  @relation("LayoutRestorationSource", fields: [sourceVersionId], references: [id], onDelete: Restrict)
+  restoredVersions    SeatLayoutVersion[] @relation("LayoutRestorationSource")
+  creator             User                @relation("LayoutCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  seats               Seat[]
+  createdAt           DateTime            @default(now()) @db.Timestamptz(3)
+
+  @@unique([classId, version])
+  @@index([classId, createdAt])
+  @@index([sourceVersionId])
+  @@index([createdBy])
+}
+
+model Seat {
+  id              String            @id @default(cuid())
+  layoutVersionId String
+  rowIndex        Int
+  colIndex        Int
+  studentId       String?
+  cellType        SeatCellType      @default(SEAT)
+  layout          SeatLayoutVersion @relation(fields: [layoutVersionId], references: [id], onDelete: Restrict)
+  student         Student?          @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@unique([layoutVersionId, rowIndex, colIndex])
+  @@unique([layoutVersionId, studentId])
+  @@index([layoutVersionId])
+  @@index([studentId])
+}
+
+model ScoreRule {
+  id           String        @id @default(cuid())
+  classId      String
+  name         String        @db.VarChar(100)
+  delta        Int
+  description  String?       @db.Text
+  enabled      Boolean       @default(true)
+  createdBy    String
+  classroom    Classroom     @relation(fields: [classId], references: [id], onDelete: Restrict)
+  creator      User          @relation("RuleCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  scoreRecords ScoreRecord[]
+  createdAt    DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@index([classId, enabled])
+  @@index([createdBy])
+}
+
+model ScoreRecord {
+  id               String          @id @default(cuid())
+  classId          String
+  studentId        String
+  operatorId       String
+  subject          String?         @db.VarChar(100)
+  ruleId           String?
+  delta            Int
+  reason           String?         @db.Text
+  recordType       ScoreRecordType @default(NORMAL)
+  revertedRecordId String?         @unique
+  classroom        Classroom       @relation(fields: [classId], references: [id], onDelete: Restrict)
+  student          Student         @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  operator         User            @relation("ScoreOperator", fields: [operatorId], references: [id], onDelete: Restrict)
+  rule             ScoreRule?      @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+  revertedRecord   ScoreRecord?    @relation("ScoreRecordReversion", fields: [revertedRecordId], references: [id], onDelete: Restrict)
+  reversion        ScoreRecord?    @relation("ScoreRecordReversion")
+  createdAt        DateTime        @default(now()) @db.Timestamptz(3)
+
+  @@index([classId, createdAt])
+  @@index([studentId, createdAt])
+  @@index([operatorId, createdAt])
+  @@index([classId, studentId, createdAt])
+  @@index([ruleId])
+  @@index([revertedRecordId])
+}
+
+model DisplayDevice {
+  id          String             @id @default(cuid())
+  classId     String
+  name        String             @db.VarChar(120)
+  status      DeviceStatus       @default(ACTIVE)
+  lastSeenAt  DateTime?          @db.Timestamptz(3)
+  revokedAt   DateTime?          @db.Timestamptz(3)
+  classroom   Classroom          @relation(fields: [classId], references: [id], onDelete: Restrict)
+  credentials DeviceCredential[]
+  createdAt   DateTime           @default(now()) @db.Timestamptz(3)
+
+  @@index([classId, status])
+}
+
+model DeviceCredential {
+  id         String        @id @default(cuid())
+  deviceId   String
+  secretHash String        @unique @db.VarChar(255)
+  device     DisplayDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  createdAt  DateTime      @default(now()) @db.Timestamptz(3)
+  expiresAt  DateTime?     @db.Timestamptz(3)
+  revokedAt  DateTime?     @db.Timestamptz(3)
+
+  @@index([deviceId])
+  @@index([deviceId, revokedAt])
+  @@index([expiresAt])
+}
+
+model Session {
+  id               String            @id @default(cuid())
+  userId           String
+  refreshTokenHash String            @unique @db.VarChar(255)
+  clientType       SessionClientType
+  expiresAt        DateTime          @db.Timestamptz(3)
+  revokedAt        DateTime?         @db.Timestamptz(3)
+  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
+  lastUsedAt       DateTime?         @db.Timestamptz(3)
+  user             User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}

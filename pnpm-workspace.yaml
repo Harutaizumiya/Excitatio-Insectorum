@@ -1,0 +1,21 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  '@scarf/scarf': true
+  micromark: false
+  msw: true
+  node-pty: false
+  prisma: true
+
+onlyBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
+  - 'prisma'
+  - '@scarf/scarf'
+  - 'bcryptjs'
+  - 'micromark'
+  - 'msw'
