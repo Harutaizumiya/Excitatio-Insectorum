@@ -30,6 +30,7 @@ describe('DisplaysService', () => {
       displayDevice: {
         findFirst: jest.fn(),
         findMany: jest.fn(),
+        count: jest.fn(),
       },
       classroom: { findUnique: jest.fn() },
       student: { findMany: jest.fn() },
@@ -60,7 +61,7 @@ describe('DisplaysService', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('creates a six-digit code and both Redis records with a five-minute TTL', async () => {
+  it('creates a six-digit code and both Redis records with a ten-minute TTL', async () => {
     const { service, redis } = setup();
     redis.client.incr.mockResolvedValue(1);
     redis.client.expire.mockResolvedValue(1);
@@ -73,14 +74,49 @@ describe('DisplaysService', () => {
       `display:binding:${result.code}`,
       expect.any(String),
       'EX',
-      300,
+      600,
       'NX',
     );
     expect(redis.setJson).toHaveBeenCalledWith(
       `display:binding:session:${result.bindingSessionId}`,
       expect.objectContaining({ status: 'PENDING' }),
-      300,
+      600,
     );
+  });
+
+  it('allows teacher to create a 10-minute classroom binding code and screen to bind by code', async () => {
+    const { service, redis, prisma, transaction } = setup();
+    redis.client.incr.mockResolvedValue(1);
+    redis.client.expire.mockResolvedValue(1);
+    redis.client.set.mockResolvedValue('OK');
+    prisma.displayDevice.count = jest.fn().mockResolvedValue(0);
+    prisma.classroom.findUnique = jest.fn().mockResolvedValue({ id: 'class-1', name: '一年级一班' });
+
+    const created = await service.createClassroomBindingCode('class-1', { name: '前黑板大屏' });
+    expect(created.code).toMatch(/^\d{6}$/);
+    expect(redis.client.set).toHaveBeenCalledWith(
+      `display:class-code:${created.code}`,
+      expect.any(String),
+      'EX',
+      600,
+      'NX',
+    );
+
+    const sessionData = JSON.stringify({
+      sessionId: created.sessionId,
+      code: created.code,
+      classId: 'class-1',
+      deviceName: '前黑板大屏',
+      status: 'PENDING',
+      expiresAt: created.expiresAt,
+    });
+    redis.client.getdel.mockResolvedValueOnce(sessionData);
+
+    const bound = await service.bindDisplayByCode({ code: created.code });
+    expect(bound.deviceId).toBeDefined();
+    expect(bound.credential).toBeDefined();
+    expect(bound.classroom.name).toBe('一年级一班');
+    expect(transaction.displayDevice.create).toHaveBeenCalled();
   });
 
   it('consumes a binding code once and rejects a third ACTIVE device transactionally', async () => {

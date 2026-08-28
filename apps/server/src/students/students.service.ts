@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { Prisma, StudentStatus, TeacherRole } from '@prisma/client';
+import { Prisma, StudentGender, StudentStatus, TeacherRole } from '@prisma/client';
 import { BusinessException, ClassEventType } from '../common';
 import { ClassroomsService } from '../classrooms';
 import { PrismaService } from '../prisma';
@@ -51,7 +51,12 @@ export class StudentsService {
     await this.classrooms.assertAccess(userId, classId, [TeacherRole.HEAD_TEACHER]);
     try {
       const student = await this.prisma.student.create({
-        data: { classId, name: dto.name, studentNo: dto.studentNo },
+        data: {
+          classId,
+          name: dto.name,
+          studentNo: dto.studentNo,
+          gender: dto.gender ?? StudentGender.UNKNOWN,
+        },
       });
       await this.publishStudentChanged(classId, student.id, 'CREATED');
       return student;
@@ -69,7 +74,7 @@ export class StudentsService {
     try {
       const updated = await this.prisma.student.update({
         where: { id: studentId },
-        data: { name: dto.name, studentNo: dto.studentNo },
+        data: { name: dto.name, studentNo: dto.studentNo, gender: dto.gender },
       });
       await this.publishStudentChanged(classId, studentId, 'UPDATED');
       return updated;

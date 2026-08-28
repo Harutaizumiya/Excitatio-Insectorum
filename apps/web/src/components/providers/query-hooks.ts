@@ -253,27 +253,62 @@ export function useDisableScoreRule(classId: string) {
 
 export function useCreateRuleScore(classId: string) {
   const service = useClassroomService()
-  return useMutation({ mutationFn: (input: CreateRuleScoreInput) => service.createRuleScore(classId, input) })
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateRuleScoreInput) => service.createRuleScore(classId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.scoreRecords(classId) })
+      void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.ranking(classId) })
+    },
+  })
 }
 
 export function useCreateCustomScore(classId: string) {
   const service = useClassroomService()
-  return useMutation({ mutationFn: (input: CreateCustomScoreInput) => service.createCustomScore(classId, input) })
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateCustomScoreInput) => service.createCustomScore(classId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.scoreRecords(classId) })
+      void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.ranking(classId) })
+    },
+  })
 }
 
 export function useRevertScore(classId: string, operatorId?: string) {
   const service = useClassroomService()
-  return useMutation({ mutationFn: (recordId: string) => service.revertScore(classId, recordId, operatorId) })
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (recordId: string) => service.revertScore(classId, recordId, operatorId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.scoreRecords(classId) })
+      void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.ranking(classId) })
+    },
+  })
 }
 
 export function useSaveSeatLayout(classId: string) {
   const service = useClassroomService()
-  return useMutation({ mutationFn: (input: SaveSeatLayoutInput) => service.saveSeatLayout(classId, input) })
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: SaveSeatLayoutInput) => service.saveSeatLayout(classId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.seatLayout(classId) })
+      void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.seatLayoutVersions(classId) })
+    },
+  })
 }
 
 export function useRestoreSeatLayout(classId: string) {
   const service = useClassroomService()
-  return useMutation({ mutationFn: (versionId: string) => service.restoreSeatLayout(classId, versionId) })
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (versionId: string) => service.restoreSeatLayout(classId, versionId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.seatLayout(classId) })
+      void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.seatLayoutVersions(classId) })
+    },
+  })
 }
 
 export function useRandomPick(classId: string) {

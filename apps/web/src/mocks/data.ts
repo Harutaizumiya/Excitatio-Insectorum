@@ -9,7 +9,7 @@ import type {
 
 import type { MockDatabaseState, MockDisplayDevice, MockScoreRecord } from "./types"
 
-export const MOCK_CLASS_ID = "class-gaoyi-03"
+export const MOCK_CLASS_ID = "class-1"
 export const MOCK_HEAD_TEACHER_ID = "teacher-lin"
 export const MOCK_CURRENT_WEEK_START = "2026-08-24T00:00:00.000Z"
 export const MOCK_CURRENT_WEEK_END = "2026-08-31T00:00:00.000Z"

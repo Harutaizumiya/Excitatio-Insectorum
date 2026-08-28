@@ -18,12 +18,17 @@ import { RankingService } from '../ranking';
 import { RedisService } from '../redis';
 import { RealtimeService } from '../realtime';
 import type {
+  BindByCodeDto,
+  BindByCodeResponseDto,
   BindDisplayDeviceDto,
+  BindingSessionStatusResponseDto,
   CreateBindingCodeResponseDto,
+  CreateClassroomBindingCodeDto,
+  CreateClassroomBindingCodeResponseDto,
   PollBindingSessionResponseDto,
 } from './dto';
 
-const BINDING_TTL_SECONDS = 5 * 60;
+const BINDING_TTL_SECONDS = 10 * 60;
 const BINDING_RATE_WINDOW_SECONDS = 60;
 const BINDING_RATE_LIMIT = 10;
 const DEVICE_CREDENTIAL_BCRYPT_ROUNDS = 12;
@@ -593,6 +598,168 @@ export class DisplaysService {
     const amount = Number.parseInt(match[1], 10);
     const factors = { ms: 0.001, s: 1, m: 60, h: 3600, d: 86400 } as const;
     return Math.max(1, Math.ceil(amount * factors[match[2] as keyof typeof factors]));
+  }
+
+  async createClassroomBindingCode(
+    classId: string,
+    input: CreateClassroomBindingCodeDto,
+    _teacherId = 'unknown',
+    clientAddress = 'unknown',
+  ): Promise<CreateClassroomBindingCodeResponseDto> {
+    await this.enforceBindingCodeRateLimit(clientAddress);
+
+    const activeCount = await this.prisma.displayDevice.count({
+      where: { classId, status: DeviceStatus.ACTIVE },
+    });
+    if (activeCount >= MAX_ACTIVE_DEVICES) {
+      throw new BusinessException(
+        'DISPLAY_DEVICE_LIMIT_REACHED',
+        '本班可用大屏设备已达上限（最多 2 台）',
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    const sessionId = randomUUID();
+    const expiresAt = new Date(Date.now() + BINDING_TTL_SECONDS * 1000).toISOString();
+    const sessionState = {
+      sessionId,
+      code: '',
+      classId,
+      deviceName: input.name.trim(),
+      status: 'PENDING' as const,
+      expiresAt,
+    };
+
+    let code: string | undefined;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const candidate = randomInt(0, 1_000_000).toString().padStart(6, '0');
+      sessionState.code = candidate;
+      const result = await this.redis.client.set(
+        this.classroomBindingCodeKey(candidate),
+        JSON.stringify(sessionState),
+        'EX',
+        BINDING_TTL_SECONDS,
+        'NX',
+      );
+      if (result === 'OK') {
+        code = candidate;
+        break;
+      }
+    }
+
+    if (!code) {
+      throw new BusinessException(
+        'BINDING_CODE_UNAVAILABLE',
+        '暂时无法生成绑定码，请稍后重试',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    await this.redis.setJson(
+      this.classroomBindingSessionKey(sessionId),
+      sessionState,
+      BINDING_TTL_SECONDS,
+    );
+    return { code, expiresAt, sessionId };
+  }
+
+  async bindDisplayByCode(
+    input: BindByCodeDto,
+    clientAddress = 'unknown',
+  ): Promise<BindByCodeResponseDto> {
+    await this.enforceBindingCodeRateLimit(clientAddress);
+    const consumed = await this.redis.client.getdel(this.classroomBindingCodeKey(input.code));
+    if (!consumed) {
+      throw new BusinessException(
+        'BINDING_CODE_INVALID',
+        '绑定码无效、已过期或已被使用',
+        HttpStatus.GONE,
+      );
+    }
+
+    interface StateShape {
+      sessionId: string;
+      classId: string;
+      deviceName: string;
+      expiresAt: string;
+    }
+    const state = JSON.parse(consumed) as StateShape;
+    if (Date.parse(state.expiresAt) <= Date.now()) {
+      throw new BusinessException('BINDING_CODE_EXPIRED', '绑定码已过期', HttpStatus.GONE);
+    }
+
+    const deviceId = randomUUID();
+    const credential = randomBytes(48).toString('base64url');
+    const secretHash = await hash(credential, DEVICE_CREDENTIAL_BCRYPT_ROUNDS);
+
+    await this.createDeviceWithLimit({
+      deviceId,
+      classId: state.classId,
+      name: state.deviceName,
+      secretHash,
+    });
+
+    const classroom = await this.prisma.classroom.findUnique({
+      where: { id: state.classId },
+      select: { id: true, name: true },
+    });
+
+    const ttlSeconds = Math.max(
+      1,
+      Math.ceil((Date.parse(state.expiresAt) - Date.now()) / 1000),
+    );
+    const readyState = {
+      ...state,
+      status: 'READY' as const,
+      deviceId,
+    };
+    await this.redis.setJson(
+      this.classroomBindingSessionKey(state.sessionId),
+      readyState,
+      ttlSeconds,
+    );
+
+    return {
+      deviceId,
+      credential,
+      classroom: {
+        id: classroom?.id ?? state.classId,
+        name: classroom?.name ?? '班级大屏',
+      },
+    };
+  }
+
+  async getClassroomBindingSessionStatus(
+    classId: string,
+    sessionId: string,
+  ): Promise<BindingSessionStatusResponseDto> {
+    interface SessionData {
+      classId: string;
+      status: 'PENDING' | 'READY';
+      deviceId?: string;
+      expiresAt: string;
+    }
+    const session = await this.redis.getJson<SessionData>(
+      this.classroomBindingSessionKey(sessionId),
+    );
+    if (!session || session.classId !== classId) {
+      return { status: 'EXPIRED' };
+    }
+    if (Date.parse(session.expiresAt) <= Date.now()) {
+      return { status: 'EXPIRED' };
+    }
+    if (session.status === 'READY') {
+      return { status: 'READY', deviceId: session.deviceId };
+    }
+    return { status: 'PENDING' };
+  }
+
+  private classroomBindingCodeKey(code: string): string {
+    return `display:class-code:${code}`;
+  }
+
+  private classroomBindingSessionKey(sessionId: string): string {
+    return `display:class-session:${sessionId}`;
   }
 
   private bindingCodeKey(code: string): string {

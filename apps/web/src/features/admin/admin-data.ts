@@ -109,7 +109,7 @@ export const classroom: Pick<ApiClassroomSummary, "id" | "name" | "grade" | "gri
   school: string;
   teacherName: string;
 } = {
-  id: "class-7-2",
+  id: "class-1",
   name: "高一（10）班",
   grade: "2026 学年 · 高一年级",
   school: "南昌市第二中学",

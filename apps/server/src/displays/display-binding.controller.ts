@@ -3,6 +3,9 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { DisplaysService } from './displays.service';
 import {
+  BindByCodeDto,
+  BindByCodeEnvelopeDto,
+  type BindByCodeResponseDto,
   CreateBindingCodeResponseDto,
   CreateBindingCodeEnvelopeDto,
   PollBindingSessionEnvelopeDto,
@@ -44,5 +47,21 @@ export class DisplayBindingController {
     @Body() input: PollBindingSessionDto,
   ): Promise<{ data: PollBindingSessionResponseDto }> {
     return { data: await this.displays.pollBindingSession(bindingSessionId, input.nonce) };
+  }
+
+  @Post('bind-by-code')
+  @ApiOperation({
+    summary: '大屏端输入 6 位绑定码完成注册并获取凭证',
+    description: '校验绑定码有效性，绑定成功后注册设备并一次性返回长期凭证，绑定码立即失效。',
+  })
+  @ApiResponse({ status: 201, type: BindByCodeEnvelopeDto })
+  @ApiResponse({ status: 410, description: 'BINDING_CODE_INVALID / BINDING_CODE_EXPIRED' })
+  async bindByCode(
+    @Req() request: Request,
+    @Body() input: BindByCodeDto,
+  ): Promise<{ data: BindByCodeResponseDto }> {
+    return {
+      data: await this.displays.bindDisplayByCode(input, request.ip ?? 'unknown'),
+    };
   }
 }

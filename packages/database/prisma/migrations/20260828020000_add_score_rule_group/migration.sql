@@ -1,0 +1,2 @@
+ALTER TABLE "ScoreRule"
+ADD COLUMN "group" VARCHAR(100) NOT NULL DEFAULT '课堂表现';

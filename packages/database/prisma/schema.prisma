@@ -34,6 +34,12 @@ enum StudentStatus {
   INACTIVE
 }
 
+enum StudentGender {
+  MALE
+  FEMALE
+  UNKNOWN
+}
+
 enum SeatCellType {
   SEAT
   AISLE
@@ -131,6 +137,7 @@ model Student {
   classId   String
   name      String        @db.VarChar(100)
   studentNo String?       @db.VarChar(50)
+  gender    StudentGender @default(UNKNOWN)
   status    StudentStatus @default(ACTIVE)
   classroom Classroom     @relation(fields: [classId], references: [id], onDelete: Restrict)
   seats     Seat[]
@@ -182,6 +189,7 @@ model ScoreRule {
   id           String        @id @default(cuid())
   classId      String
   name         String        @db.VarChar(100)
+  group        String        @default("课堂表现") @db.VarChar(100)
   delta        Int
   description  String?       @db.Text
   enabled      Boolean       @default(true)

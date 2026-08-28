@@ -1,45 +1,96 @@
-export interface DisplayBindingSession {
-  code: string
-  expiresAt: string
-  bindingSessionId: string
-  nonce: string
+export interface AdminBindingSession {
+  sessionId: string;
+  code: string;
+  deviceName: string;
+  expiresAt: string;
+  status: "PENDING" | "READY" | "EXPIRED";
+  deviceId?: string;
 }
 
-export type DisplayBindingPoll =
-  | { status: "PENDING" }
-  | { status: "EXPIRED" }
-  | { status: "READY"; deviceId: string; credential: string }
+export type DisplayBindResult =
+  | { success: true; deviceId: string; credential: string; classroomName: string }
+  | { success: false; error: string };
 
-let sequence = 0
-let activeSession: (DisplayBindingSession & { status: "PENDING" | "READY"; claimed: boolean }) | null = null
+let sequence = 0;
+let activeSession: AdminBindingSession | null = null;
+const listeners: Array<(session: AdminBindingSession) => void> = [];
+
+function notifyListeners() {
+  if (activeSession) {
+    const clone = { ...activeSession };
+    listeners.forEach((fn) => fn(clone));
+  }
+}
 
 export const displayBindingMock = {
-  createSession(): DisplayBindingSession {
-    sequence += 1
-    const code = String(583920 + sequence).slice(-6)
+  createAdminBindingCode(deviceName: string): AdminBindingSession {
+    sequence += 1;
+    const code = String(583920 + sequence).slice(-6);
     activeSession = {
+      sessionId: `session-${sequence}`,
       code,
-      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-      bindingSessionId: `binding-session-${sequence}`,
-      nonce: `nonce-${sequence}-${"display-binding-nonce".repeat(3)}`,
+      deviceName: deviceName.trim() || `教室大屏 ${sequence}`,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       status: "PENDING",
-      claimed: false,
+    };
+    notifyListeners();
+    return { ...activeSession };
+  },
+
+  submitDisplayCode(code: string): DisplayBindResult {
+    if (!activeSession || Date.parse(activeSession.expiresAt) <= Date.now()) {
+      return { success: false, error: "绑定码已过期或未生成，请在管理端获取" };
     }
-    return { ...activeSession }
+    if (activeSession.status === "READY") {
+      return { success: false, error: "该绑定码已被使用，请重新生成" };
+    }
+    if (activeSession.code !== code.trim()) {
+      return { success: false, error: "绑定码错误，请核对管理端 6 位数字" };
+    }
+
+    const deviceId = `display-${String(sequence + 1).padStart(3, "0")}`;
+    activeSession.status = "READY";
+    activeSession.deviceId = deviceId;
+    notifyListeners();
+
+    return {
+      success: true,
+      deviceId,
+      credential: `cred-${sequence}-${Date.now()}`,
+      classroomName: "三年级二班",
+    };
   },
 
-  simulateHeadTeacherBind(): void {
-    if (!activeSession || Date.parse(activeSession.expiresAt) <= Date.now()) return
-    activeSession.status = "READY"
+  pollAdminSession(sessionId: string): {
+    status: "PENDING" | "READY" | "EXPIRED";
+    deviceId?: string;
+    deviceName?: string;
+  } {
+    if (!activeSession || activeSession.sessionId !== sessionId) {
+      return { status: "EXPIRED" };
+    }
+    if (Date.parse(activeSession.expiresAt) <= Date.now()) {
+      return { status: "EXPIRED" };
+    }
+    return {
+      status: activeSession.status,
+      deviceId: activeSession.deviceId,
+      deviceName: activeSession.deviceName,
+    };
   },
 
-  poll(sessionId: string, nonce: string): DisplayBindingPoll {
-    if (!activeSession || activeSession.bindingSessionId !== sessionId || activeSession.nonce !== nonce) return { status: "EXPIRED" }
-    if (Date.parse(activeSession.expiresAt) <= Date.now()) return { status: "EXPIRED" }
-    if (activeSession.status === "PENDING") return { status: "PENDING" }
-    if (activeSession.claimed) return { status: "READY", deviceId: "display-device-1", credential: "claimed" }
-    activeSession.claimed = true
-    return { status: "READY", deviceId: "display-device-1", credential: `credential-${sequence}` }
+  getActiveSession(): AdminBindingSession | null {
+    if (!activeSession || Date.parse(activeSession.expiresAt) <= Date.now()) {
+      return null;
+    }
+    return { ...activeSession };
   },
-}
 
+  subscribe(listener: (session: AdminBindingSession) => void): () => void {
+    listeners.push(listener);
+    return () => {
+      const idx = listeners.indexOf(listener);
+      if (idx !== -1) listeners.splice(idx, 1);
+    };
+  },
+};

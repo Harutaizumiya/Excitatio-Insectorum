@@ -17,6 +17,13 @@ export class UpdateScoreRuleDto {
   @MaxLength(100)
   name?: string;
 
+  @ApiPropertyOptional({ example: '课堂表现', maxLength: 100 })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  group?: string;
+
   @ApiPropertyOptional({ example: 3, description: '非 0 整数' })
   @IsOptional()
   @IsInt()

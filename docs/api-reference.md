@@ -116,12 +116,22 @@
 
 ### 4.4 Students
 
-| 方法  | 路径                                               | 权限           | 请求                   | 用途                     |
-| ----- | -------------------------------------------------- | -------------- | ---------------------- | ------------------------ |
-| GET   | `/classes/:classId/students`                       | HEAD / SUBJECT | Query                  | 分页查询学生             |
-| POST  | `/classes/:classId/students`                       | HEAD           | `CreateStudentRequest` | 新增学生                 |
-| PATCH | `/classes/:classId/students/:studentId`            | HEAD           | `UpdateStudentRequest` | 更新学生                 |
-| POST  | `/classes/:classId/students/:studentId/deactivate` | HEAD           | 无                     | 停用学生并从当前布局解除 |
+| 方法  | 路径                                               | 权限           | 请求                    | 用途                      |
+| ----- | -------------------------------------------------- | -------------- | ----------------------- | ------------------------- |
+| GET   | `/classes/:classId/students`                       | HEAD / SUBJECT | Query                   | 分页查询学生              |
+| POST  | `/classes/:classId/students`                       | HEAD           | `CreateStudentRequest`  | 新增学生                  |
+| PATCH | `/classes/:classId/students/:studentId`            | HEAD           | `UpdateStudentRequest`  | 更新学生                  |
+| POST  | `/classes/:classId/students/:studentId/deactivate` | HEAD           | 无                      | 停用学生并从当前布局解除  |
+| POST  | `/classes/:classId/students/import/parse`          | HEAD           | multipart `file`        | 解析 Excel/CSV 并返回预览 |
+| POST  | `/classes/:classId/students/import`                | HEAD           | `ImportStudentsRequest` | 批量创建学生              |
+
+批量解析仅支持 `.xlsx` 和 `.csv`，文件最大 5MB，最多识别 500 条数据记录。解析接口只读文件，不写数据库；可在 multipart 字段 `mapping` 中传入 JSON 以覆盖自动映射，例如：
+
+```json
+{ "name": "学生姓名", "studentNo": "学籍号", "gender": "男女" }
+```
+
+导入请求的每条学生包含 `name`、可空 `studentNo` 和 `gender`（`MALE|FEMALE|UNKNOWN`）。有学号时按 `classId + studentNo` 去重，无学号时按 `classId + name` 去重；重复记录会跳过并在响应的 `duplicates` 中返回。
 
 学生查询参数：
 

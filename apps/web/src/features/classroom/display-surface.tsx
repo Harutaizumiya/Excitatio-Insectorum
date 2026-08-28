@@ -1,12 +1,15 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowUpOutlined, CrownOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, UserOutlined } from "@ant-design/icons";
 import { Button } from "@/components/motion/button";
-import { classroomRealtime, displayMock } from "./classroom-display-adapter";
-import type { DisplayBootstrap, Seat } from "./classroom-model";
+import { useClassroomService, useRealtimeClient } from "@/components/providers/classroom-system-provider";
+import { ClassroomServiceError } from "@/lib/classroom-service";
+import type { ClassEventType, DisplayBootstrap, Seat } from "@/lib";
+import { clearDisplaySession, getDisplaySession } from "@/lib/session";
 
 type Highlight = { studentId: string; name: string } | null;
 type SeatKind = "seat" | "podium" | "corridor";
@@ -33,7 +36,7 @@ function getSeatKind(row: number, col: number, rows: number, cols: number, cellT
   return "seat";
 }
 
-function getSeatLabel(row: number, col: number, seat: Seat | undefined, kind: SeatKind): string {
+function getSeatLabel(row: number, col: number, seat: Pick<Seat, "student" | "cellType"> | undefined, kind: SeatKind): string {
   if (kind === "podium") return "讲台";
   if (kind === "corridor") return "走廊";
   if (seat?.student) return seat.student.name;
@@ -77,7 +80,7 @@ function DisplaySeat({
 }: {
   row: number;
   col: number;
-  seat: Seat | undefined;
+  seat: Pick<Seat, "student" | "cellType"> | undefined;
   kind: SeatKind;
   selected: boolean;
   highlighted: boolean;
@@ -411,7 +414,7 @@ function ProgressPanel({ ranking }: { ranking: DisplayBootstrap["ranking"] }): R
       </div>
       {ranking.progress.length ? (
         <div className="flex w-full flex-col gap-1.5">
-          {ranking.progress.slice(0, 6).map((item, index) => (
+          {ranking.progress.slice(0, 10).map((item, index) => (
             <div key={item.studentId} className="flex h-9 w-full items-center justify-between rounded-lg border border-[#f0f0f0] bg-[#fafafa] px-3 py-2">
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-bold tabular-nums text-[#8c8c8c]">{String(index + 1).padStart(2, "0")}</span>
@@ -430,31 +433,69 @@ function ProgressPanel({ ranking }: { ranking: DisplayBootstrap["ranking"] }): R
 }
 
 export function DisplaySurface(): React.ReactElement {
-  const [data, setData] = useState<DisplayBootstrap>(() => displayMock.getBootstrap());
+  const router = useRouter();
+  const service = useClassroomService();
+  const realtime = useRealtimeClient();
+  const [data, setData] = useState<DisplayBootstrap | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<Highlight>(null);
   const [zoom, setZoom] = useState(100);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const highlightTimer = useRef<number | null>(null);
-  const classroomId = data.classroom.id;
 
   useEffect(() => {
-    const unsubscribe = classroomRealtime.subscribe((event) => {
-      if (event.classId !== classroomId) return;
-      if (event.type === "RANDOM_PICKED") {
+    const session = getDisplaySession();
+    if (!session) {
+      router.replace("/display/bind");
+      return;
+    }
+
+    let stopped = false;
+    const refresh = async () => {
+      try {
+        const next = await service.getDisplayBootstrap(session.deviceId);
+        if (!stopped) {
+          setData(next);
+          setLoadError(null);
+        }
+      } catch (error) {
+        if (stopped) return;
+        if (error instanceof ClassroomServiceError && error.status === 401) {
+          clearDisplaySession();
+          router.replace("/display/bind");
+          return;
+        }
+        setLoadError(error instanceof Error ? error.message : "大屏数据加载失败");
+      }
+    };
+
+    void refresh();
+    const subscriptions = (['SCORE_CHANGED', 'SCORE_REVERTED', 'RANKING_CHANGED', 'SEAT_LAYOUT_CHANGED', 'STUDENT_CHANGED', 'DISPLAY_CONFIG_CHANGED'] as ClassEventType[])
+      .map((type) => realtime.subscribe(type, session.classId, () => void refresh()));
+    subscriptions.push(
+      realtime.subscribe("RANDOM_PICKED", session.classId, (event) => {
         setHighlight({ studentId: event.payload.studentId, name: event.payload.name });
         if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
         highlightTimer.current = window.setTimeout(() => setHighlight(null), Math.max(2000, event.payload.displayDurationMs));
-        return;
-      }
-      setData(displayMock.getBootstrap());
-    });
+        void refresh();
+      }),
+    );
 
     return () => {
-      unsubscribe();
+      stopped = true;
+      subscriptions.forEach((unsubscribe) => unsubscribe());
       if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
     };
-  }, [classroomId]);
+  }, [realtime, router, service]);
+
+  if (!data) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f4f5f8] text-sm text-[#667085]">
+        {loadError ?? "正在加载班级大屏…"}
+      </main>
+    );
+  }
 
   const highlightedStudent = highlight && !data.layout.seats.some((seat) => seat.student?.id === highlight.studentId) ? highlight : null;
 
@@ -477,8 +518,8 @@ export function DisplaySurface(): React.ReactElement {
         setIsDragging={setIsDragging}
       />
 
-      {/* 2. Floating Top-Left Header Bar */}
-      <header className="pointer-events-auto absolute top-5 left-6 z-10 flex items-center gap-3.5 rounded-2xl border border-[#e2e4ea] bg-white/95 px-4 py-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.06)] backdrop-blur-md">
+      {/* 2. Floating Centered Top Header Bar */}
+      <header className="pointer-events-auto absolute top-5 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3.5 rounded-2xl border border-[#e2e4ea] bg-white/95 px-5 py-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.06)] backdrop-blur-md">
         <Image
           src="/logo.png"
           alt="课序 Logo"
@@ -505,8 +546,8 @@ export function DisplaySurface(): React.ReactElement {
         />
       </div>
 
-      {/* 4. Floating Right-Side Ranking Cards (Pinned over seating chart) */}
-      <aside className="pointer-events-auto absolute top-5 right-6 z-10 flex w-[320px] max-h-[calc(100vh-40px)] flex-col gap-3.5 overflow-y-auto">
+      {/* 4. Floating Right-Side Ranking Cards (Vertically Centered) */}
+      <aside className="pointer-events-auto absolute top-1/2 right-6 -translate-y-1/2 z-10 flex w-[320px] max-h-[calc(100vh-40px)] flex-col gap-3.5 overflow-y-auto">
         <TopRankPanel ranking={data.ranking} />
         <ProgressPanel ranking={data.ranking} />
       </aside>

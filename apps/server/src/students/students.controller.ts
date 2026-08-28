@@ -1,5 +1,18 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TeacherRole } from '@prisma/client';
 import {
   ClassAccessGuard,
@@ -15,6 +28,9 @@ import {
 import { CreateStudentDto } from './dto/create-student.dto';
 import { ListStudentsQuery } from './dto/list-students.query';
 import { UpdateStudentDto } from './dto/update-student.dto';
+import { ImportStudentsDto } from './import/dto/import-students.dto';
+import { MAX_IMPORT_FILE_SIZE_BYTES, MAX_IMPORT_RECORDS } from './import/student-import.constants';
+import { StudentImportService } from './import/student-import.service';
 import { StudentsService } from './students.service';
 
 @ApiTags('Students')
@@ -24,7 +40,10 @@ import { StudentsService } from './students.service';
 @RequirePrincipalTypes(PrincipalType.USER)
 @ClassScope()
 export class StudentsController {
-  constructor(private readonly students: StudentsService) {}
+  constructor(
+    private readonly students: StudentsService,
+    private readonly studentImport: StudentImportService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: '分页查询班级学生' })
@@ -35,6 +54,44 @@ export class StudentsController {
   ) {
     const result = await this.students.list(request.user!.sub, classId, query);
     return { data: result.students, meta: result.meta };
+  }
+
+  @Post('import/parse')
+  @RequireRoles(TeacherRole.HEAD_TEACHER)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        mapping: {
+          type: 'string',
+          description: '可选 JSON，例如 {"name":"学生姓名","studentNo":null,"gender":"男女"}',
+        },
+      },
+    },
+  })
+  @ApiOperation({ summary: '解析学生名单文件并返回预览' })
+  async parseImport(
+    @Req() request: RequestContext,
+    @Param('classId') classId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body('mapping') mapping?: string,
+  ) {
+    return this.studentImport.parse(request.user!.sub, classId, file, mapping);
+  }
+
+  @Post('import')
+  @RequireRoles(TeacherRole.HEAD_TEACHER)
+  @ApiOperation({ summary: `批量导入学生（最多 ${MAX_IMPORT_RECORDS} 条）` })
+  async import(
+    @Req() request: RequestContext,
+    @Param('classId') classId: string,
+    @Body() dto: ImportStudentsDto,
+  ) {
+    return this.studentImport.importStudents(request.user!.sub, classId, dto.students);
   }
 
   @Post()

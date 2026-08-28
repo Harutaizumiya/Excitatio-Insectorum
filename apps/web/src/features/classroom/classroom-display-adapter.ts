@@ -35,6 +35,10 @@ const displayBootstrap: DisplayBootstrap = {
       { studentId: "student-7", name: "周九", change: 3 },
       { studentId: "student-8", name: "吴十", change: 3 },
       { studentId: "student-13", name: "郑十一", change: 2 },
+      { studentId: "student-14", name: "陈十二", change: 2 },
+      { studentId: "student-15", name: "楚十三", change: 2 },
+      { studentId: "student-16", name: "魏十四", change: 1 },
+      { studentId: "student-17", name: "蒋十五", change: 1 },
     ],
   },
 };

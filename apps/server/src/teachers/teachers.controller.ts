@@ -66,6 +66,17 @@ export class TeachersController {
     return { data: { revoked: true } };
   }
 
+  @Post(':classTeacherId/restore')
+  @ApiOperation({ summary: '恢复已撤销的任课教师关系' })
+  async restore(
+    @Req() request: RequestContext,
+    @Param('classId') classId: string,
+    @Param('classTeacherId') classTeacherId: string,
+  ) {
+    await this.teachers.restore(request.user!.sub, classId, classTeacherId);
+    return { data: { restored: true } };
+  }
+
   @Post(':classTeacherId/invitations')
   @ApiOperation({ summary: '生成一次性教师邀请' })
   async createInvitation(

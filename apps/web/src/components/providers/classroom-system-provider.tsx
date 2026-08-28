@@ -11,8 +11,10 @@ import {
 
 import {
   classroomQueryKeys,
+  apiClassroomService,
   type ClassroomService,
   type ClassRealtimeClient,
+  SocketIoRealtimeClient,
 } from "@/lib"
 import { getMockClassroomRuntime, initializeMockServiceWorker } from "@/mocks"
 
@@ -42,7 +44,12 @@ function MswInitializer({ service }: { service: ClassroomService }) {
 function RealtimeLifecycle({ client }: { client: ClassRealtimeClient }) {
   useEffect(() => {
     client.connect()
-    return () => client.disconnect()
+    const reconnect = () => client.connect()
+    window.addEventListener("classroom-auth-changed", reconnect)
+    return () => {
+      window.removeEventListener("classroom-auth-changed", reconnect)
+      client.disconnect()
+    }
   }, [client])
   return null
 }
@@ -103,13 +110,23 @@ export interface ClassroomSystemProviderProps {
 
 export function ClassroomSystemProvider({ children }: ClassroomSystemProviderProps) {
   const [queryClient] = useState(createQueryClient)
-  const [runtime] = useState(getMockClassroomRuntime)
+  const [runtime] = useState(() => {
+    if (process.env.NEXT_PUBLIC_DATA_MODE !== "mock") {
+      return {
+        service: apiClassroomService,
+        realtime: new SocketIoRealtimeClient(),
+        useMockWorker: false,
+      }
+    }
+    const mock = getMockClassroomRuntime()
+    return { ...mock, useMockWorker: true }
+  })
 
   return (
     <QueryClientProvider client={queryClient}>
       <ClassroomServiceContext.Provider value={runtime.service}>
         <RealtimeClientContext.Provider value={runtime.realtime}>
-          <MswInitializer service={runtime.service} />
+          {runtime.useMockWorker ? <MswInitializer service={runtime.service} /> : null}
           <RealtimeLifecycle client={runtime.realtime} />
           <RealtimeQuerySync client={runtime.realtime} />
           {children}

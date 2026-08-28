@@ -24,6 +24,7 @@ export type TeacherRole = "HEAD_TEACHER" | "SUBJECT_TEACHER"
 export type RelationStatus = "ACTIVE" | "REVOKED"
 export type UserStatus = "ACTIVE" | "INACTIVE"
 export type StudentStatus = "ACTIVE" | "INACTIVE"
+export type StudentGender = "MALE" | "FEMALE" | "UNKNOWN"
 export type ScoreRecordType = "NORMAL" | "REVERT"
 export type DeviceStatus = "ACTIVE" | "REVOKED"
 
@@ -57,6 +58,7 @@ export interface Student {
   classId: string
   name: string
   studentNo: string | null
+  gender?: StudentGender
   status: StudentStatus
   createdAt: IsoDateTime
   updatedAt: IsoDateTime
@@ -95,6 +97,12 @@ export interface ClassTeacher {
   createdAt: IsoDateTime
   updatedAt: IsoDateTime
   teacher: TeacherIdentity
+  invitations?: Array<{
+    status: "PENDING" | "USED" | "EXPIRED" | "REVOKED"
+    expiresAt: IsoDateTime
+    usedAt: IsoDateTime | null
+    createdAt: IsoDateTime
+  }>
 }
 
 export interface CreateTeacherInput {
@@ -179,6 +187,7 @@ export interface ScoreRule {
   id: string
   classId: string
   name: string
+  group?: string
   delta: number
   description: string | null
   enabled: boolean
@@ -190,12 +199,14 @@ export interface ScoreRule {
 export interface CreateScoreRuleInput {
   name: string
   delta: number
+  group?: string
   description?: string | null
 }
 
 export interface UpdateScoreRuleInput {
   name?: string
   delta?: number
+  group?: string
   description?: string | null
   enabled?: boolean
 }
@@ -355,4 +366,34 @@ export interface InvitationConsumeResult extends TokenPair {
     name: string
     subject: string | null
   }
+}
+
+export interface CreateClassroomBindingCodeResult {
+  code: string
+  expiresAt: IsoDateTime
+  sessionId: string
+}
+
+export interface ClassroomBindingSessionStatus {
+  status: "PENDING" | "READY" | "EXPIRED"
+  deviceId?: string
+}
+
+export interface BindDisplayByCodeResult {
+  deviceId: string
+  credential: string
+  classroom: Pick<ClassroomSummary, "id" | "name">
+}
+
+export interface ImportedStudentInput {
+  name: string
+  studentNo: string | null
+  gender: StudentGender
+}
+
+export interface StudentImportResult {
+  created: number
+  skipped: number
+  duplicates: Array<{ name: string; studentNo: string | null; reason: string }>
+  errors: Array<{ name: string; studentNo: string | null; reason: string }>
 }

@@ -5,6 +5,7 @@ import {
   BookOutlined,
   CheckCircleOutlined,
   CheckOutlined,
+  ClockCircleOutlined,
   CopyOutlined,
   DeleteOutlined,
   DesktopOutlined,
@@ -12,6 +13,7 @@ import {
   EyeOutlined,
   FileTextOutlined,
   LinkOutlined,
+  LoadingOutlined,
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
@@ -20,8 +22,10 @@ import {
   TeamOutlined,
   ReadOutlined,
   UndoOutlined,
+  UploadOutlined,
 } from "@ant-design/icons";
 import { SeatingPage } from "./seating/seating-page";
+import { StudentImportModal, type ImportStudentPayload } from "./student-import";
 import {
   Alert,
   Avatar,
@@ -33,11 +37,13 @@ import {
   Divider,
   Drawer,
   Empty,
+  Flex,
   Form,
   Input,
   InputNumber,
   Modal,
   Popconfirm,
+  Result,
   Row,
   Select,
   Space,
@@ -49,8 +55,9 @@ import {
 import { App as AntApp } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { CSSProperties, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import type { AdminBindingSession } from "@/features/classroom/display-binding-adapter";
 import {
   classroom,
   defaultRuleGroups,
@@ -436,13 +443,24 @@ function StatusLine({ label, value, color }: { label: string; value: string; col
 
 function StudentsPage() {
   const { notification } = AntApp.useApp();
-  const { students, saveStudent: persistStudent, deactivateStudent } = useAdminStudents();
+  const {
+    students,
+    saveStudent: persistStudent,
+    deactivateStudent,
+    batchImportStudents,
+  } = useAdminStudents();
   const [keyword, setKeyword] = useState("");
   const [status, setStatus] = useState<"ALL" | StudentStatus>("ALL");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [historyStudent, setHistoryStudent] = useState<Student | null>(null);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [form] = Form.useForm<StudentFormValues>();
+
+  const existingStudentNos = useMemo(
+    () => new Set(students.map((s) => s.studentNo).filter(Boolean)),
+    [students]
+  );
 
   const filteredStudents = useMemo(
     () => students.filter((student) => {
@@ -480,6 +498,14 @@ function StudentsPage() {
     notification.success({ title: "学生已停用", description: `${student.name} 已从当前座位和排行榜移除，历史资料仍保留。` });
   };
 
+  const handleBatchImport = async (importedStudents: ImportStudentPayload[]) => {
+    await batchImportStudents(importedStudents);
+    notification.success({
+      title: "批量导入已完成",
+      description: `已成功将学生导入至 ${classroom.name}。`,
+    });
+  };
+
   const columns: ColumnsType<Student> = [
     { title: "学生", dataIndex: "name", width: 170, render: (name: string) => <Space><Avatar size={30} style={{ background: "#e9f1ff", color: "#0a59f7" }}>{name.slice(0, 1)}</Avatar><Typography.Text strong>{name}</Typography.Text></Space> },
     { title: "学号", dataIndex: "studentNo", width: 120, render: (value: string) => <Typography.Text code>{value}</Typography.Text> },
@@ -491,7 +517,20 @@ function StudentsPage() {
 
   return (
     <div>
-      <PageHeader title="学生管理" description={`管理 ${classroom.name} 的学生资料、状态与座位安排。共 ${students.length} 名学生。`} action={<Button type="primary" icon={<PlusOutlined />} style={primaryButtonStyle} onClick={openCreate}>新增学生</Button>} />
+      <PageHeader
+        title="学生管理"
+        description={`管理 ${classroom.name} 的学生资料、状态与座位安排。共 ${students.length} 名学生。`}
+        action={
+          <Space>
+            <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
+              批量导入
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} style={primaryButtonStyle} onClick={openCreate}>
+              新增学生
+            </Button>
+          </Space>
+        }
+      />
       <Card style={cardStyle} styles={{ body: { padding: 0 } }}>
         <div style={{ padding: 18, borderBottom: "1px solid #eef2f7" }}>
           <Space wrap size={10}>
@@ -515,6 +554,13 @@ function StudentsPage() {
       <Drawer title="学生历史详情" open={historyStudent !== null} onClose={() => setHistoryStudent(null)} size={430}>
         {historyStudent ? <><div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: 22 }}><Avatar size={48} style={{ background: "#e9f1ff", color: "#0a59f7" }}>{historyStudent.name.slice(0, 1)}</Avatar><div><Typography.Title level={4} style={{ margin: 0 }}>{historyStudent.name}</Typography.Title><Typography.Text type="secondary">学号 {historyStudent.studentNo}</Typography.Text></div></div><Descriptions column={1} bordered size="small"><Descriptions.Item label="状态"><StatusTag status={historyStudent.status} /></Descriptions.Item><Descriptions.Item label="当前座位">{historyStudent.seat ?? "未安排"}</Descriptions.Item><Descriptions.Item label="加入班级">{historyStudent.createdAt}</Descriptions.Item><Descriptions.Item label="最后更新">{historyStudent.updatedAt}</Descriptions.Item></Descriptions><Divider /><Typography.Text strong>历史记录</Typography.Text><Space orientation="vertical" size={12} style={{ display: "flex", marginTop: 14 }}><HistoryEvent title="学生资料建立" time={`${historyStudent.createdAt} 09:00`} /><HistoryEvent title={historyStudent.status === "INACTIVE" ? "学生已停用" : "资料最后更新"} time={historyStudent.updatedAt} /></Space></> : null}
       </Drawer>
+
+      <StudentImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onSuccess={handleBatchImport}
+        existingStudentNos={existingStudentNos}
+      />
     </div>
   );
 }
@@ -1214,30 +1260,388 @@ function ScoreRecordsPage() {
 
 function DisplayDevicesPage() {
   const { notification } = AntApp.useApp();
-  const { devices, bindDevice: persistBind, revokeDevice: persistRevoke } = useAdminDisplayDevices();
+  const {
+    devices,
+    createBindingCode,
+    pollBindingSession,
+    revokeDevice: persistRevoke,
+  } = useAdminDisplayDevices();
   const [bindOpen, setBindOpen] = useState(false);
-  const [form] = Form.useForm<BindDeviceFormValues>();
+  const [form] = Form.useForm<{ name: string }>();
+  const [createdSession, setCreatedSession] =
+    useState<AdminBindingSession | null>(null);
+  const [sessionBound, setSessionBound] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  const bindDevice = async (values: BindDeviceFormValues) => {
+  const handleClose = () => {
+    setBindOpen(false);
+    setCreatedSession(null);
+    setSessionBound(false);
+    setCopied(false);
+    form.resetFields();
+  };
+
+  const handleGenerateCode = async (values: { name: string }) => {
     if (devices.length >= 2) {
-      notification.error({ title: "已达到设备上限", description: "每个班级最多绑定两台有效大屏设备。" });
+      notification.error({
+        title: "已达到设备上限",
+        description: "每个班级最多绑定两台有效大屏设备。",
+      });
       return;
     }
-    await persistBind(values.name);
-    setBindOpen(false);
-    form.resetFields();
-    notification.success({ title: "大屏设备绑定成功", description: `${values.name} 已连接到 ${classroom.name}。` });
+    const session = await createBindingCode(values.name);
+    setCreatedSession(session);
+    setSessionBound(false);
+  };
+
+  useEffect(() => {
+    if (!bindOpen || !createdSession || sessionBound) return;
+
+    let stopped = false;
+    const checkStatus = async () => {
+      try {
+        const latest = await pollBindingSession(createdSession.sessionId);
+        if (stopped) return;
+        if (latest.status === "READY") {
+          setSessionBound(true);
+          notification.success({
+            title: "大屏设备绑定成功",
+            description: `${createdSession.deviceName} 已成功连接到 ${classroom.name}。`,
+          });
+        } else if (latest.status === "EXPIRED") {
+          notification.error({
+            title: "绑定码已过期",
+            description: "请关闭窗口后重新生成绑定码。",
+          });
+        }
+      } catch (error) {
+        if (!stopped) {
+          notification.error({
+            title: "绑定状态查询失败",
+            description: error instanceof Error ? error.message : "请稍后重试。",
+          });
+        }
+      }
+    };
+
+    void checkStatus();
+    const timer = window.setInterval(() => void checkStatus(), 1000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [bindOpen, createdSession, sessionBound, pollBindingSession, notification]);
+
+  const copyCode = () => {
+    if (createdSession?.code) {
+      void navigator.clipboard.writeText(createdSession.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const revokeDevice = async (device: DisplayDevice) => {
     await persistRevoke(device);
-    notification.success({ title: "设备已撤销", description: `${device.name} 的设备凭证已经失效。` });
+    notification.success({
+      title: "设备已撤销",
+      description: `${device.name} 的设备凭证已经失效。`,
+    });
   };
 
-  return <div><PageHeader title="大屏设备" description="管理课堂大屏绑定、在线状态与设备凭证。每个班级最多绑定 2 台有效设备。" action={<Button type="primary" icon={<PlusOutlined />} style={primaryButtonStyle} disabled={devices.length >= 2} onClick={() => setBindOpen(true)}>绑定新设备</Button>} /><Alert showIcon type={devices.length >= 2 ? "warning" : "info"} title={`当前已绑定 ${devices.length} / 2 台设备`} description={devices.length >= 2 ? "已达到班级设备上限，如需更换设备请先撤销现有绑定。" : "请在大屏设备的绑定页查看六位数字绑定码，再输入下方表单完成绑定。"} style={{ marginBottom: 16 }} /><Row gutter={[16, 16]}>{devices.map((device) => <Col key={device.id} xs={24} lg={12}><Card style={cardStyle} styles={{ body: { padding: 22 } }}><div style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start" }}><Space size={13}><div style={{ width: 48, height: 48, display: "grid", placeItems: "center", borderRadius: 14, background: device.status === "ONLINE" ? "#eaf8f1" : "#f1f3f6", color: device.status === "ONLINE" ? "#12a46b" : "#7f8da1", fontSize: 23 }}><DesktopIcon /></div><div><Typography.Title level={4} style={{ margin: 0 }}>{device.name}</Typography.Title><Typography.Text type="secondary" style={{ fontSize: 12 }}>设备 ID · {device.id}</Typography.Text></div></Space><Badge status={device.status === "ONLINE" ? "success" : "default"} text={device.status === "ONLINE" ? "在线" : "离线"} /></div><Divider style={{ margin: "20px 0" }} /><Descriptions column={1} size="small"><Descriptions.Item label="最后在线">{device.lastSeenAt}</Descriptions.Item><Descriptions.Item label="绑定时间">{device.boundAt}</Descriptions.Item><Descriptions.Item label="连接状态">{device.status === "ONLINE" ? <Typography.Text style={{ color: "#12a46b" }}>最近 90 秒内有心跳</Typography.Text> : <Typography.Text type="secondary">超过 90 秒未收到心跳</Typography.Text>}</Descriptions.Item></Descriptions><Popconfirm title="撤销这台设备？" description="撤销后设备凭证会立即失效，需要重新绑定。" okText="确认撤销" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => void revokeDevice(device)}><Button danger type="link" icon={<StopOutlined />} style={{ paddingInline: 0, marginTop: 12 }}>撤销设备</Button></Popconfirm></Card></Col>)}{devices.length === 0 && <Col span={24}><Card style={cardStyle}><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未绑定大屏设备" /></Card></Col>}</Row><Card style={{ ...cardStyle, marginTop: 16 }} styles={{ body: { padding: 22 } }}><SectionTitle title="绑定流程" description="大屏端和班主任端需要在 5 分钟内完成一次性绑定" /><Row gutter={[16, 16]}><Col xs={24} md={8}><Step index="01" title="大屏显示绑定码" detail="设备打开绑定页后生成六位数字码。" /></Col><Col xs={24} md={8}><Step index="02" title="管理端输入绑定码" detail="输入绑定码和设备名称确认班级归属。" /></Col><Col xs={24} md={8}><Step index="03" title="设备自动完成绑定" detail="设备轮询成功后领取长期凭证。" /></Col></Row></Card><Modal title="绑定大屏设备" open={bindOpen} onCancel={() => setBindOpen(false)} onOk={() => void form.submit()} okText="确认绑定" cancelText="取消"><Form form={form} layout="vertical" onFinish={bindDevice} requiredMark="optional"><Form.Item name="code" label="六位绑定码" rules={[{ required: true, message: "请输入六位数字绑定码" }, { pattern: /^\d{6}$/, message: "绑定码必须是六位数字" }]}><Input maxLength={6} inputMode="numeric" placeholder="例如：583921" /></Form.Item><Form.Item name="name" label="设备名称" rules={[{ required: true, message: "请输入设备名称" }, { validator: (_, value: string | undefined) => value?.trim() ? Promise.resolve() : Promise.reject(new Error("设备名称不能只有空白字符")) }]}><Input placeholder="例如：教室后方大屏" /></Form.Item><Alert type="warning" showIcon title="绑定码有效期 5 分钟，且只能被一个设备消费。" /></Form></Modal></div>;
-}
+  return (
+    <div>
+      <PageHeader
+        title="大屏设备"
+        description="管理课堂大屏绑定、在线状态与设备凭证。每个班级最多绑定 2 台有效设备。"
+        action={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            style={primaryButtonStyle}
+            disabled={devices.length >= 2}
+            onClick={() => setBindOpen(true)}
+          >
+            绑定新设备
+          </Button>
+        }
+      />
+      <Row gutter={[16, 16]}>
+        {devices.map((device) => (
+          <Col key={device.id} xs={24} lg={12}>
+            <Card style={cardStyle} styles={{ body: { padding: 22 } }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 14,
+                  alignItems: "flex-start",
+                }}
+              >
+                <Space size={13}>
+                  <div
+                    style={{
+                      width: 48,
+                      height: 48,
+                      display: "grid",
+                      placeItems: "center",
+                      borderRadius: 14,
+                      background:
+                        device.status === "ONLINE" ? "#eaf8f1" : "#f1f3f6",
+                      color: device.status === "ONLINE" ? "#12a46b" : "#7f8da1",
+                      fontSize: 23,
+                    }}
+                  >
+                    <DesktopIcon />
+                  </div>
+                  <div>
+                    <Typography.Title level={4} style={{ margin: 0 }}>
+                      {device.name}
+                    </Typography.Title>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      设备 ID · {device.id}
+                    </Typography.Text>
+                  </div>
+                </Space>
+                <Badge
+                  status={device.status === "ONLINE" ? "success" : "default"}
+                  text={device.status === "ONLINE" ? "在线" : "离线"}
+                />
+              </div>
+              <Divider style={{ margin: "20px 0" }} />
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label="最后在线">
+                  {device.lastSeenAt}
+                </Descriptions.Item>
+                <Descriptions.Item label="绑定时间">
+                  {device.boundAt}
+                </Descriptions.Item>
+                <Descriptions.Item label="连接状态">
+                  {device.status === "ONLINE" ? (
+                    <Typography.Text style={{ color: "#12a46b" }}>
+                      最近 90 秒内有心跳
+                    </Typography.Text>
+                  ) : (
+                    <Typography.Text type="secondary">
+                      超过 90 秒未收到心跳
+                    </Typography.Text>
+                  )}
+                </Descriptions.Item>
+              </Descriptions>
+              <Popconfirm
+                title="撤销这台设备？"
+                description="撤销后设备凭证会立即失效，需要重新绑定。"
+                okText="确认撤销"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => void revokeDevice(device)}
+              >
+                <Button
+                  danger
+                  type="link"
+                  icon={<StopOutlined />}
+                  style={{ paddingInline: 0, marginTop: 12 }}
+                >
+                  撤销设备
+                </Button>
+              </Popconfirm>
+            </Card>
+          </Col>
+        ))}
+        {devices.length === 0 && (
+          <Col span={24}>
+            <Card style={cardStyle}>
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="尚未绑定大屏设备"
+              />
+            </Card>
+          </Col>
+        )}
+      </Row>
+      <Card
+        style={{ ...cardStyle, marginTop: 16 }}
+        styles={{ body: { padding: 22 } }}
+      >
+        <SectionTitle
+          title="绑定流程"
+          description="在后台生成绑定码并在大屏端完成一次性绑定"
+        />
+        <Row gutter={[16, 16]}>
+          <Col xs={24} md={8}>
+            <Step
+              index="01"
+              title="管理端生成绑定码"
+              detail="输入设备名称后生成 10 分钟有效绑定码。"
+            />
+          </Col>
+          <Col xs={24} md={8}>
+            <Step
+              index="02"
+              title="大屏端输入绑定码"
+              detail="大屏打开绑定页输入 6 位数字绑定码。"
+            />
+          </Col>
+          <Col xs={24} md={8}>
+            <Step
+              index="03"
+              title="设备自动完成注册"
+              detail="大屏验证通过后自动注册并进入大屏。"
+            />
+          </Col>
+        </Row>
+      </Card>
+      <Modal
+        title={
+          createdSession
+            ? sessionBound
+              ? "绑定成功"
+              : "输入绑定码"
+            : "绑定新大屏设备"
+        }
+        open={bindOpen}
+        onCancel={handleClose}
+        footer={null}
+        destroyOnHidden
+        width={460}
+      >
+        {!createdSession ? (
+          <Form
+            form={form}
+            layout="vertical"
+            onFinish={handleGenerateCode}
+            requiredMark="optional"
+            style={{ marginTop: 16 }}
+          >
+            <Form.Item
+              name="name"
+              label="设备名称"
+              rules={[
+                { required: true, message: "请输入设备名称" },
+                {
+                  validator: (_, value: string | undefined) =>
+                    value?.trim()
+                      ? Promise.resolve()
+                      : Promise.reject(new Error("设备名称不能只有空白字符")),
+                },
+              ]}
+            >
+              <Input placeholder="例如：教室前方大屏" autoFocus />
+            </Form.Item>
+            <Alert
+              type="info"
+              showIcon
+              description="生成 10 分钟有效的 6 位绑定码，大屏端输入后即可完成绑定。"
+              style={{ marginBottom: 20 }}
+            />
+            <Flex justify="flex-end" gap={10}>
+              <Button onClick={handleClose}>取消</Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                style={primaryButtonStyle}
+              >
+                下一步，生成绑定码
+              </Button>
+            </Flex>
+          </Form>
+        ) : sessionBound ? (
+          <Result
+            status="success"
+            title="绑定成功"
+            subTitle={`${createdSession.deviceName} 已完成注册并接入班级`}
+            extra={[
+              <Button
+                type="primary"
+                key="close"
+                onClick={handleClose}
+                style={primaryButtonStyle}
+              >
+                完成
+              </Button>,
+            ]}
+            style={{ padding: "20px 0 10px" }}
+          />
+        ) : (
+          <div style={{ textAlign: "center", padding: "12px 0 8px" }}>
+            <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+              设备名称：
+              <Typography.Text strong>
+                {createdSession.deviceName}
+              </Typography.Text>
+            </Typography.Text>
 
-interface BindDeviceFormValues { code: string; name: string }
+            <div
+              style={{
+                background: "#f8fbff",
+                border: "1px solid #dce8fa",
+                borderRadius: 14,
+                padding: "20px 16px",
+                margin: "16px 0",
+              }}
+            >
+              <Typography.Text
+                style={{
+                  display: "block",
+                  fontFamily: "monospace",
+                  fontSize: 40,
+                  fontWeight: 700,
+                  letterSpacing: 6,
+                  color: "#0a59f7",
+                  lineHeight: 1.1,
+                }}
+              >
+                {createdSession.code.slice(0, 3)} {createdSession.code.slice(3)}
+              </Typography.Text>
+
+              <Flex
+                justify="center"
+                align="center"
+                gap={6}
+                style={{ marginTop: 10 }}
+              >
+                <ClockCircleOutlined
+                  style={{ color: "#faad14", fontSize: 13 }}
+                />
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  有效期 10 分钟
+                </Typography.Text>
+              </Flex>
+            </div>
+
+            <Flex vertical align="center" gap={14}>
+              <Button
+                icon={copied ? <CheckOutlined /> : <CopyOutlined />}
+                onClick={copyCode}
+                size="small"
+              >
+                {copied ? "已复制" : "复制绑定码"}
+              </Button>
+
+              <Tag
+                icon={<LoadingOutlined />}
+                color="processing"
+                style={{
+                  borderRadius: 999,
+                  padding: "4px 14px",
+                  fontSize: 12,
+                  margin: 0,
+                }}
+              >
+                等待大屏端输入绑定码...
+              </Tag>
+            </Flex>
+
+            <Divider style={{ margin: "20px 0 14px" }} />
+
+            <Flex justify="flex-end">
+              <Button onClick={handleClose}>关闭</Button>
+            </Flex>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
 
 
 function Step({ index, title, detail }: { index: string; title: string; detail: string }) {

@@ -1,11 +1,14 @@
 import type {
   BindDisplayInput,
   BindDisplayResult,
+  BindDisplayByCodeResult,
+  ClassroomBindingSessionStatus,
   Classroom,
   ClassroomSummary,
   ClassTeacher,
   ConsumeInvitationInput,
   CreateBindingCodeResult,
+  CreateClassroomBindingCodeResult,
   CreateCustomScoreInput,
   CreateRuleScoreInput,
   CreateScoreRuleInput,
@@ -17,6 +20,7 @@ import type {
   DisplayBootstrap,
   DisplayDevice,
   InvitationConsumeResult,
+  ImportedStudentInput,
   LoginInput,
   LoginResult,
   PaginatedEnvelope,
@@ -33,6 +37,7 @@ import type {
   SeatLayoutMutation,
   SeatLayoutVersionSummary,
   Student,
+  StudentImportResult,
   StudentListQuery,
   TeacherInvitation,
   TokenPair,
@@ -63,6 +68,7 @@ export interface ClassroomService {
   createStudent(classId: string, input: CreateStudentInput): Promise<Student>
   updateStudent(classId: string, studentId: string, input: UpdateStudentInput): Promise<Student>
   deactivateStudent(classId: string, studentId: string): Promise<Student>
+  importStudents?: (classId: string, input: ImportedStudentInput[]) => Promise<StudentImportResult>
 
   listTeachers(classId: string): Promise<ClassTeacher[]>
   createTeacher(classId: string, input: CreateTeacherInput): Promise<CreateTeacherResult>
@@ -73,6 +79,7 @@ export interface ClassroomService {
   ): Promise<ClassTeacher>
   createTeacherInvitation(classId: string, classTeacherId: string): Promise<TeacherInvitation>
   revokeTeacher(classId: string, classTeacherId: string): Promise<{ revoked: true }>
+  restoreTeacher?: (classId: string, classTeacherId: string) => Promise<{ restored: true }>
 
   listScoreRules(classId: string, enabled?: boolean): Promise<ScoreRule[]>
   createScoreRule(classId: string, input: CreateScoreRuleInput): Promise<ScoreRule>
@@ -100,6 +107,15 @@ export interface ClassroomService {
   randomPick(classId: string, input?: RandomPickInput): Promise<RandomPickResult>
 
   createBindingCode(): Promise<CreateBindingCodeResult>
+  createClassroomBindingCode?: (
+    classId: string,
+    name: string,
+  ) => Promise<CreateClassroomBindingCodeResult>
+  getClassroomBindingSessionStatus?: (
+    classId: string,
+    sessionId: string,
+  ) => Promise<ClassroomBindingSessionStatus>
+  bindDisplayByCode?: (code: string) => Promise<BindDisplayByCodeResult>
   pollBindingSession(
     bindingSessionId: string,
     input: PollBindingSessionInput,

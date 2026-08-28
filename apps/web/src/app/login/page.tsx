@@ -16,6 +16,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useClassroomService } from "@/components/providers/classroom-system-provider";
+import { useLogin } from "@/components/providers/query-hooks";
+import { ClassroomServiceError } from "@/lib/classroom-service";
+import { setActiveClassId, setUserSession } from "@/lib/session";
 
 const loginSchema = z.object({
   account: z.string().trim().min(1, "请输入账号"),
@@ -43,8 +47,11 @@ const roleCopy: Record<
 
 export default function LoginPage() {
   const router = useRouter();
+  const service = useClassroomService();
+  const login = useLogin();
   const [role, setRole] = useState<LoginRole>("HEAD_TEACHER");
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -66,18 +73,27 @@ export default function LoginPage() {
     });
   };
 
-  const onSubmit = async () => {
+  const onSubmit = async (values: LoginValues) => {
     setSubmitting(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 480));
+    setSubmitError(null);
     try {
-      window.localStorage.setItem(
-        "classroom.mock-session:v1",
-        JSON.stringify({ role, issuedAt: new Date().toISOString() }),
+      const result = await login.mutateAsync(values);
+      setUserSession(result);
+      const classrooms = await service.listClassrooms();
+      if (classrooms.length === 0) {
+        throw new Error("当前账号尚未分配班级");
+      }
+      setActiveClassId(classrooms[0].id);
+      router.push(roleCopy[role].destination);
+    } catch (error) {
+      setSubmitError(
+        error instanceof ClassroomServiceError || error instanceof Error
+          ? error.message
+          : "登录失败，请稍后重试",
       );
-    } catch {
-      // Private browsing or a full quota must not block the mock sign-in flow.
+    } finally {
+      setSubmitting(false);
     }
-    router.push(roleCopy[role].destination);
   };
 
   return (
@@ -156,6 +172,11 @@ export default function LoginPage() {
               </div>
 
               <form className="mt-7 space-y-5" onSubmit={handleSubmit(onSubmit)}>
+                {submitError ? (
+                  <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600" role="alert">
+                    {submitError}
+                  </p>
+                ) : null}
                 <div className="space-y-2">
                   <Label htmlFor="account">账号</Label>
                   <Input
@@ -199,7 +220,7 @@ export default function LoginPage() {
               </form>
 
               <p className="mt-7 text-center text-xs leading-5 text-muted-foreground">
-                当前版本接入本地 Mock 数据，不会向外部服务提交账号信息。
+                当前版本连接本地服务，账号信息仅提交到本机后端。
               </p>
             </div>
           </div>

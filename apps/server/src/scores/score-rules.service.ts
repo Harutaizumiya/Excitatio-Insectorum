@@ -21,6 +21,7 @@ export class ScoreRulesService {
   async create(classId: string, operatorId: string, dto: CreateScoreRuleDto) {
     this.assertNonZeroDelta(dto.delta);
     const name = this.normalizeName(dto.name);
+    const group = dto.group === undefined ? undefined : this.normalizeGroup(dto.group);
 
     return this.prisma.$transaction(async (tx) => {
       await this.assertHeadTeacher(tx, classId, operatorId);
@@ -28,6 +29,7 @@ export class ScoreRulesService {
         data: {
           classId,
           name,
+          group,
           delta: dto.delta,
           description: dto.description ?? null,
           createdBy: operatorId,
@@ -39,6 +41,7 @@ export class ScoreRulesService {
   async update(classId: string, ruleId: string, operatorId: string, dto: UpdateScoreRuleDto) {
     if (dto.delta !== undefined) this.assertNonZeroDelta(dto.delta);
     const name = dto.name === undefined ? undefined : this.normalizeName(dto.name);
+    const group = dto.group === undefined ? undefined : this.normalizeGroup(dto.group);
 
     return this.prisma.$transaction(async (tx) => {
       await this.assertHeadTeacher(tx, classId, operatorId);
@@ -54,6 +57,7 @@ export class ScoreRulesService {
         where: { id: ruleId },
         data: {
           name,
+          group,
           delta: dto.delta,
           description: dto.description,
           enabled: dto.enabled,
@@ -90,6 +94,14 @@ export class ScoreRulesService {
     const normalized = name.trim();
     if (!normalized) {
       throw new BusinessException('INVALID_SCORE_RULE_NAME', '积分规则名称不能为空');
+    }
+    return normalized;
+  }
+
+  private normalizeGroup(group: string): string {
+    const normalized = group.trim();
+    if (!normalized) {
+      throw new BusinessException('INVALID_SCORE_RULE_GROUP', '积分规则分组不能为空');
     }
     return normalized;
   }

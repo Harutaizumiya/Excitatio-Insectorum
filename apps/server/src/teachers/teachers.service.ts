@@ -28,7 +28,14 @@ export class TeachersService {
     await this.classrooms.assertAccess(userId, classId, [TeacherRole.HEAD_TEACHER]);
     return this.prisma.classTeacher.findMany({
       where: { classId },
-      include: { teacher: { select: { id: true, name: true, status: true } } },
+      include: {
+        teacher: { select: { id: true, name: true, status: true } },
+        invitations: {
+          select: { status: true, expiresAt: true, usedAt: true, createdAt: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
       orderBy: { createdAt: 'asc' },
     });
   }
@@ -110,6 +117,36 @@ export class TeachersService {
       });
     });
     this.realtime?.disconnectUser(relation.teacherId);
+  }
+
+  async restore(userId: string, classId: string, classTeacherId: string): Promise<void> {
+    await this.classrooms.assertAccess(userId, classId, [TeacherRole.HEAD_TEACHER]);
+    const relation = await this.prisma.classTeacher.findFirst({
+      where: {
+        id: classTeacherId,
+        classId,
+        role: TeacherRole.SUBJECT_TEACHER,
+        status: RelationStatus.REVOKED,
+      },
+      select: { teacherId: true },
+    });
+    if (!relation) {
+      throw new BusinessException(
+        'CLASS_TEACHER_NOT_FOUND',
+        '任课教师关系不存在或已启用',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    await this.prisma.$transaction([
+      this.prisma.classTeacher.update({
+        where: { id: classTeacherId },
+        data: { status: RelationStatus.ACTIVE },
+      }),
+      this.prisma.user.update({
+        where: { id: relation.teacherId },
+        data: { status: UserStatus.ACTIVE },
+      }),
+    ]);
   }
 
   async createInvitation(userId: string, classId: string, classTeacherId: string) {

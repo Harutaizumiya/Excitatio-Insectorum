@@ -20,11 +20,17 @@ import {
   X,
 } from "lucide-react"
 import {
-  classroomMock,
-  type ScoreRecord,
-  type ScoreRule,
-  type Student,
-} from "./classroom-model"
+  useClassroom,
+  useCreateCustomScore,
+  useCreateRuleScore,
+  useRandomPick,
+  useRevertScore,
+  useScoreRecords,
+  useScoreRules,
+  useStudents,
+} from "@/components/providers/query-hooks"
+import type { ScoreRecord, ScoreRule, Student } from "@/lib"
+import { getActiveClassId, getUserSession } from "@/lib/session"
 
 type Feedback = { tone: "success" | "error"; message: string } | null
 
@@ -61,7 +67,7 @@ function FeedbackBanner({ feedback }: { feedback: Feedback }): React.ReactElemen
   )
 }
 
-function TeacherHeader(): React.ReactElement {
+function TeacherHeader({ classroomName, subject, teacherName }: { classroomName: string; subject: string; teacherName: string }): React.ReactElement {
   return (
     <header className="sticky top-0 z-10 -mx-4 mb-4 border-b border-white/70 bg-[#eef5ff]/90 px-4 py-3 backdrop-blur-md sm:mx-0 sm:rounded-b-3xl sm:border sm:border-[#dbe9ff]">
       <div className="flex items-center justify-between gap-3">
@@ -76,8 +82,8 @@ function TeacherHeader(): React.ReactElement {
           />
           <div>
             <p className="text-xs font-medium tracking-[0.18em] text-[#55709d]">CLASSROOM QUICK ACTIONS</p>
-            <h1 className="mt-0.5 text-lg font-semibold tracking-tight text-[#102344]">{classroomMock.classroomName}</h1>
-            <p className="text-xs text-[#667794]">{classroomMock.subject} · {classroomMock.teacher.name}</p>
+            <h1 className="mt-0.5 text-lg font-semibold tracking-tight text-[#102344]">{classroomName}</h1>
+            <p className="text-xs text-[#667794]">{subject} · {teacherName}</p>
           </div>
         </div>
         <Link
@@ -178,14 +184,23 @@ function RandomPickPanel({
 }
 
 export function TeacherSurface(): React.ReactElement {
-  const [students] = useState<Student[]>(() => classroomMock.getStudents())
-  const [rules] = useState<ScoreRule[]>(() => classroomMock.getScoreRules())
-  const [records, setRecords] = useState<ScoreRecord[]>(() => classroomMock.getScoreRecords())
+  const classId = getActiveClassId() ?? "class-1"
+  const classroomQuery = useClassroom(classId)
+  const studentsQuery = useStudents(classId, { page: 1, pageSize: 100 })
+  const rulesQuery = useScoreRules(classId, true)
+  const recordsQuery = useScoreRecords(classId, { page: 1, pageSize: 100 })
+  const ruleScore = useCreateRuleScore(classId)
+  const customScore = useCreateCustomScore(classId)
+  const randomPick = useRandomPick(classId)
+  const studentsData = studentsQuery.data?.data
+  const students = useMemo(() => studentsData ?? [], [studentsData])
+  const rules = rulesQuery.data ?? []
+  const recordsData = recordsQuery.data?.data
+  const records = useMemo(() => recordsData ?? [], [recordsData])
   const [query, setQuery] = useState("")
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
   const [customDelta, setCustomDelta] = useState("2")
   const [customReason, setCustomReason] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [feedback, setFeedback] = useState<Feedback>(null)
   const [randomFeedback, setRandomFeedback] = useState<Feedback>(null)
   const [randomOpen, setRandomOpen] = useState(false)
@@ -197,51 +212,44 @@ export function TeacherSurface(): React.ReactElement {
     () => students.filter((student) => `${student.name}${student.studentNo}`.includes(query.trim())),
     [query, students],
   )
-  const selectedRecords = selectedStudent ? records.filter((record) => record.student.id === selectedStudent.id).slice(0, 3) : []
+  const selectedRecords = useMemo(
+    () => selectedStudent ? records.filter((record) => record.student.id === selectedStudent.id).slice(0, 3) : [],
+    [records, selectedStudent],
+  )
   const excludedStudents = students.filter((student) => excludedIds.includes(student.id))
-
-  function refreshRecords(): void {
-    setRecords(classroomMock.getScoreRecords())
-  }
 
   function showFeedback(next: Feedback): void {
     setFeedback(next)
     window.setTimeout(() => setFeedback(null), 2800)
   }
 
-  function handleRuleScore(rule: ScoreRule): void {
+  async function handleRuleScore(rule: ScoreRule): Promise<void> {
     if (!selectedStudent) return
-    setIsSubmitting(true)
     try {
-      classroomMock.addRuleScore(selectedStudent.id, rule.id)
-      refreshRecords()
+      await ruleScore.mutateAsync({ studentId: selectedStudent.id, ruleId: rule.id })
       showFeedback({ tone: "success", message: `${selectedStudent.name} · ${rule.name} 已记录` })
     } catch (error) {
       showFeedback({ tone: "error", message: error instanceof Error ? error.message : "记录失败，请稍后重试" })
-    } finally {
-      setIsSubmitting(false)
     }
   }
 
-  function handleCustomScore(event: React.FormEvent<HTMLFormElement>): void {
+  async function handleCustomScore(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     if (!selectedStudent) return
-    setIsSubmitting(true)
     try {
-      classroomMock.addCustomScore(selectedStudent.id, Number(customDelta), customReason)
-      refreshRecords()
+      await customScore.mutateAsync({ studentId: selectedStudent.id, delta: Number(customDelta), reason: customReason })
       setCustomReason("")
       showFeedback({ tone: "success", message: `${selectedStudent.name} · 自定义积分已记录` })
     } catch (error) {
       showFeedback({ tone: "error", message: error instanceof Error ? error.message : "请检查输入内容" })
-    } finally {
-      setIsSubmitting(false)
     }
   }
 
-  function handleRandomPick(): void {
+  async function handleRandomPick(): Promise<void> {
     try {
-      const picked = classroomMock.pickRandomStudent(excludedIds)
+      const result = await randomPick.mutateAsync(excludedIds)
+      const picked = students.find((student) => student.id === result.student.id)
+      if (!picked) throw new Error("点名结果中的学生不在当前班级")
       setRandomStudent(picked)
       setExcludedIds((current) => [...current, picked.id])
       setRandomFeedback({ tone: "success", message: `已点到 ${picked.name}` })
@@ -250,6 +258,8 @@ export function TeacherSurface(): React.ReactElement {
       setRandomFeedback({ tone: "error", message: error instanceof Error ? error.message : "暂时无法点名" })
     }
   }
+
+  const isSubmitting = ruleScore.isPending || customScore.isPending
 
   function resetRound(): void {
     setExcludedIds([])
@@ -260,7 +270,11 @@ export function TeacherSurface(): React.ReactElement {
   return (
     <main className="min-h-screen bg-[#eef5ff] px-4 pb-8 text-[#102344] sm:px-6">
       <div className="mx-auto w-full max-w-[430px]">
-        <TeacherHeader />
+        <TeacherHeader
+          classroomName={classroomQuery.data?.name ?? "班级工作台"}
+          subject={classroomQuery.data?.subject ?? "课堂"}
+          teacherName={getUserSession()?.user.name ?? "任课教师"}
+        />
         <div className="space-y-4">
           <button type="button" onClick={() => setRandomOpen(true)} className="flex min-h-[68px] w-full items-center justify-between rounded-3xl bg-[#0a59f7] px-5 text-left text-white shadow-[0_14px_28px_rgba(10,89,247,0.22)] transition hover:bg-[#084bd4] active:translate-y-px">
             <span className="flex items-center gap-3">
@@ -314,29 +328,33 @@ export function TeacherSurface(): React.ReactElement {
   )
 }
 
-function HistoryRecordCard({ record, onDetail, onRevert }: { record: ScoreRecord; onDetail: () => void; onRevert: () => void }): React.ReactElement {
+function HistoryRecordCard({ record, teacherId = getUserSession()?.user.id, onDetail, onRevert }: { record: ScoreRecord; teacherId?: string; onDetail: () => void; onRevert: () => void }): React.ReactElement {
   const isReverted = record.reverted || record.recordType === "REVERT"
-  return <article className="rounded-3xl border border-[#dce7f5] bg-white p-4 shadow-[0_6px_20px_rgba(42,82,141,0.05)]"><button type="button" onClick={onDetail} className="w-full text-left"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><span className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${record.delta > 0 ? "bg-[#eaf2ff] text-[#0a59f7]" : "bg-[#fff1f0] text-[#dd5148]"}`}>{record.delta > 0 ? <Plus className="size-5" aria-hidden="true" /> : <Minus className="size-5" aria-hidden="true" />}</span><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#213758]">{record.student.name} · {record.rule?.name ?? "自定义积分"}</p><p className="mt-1 flex items-center gap-1 text-xs text-[#8b9ab0]"><Clock3 className="size-3" aria-hidden="true" />{formatTime(record.createdAt)} · {record.operator.name}</p></div></div><span className={`shrink-0 text-base font-semibold ${record.delta > 0 ? "text-[#0a59f7]" : "text-[#dd5148]"}`}>{formatDelta(record.delta)}</span></div></button><div className="mt-3 flex items-center justify-between border-t border-[#edf1f6] pt-3"><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${isReverted ? "bg-[#f1f3f6] text-[#7d8999]" : "bg-[#edf4ff] text-[#3c66a1]"}`}>{isReverted ? "已撤销" : record.recordType === "REVERT" ? "撤销流水" : "有效记录"}</span>{!isReverted && record.operator.id === classroomMock.teacher.id ? <button type="button" onClick={onRevert} className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-[#667994] hover:bg-[#f2f5f9] hover:text-[#c44742]"><Undo2 className="size-4" aria-hidden="true" />撤销</button> : null}</div></article>
+  return <article className="rounded-3xl border border-[#dce7f5] bg-white p-4 shadow-[0_6px_20px_rgba(42,82,141,0.05)]"><button type="button" onClick={onDetail} className="w-full text-left"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><span className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${record.delta > 0 ? "bg-[#eaf2ff] text-[#0a59f7]" : "bg-[#fff1f0] text-[#dd5148]"}`}>{record.delta > 0 ? <Plus className="size-5" aria-hidden="true" /> : <Minus className="size-5" aria-hidden="true" />}</span><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#213758]">{record.student.name} · {record.rule?.name ?? "自定义积分"}</p><p className="mt-1 flex items-center gap-1 text-xs text-[#8b9ab0]"><Clock3 className="size-3" aria-hidden="true" />{formatTime(record.createdAt)} · {record.operator.name}</p></div></div><span className={`shrink-0 text-base font-semibold ${record.delta > 0 ? "text-[#0a59f7]" : "text-[#dd5148]"}`}>{formatDelta(record.delta)}</span></div></button><div className="mt-3 flex items-center justify-between border-t border-[#edf1f6] pt-3"><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${isReverted ? "bg-[#f1f3f6] text-[#7d8999]" : "bg-[#edf4ff] text-[#3c66a1]"}`}>{isReverted ? "已撤销" : record.recordType === "REVERT" ? "撤销流水" : "有效记录"}</span>{!isReverted && record.operator.id === teacherId ? <button type="button" onClick={onRevert} className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-[#667994] hover:bg-[#f2f5f9] hover:text-[#c44742]"><Undo2 className="size-4" aria-hidden="true" />撤销</button> : null}</div></article>
 }
 
 export function TeacherHistorySurface(): React.ReactElement {
-  const [records, setRecords] = useState<ScoreRecord[]>(() => classroomMock.getScoreRecords())
+  const classId = getActiveClassId() ?? "class-1"
+  const recordsQuery = useScoreRecords(classId, { page: 1, pageSize: 100 })
+  const revertScore = useRevertScore(classId)
+  const recordsData = recordsQuery.data?.data
+  const records = useMemo(() => recordsData ?? [], [recordsData])
+  const teacherId = getUserSession()?.user.id
   const [filter, setFilter] = useState<"all" | "mine" | "reverted">("all")
   const [selected, setSelected] = useState<ScoreRecord | null>(null)
   const [revertTarget, setRevertTarget] = useState<ScoreRecord | null>(null)
   const [feedback, setFeedback] = useState<Feedback>(null)
 
   const filtered = useMemo(() => records.filter((record) => {
-    if (filter === "mine") return record.operator.id === classroomMock.teacher.id
+    if (filter === "mine") return record.operator.id === teacherId
     if (filter === "reverted") return record.reverted || record.recordType === "REVERT"
     return true
-  }), [filter, records])
+  }), [filter, records, teacherId])
 
-  function confirmRevert(): void {
+  async function confirmRevert(): Promise<void> {
     if (!revertTarget) return
     try {
-      classroomMock.revertScore(revertTarget.id)
-      setRecords(classroomMock.getScoreRecords())
+      await revertScore.mutateAsync(revertTarget.id)
       setRevertTarget(null)
       setFeedback({ tone: "success", message: "已生成撤销流水，原记录保留" })
       window.setTimeout(() => setFeedback(null), 2800)
