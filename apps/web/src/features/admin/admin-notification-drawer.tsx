@@ -34,7 +34,7 @@ export function AdminNotificationDrawer({
   onClose,
 }: AdminNotificationDrawerProps) {
   const router = useRouter();
-  const { notifications, unreadCount, markAllAsRead, clearAll } =
+  const { notifications, unreadCount, markAsRead, markAllAsRead, clearAll } =
     useAdminNotifications();
 
   useEffect(() => {
@@ -44,6 +44,7 @@ export function AdminNotificationDrawer({
   }, [open, unreadCount, markAllAsRead]);
 
   const handleClick = (item: AdminNotification) => {
+    void markAsRead(item.id);
     if (item.targetHref) {
       onClose();
       router.push(item.targetHref);

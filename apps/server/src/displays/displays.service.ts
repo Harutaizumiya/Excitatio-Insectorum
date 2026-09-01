@@ -13,10 +13,11 @@ import { JwtService } from '@nestjs/jwt';
 import { DeviceStatus, Prisma, StudentStatus } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
 import { BusinessException, PrincipalType, type DisplayAccessTokenClaims } from '../common';
-import { PrismaService } from '../prisma';
+import { isPostgresDatabase, PrismaService } from '../prisma';
 import { RankingService } from '../ranking';
 import { RedisService } from '../redis';
 import { RealtimeService } from '../realtime';
+import { SchedulesService } from '../schedules';
 import type {
   BindByCodeDto,
   BindByCodeResponseDto,
@@ -67,6 +68,7 @@ export class DisplaysService {
     private readonly config: ConfigService,
     private readonly ranking: RankingService,
     @Optional() private readonly realtime?: RealtimeService,
+    @Optional() private readonly schedules?: SchedulesService,
   ) {}
 
   async createBindingCode(clientAddress: string): Promise<CreateBindingCodeResponseDto> {
@@ -336,8 +338,12 @@ export class DisplaysService {
       top3: Array<{ studentId: string; name: string; rank: number }>;
       progress: Array<{ studentId: string; name: string; change: number }>;
     };
+    schedule: {
+      periods: Array<{ periodNo: number; startTime: string; endTime: string }>;
+      entries: Array<{ weekday: number; periodNo: number; courseName: string }>;
+    };
   }> {
-    const [device, classroom, weeklyRanking] = await Promise.all([
+    const [device, classroom, weeklyRanking, schedule] = await Promise.all([
       this.prisma.displayDevice.findFirst({
         where: { id: deviceId, classId, status: DeviceStatus.ACTIVE },
         select: { id: true },
@@ -366,6 +372,7 @@ export class DisplaysService {
         },
       }),
       this.ranking.getWeeklyRanking(classId),
+      this.schedules?.getForDisplay(classId) ?? { periods: [], entries: [] },
     ]);
 
     if (!device) {
@@ -407,6 +414,7 @@ export class DisplaysService {
           change,
         })),
       },
+      schedule,
     };
   }
 
@@ -440,7 +448,9 @@ export class DisplaysService {
               select: { id: true },
             });
           },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+          isPostgresDatabase()
+            ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+            : undefined,
         );
         return;
       } catch (error) {

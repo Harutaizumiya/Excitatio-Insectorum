@@ -49,17 +49,44 @@ describe('DisplaysService', () => {
     const ranking = {
       getWeeklyRanking: jest.fn().mockResolvedValue({ top3: [], progress: [] }),
     };
+    const schedules = {
+      getForDisplay: jest.fn().mockResolvedValue({ periods: [], entries: [] }),
+    };
     const service = new DisplaysService(
       prisma as never,
       redis as never,
       jwt as never,
       config as never,
       ranking as never,
+      undefined,
+      schedules as never,
     );
-    return { service, prisma, redis, transaction, ranking };
+    return { service, prisma, redis, transaction, ranking, schedules };
   }
 
   beforeEach(() => jest.clearAllMocks());
+
+  it('includes the active schedule snapshot in display bootstrap', async () => {
+    const { service, prisma, schedules } = setup();
+    prisma.displayDevice.findFirst.mockResolvedValue({ id: 'display-1' });
+    prisma.classroom.findUnique.mockResolvedValue({
+      id: 'class-1',
+      name: '一年级一班',
+      gridRows: 7,
+      gridCols: 11,
+      currentLayout: null,
+    });
+    schedules.getForDisplay.mockResolvedValue({
+      periods: [{ periodNo: 1, startTime: '08:00', endTime: '08:40' }],
+      entries: [{ weekday: 3, periodNo: 1, courseName: '数学' }],
+    });
+
+    const result = await service.getBootstrap('display-1', 'class-1');
+    expect(result.schedule).toEqual({
+      periods: [{ periodNo: 1, startTime: '08:00', endTime: '08:40' }],
+      entries: [{ weekday: 3, periodNo: 1, courseName: '数学' }],
+    });
+  });
 
   it('creates a six-digit code and both Redis records with a ten-minute TTL', async () => {
     const { service, redis } = setup();

@@ -7,6 +7,7 @@ import type {
   BindDisplayInput,
   BindDisplayResult,
   Classroom,
+  ClassSchedule,
   ClassroomBindingSessionStatus,
   ClassroomSummary,
   ClassTeacher,
@@ -34,6 +35,7 @@ import type {
   RandomPickResult,
   RefreshInput,
   SaveSeatLayoutInput,
+  SaveClassScheduleInput,
   ScoreRecord,
   ScoreRecordListQuery,
   ScoreRule,
@@ -340,6 +342,17 @@ export class ApiClassroomService implements ClassroomService {
   async restoreSeatLayout(classId: string, versionId: string): Promise<SeatLayoutMutation & { sourceVersionId: string }> {
     return this.request<SeatLayoutMutation & { sourceVersionId: string }>(`/classes/${encodeURIComponent(classId)}/seat-layout/versions/${encodeURIComponent(versionId)}/restore`, {
       method: "POST",
+    })
+  }
+
+  async getSchedule(classId: string): Promise<ClassSchedule> {
+    return this.request<ClassSchedule>(`/classes/${encodeURIComponent(classId)}/schedule`)
+  }
+
+  async saveSchedule(classId: string, input: SaveClassScheduleInput): Promise<ClassSchedule> {
+    return this.request<ClassSchedule>(`/classes/${encodeURIComponent(classId)}/schedule`, {
+      method: "PUT",
+      body: jsonBody(input),
     })
   }
 

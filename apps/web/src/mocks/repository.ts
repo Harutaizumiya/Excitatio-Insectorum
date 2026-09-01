@@ -2,6 +2,7 @@ import { createMockDatabaseState } from "./data"
 import type { MockDatabaseState } from "./types"
 
 const MOCK_CLOCK_ORIGIN = Date.parse("2026-08-26T02:30:00.000Z")
+const STORAGE_KEY = "classroom-mock-database-v2"
 
 function clone<T>(value: T): T {
   return structuredClone(value)
@@ -11,7 +12,7 @@ export class MockClassroomRepository {
   private state: MockDatabaseState
 
   constructor(initialState: MockDatabaseState = createMockDatabaseState()) {
-    this.state = clone(initialState)
+    this.state = clone(this.load(initialState))
   }
 
   read<TResult>(reader: (state: Readonly<MockDatabaseState>) => TResult): TResult {
@@ -21,7 +22,9 @@ export class MockClassroomRepository {
   transact<TResult>(operation: (state: MockDatabaseState) => TResult): TResult {
     const previous = clone(this.state)
     try {
-      return clone(operation(this.state))
+      const result = clone(operation(this.state))
+      this.persist()
+      return result
     } catch (error) {
       this.state = previous
       throw error
@@ -41,5 +44,35 @@ export class MockClassroomRepository {
 
   reset(): void {
     this.state = createMockDatabaseState()
+    this.persist()
+  }
+
+  private load(initialState: MockDatabaseState): MockDatabaseState {
+    if (typeof window === "undefined") return initialState
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null") as Partial<MockDatabaseState> | null
+      if (!parsed) return initialState
+      return {
+        ...initialState,
+        ...parsed,
+        classrooms: initialState.classrooms.map((classroom) => ({
+          ...classroom,
+          ...parsed.classrooms?.find((item) => item.id === classroom.id),
+        })),
+        scheduleTemplates: parsed.scheduleTemplates ?? initialState.scheduleTemplates,
+        scheduleEntries: parsed.scheduleEntries ?? initialState.scheduleEntries,
+      }
+    } catch {
+      return initialState
+    }
+  }
+
+  private persist(): void {
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state))
+    } catch {
+      // Mock persistence is best effort.
+    }
   }
 }

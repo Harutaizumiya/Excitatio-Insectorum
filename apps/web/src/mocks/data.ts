@@ -7,7 +7,13 @@ import type {
   Student,
 } from "@/lib/domain"
 
-import type { MockDatabaseState, MockDisplayDevice, MockScoreRecord } from "./types"
+import type {
+  MockDatabaseState,
+  MockDisplayDevice,
+  MockScheduleEntry,
+  MockScheduleTemplate,
+  MockScoreRecord,
+} from "./types"
 
 export const MOCK_CLASS_ID = "class-1"
 export const MOCK_HEAD_TEACHER_ID = "teacher-lin"
@@ -162,26 +168,38 @@ function createScoreRules(): ScoreRule[] {
   ]
 }
 
-function seatFor(student: Student, index: number, version: number): Seat {
-  return {
-    id: `seat-v${version}-${String(index + 1).padStart(2, "0")}`,
-    row: Math.floor(index / 6),
-    col: (index % 6) + 1,
-    student: { id: student.id, name: student.name },
-  }
-}
-
 function createSeatVersions(students: Student[]): SeatLayoutVersion[] {
   const active = students.filter((student) => student.status === "ACTIVE")
-  const historical = students.filter((student) => student.status === "INACTIVE")
-  const versionOneStudents = [...active.slice(0, 28), ...historical]
+  const studentPositions = new Map([
+    ["1-0", active[0]], ["1-1", active[1]], ["1-3", active[2]], ["1-4", active[3]],
+    ["1-6", active[4]], ["1-7", active[5]], ["1-9", active[6]],
+  ])
+  const createSeats = (version: number): Seat[] => Array.from({ length: 7 * 11 }, (_, index) => {
+    const row = Math.floor(index / 11)
+    const col = index % 11
+    const student = studentPositions.get(`${row}-${col}`)
+    const cellType = row === 0 && col === 4
+      ? "podium"
+      : row === 0
+        ? "empty"
+        : [2, 5, 8].includes(col)
+          ? "aisle"
+          : "seat"
+    return {
+      id: `cell-v${version}-${row}-${col}`,
+      row,
+      col,
+      cellType,
+      student: cellType === "seat" && student ? { id: student.id, name: student.name } : null,
+    }
+  })
   return [
     {
       versionId: "layout-version-1",
       version: 1,
-      rows: 6,
-      cols: 8,
-      seats: versionOneStudents.map((student, index) => seatFor(student, index, 1)),
+      rows: 7,
+      cols: 11,
+      seats: createSeats(1),
       classId: MOCK_CLASS_ID,
       sourceVersionId: null,
       createdBy: MOCK_HEAD_TEACHER_ID,
@@ -190,9 +208,9 @@ function createSeatVersions(students: Student[]): SeatLayoutVersion[] {
     {
       versionId: "layout-version-2",
       version: 2,
-      rows: 6,
-      cols: 8,
-      seats: active.map((student, index) => seatFor(student, index, 2)),
+      rows: 7,
+      cols: 11,
+      seats: createSeats(2),
       classId: MOCK_CLASS_ID,
       sourceVersionId: null,
       createdBy: MOCK_HEAD_TEACHER_ID,
@@ -304,6 +322,58 @@ function createDisplayDevices(): MockDisplayDevice[] {
   ]
 }
 
+const STANDARD_PERIODS = [
+  ["08:00", "08:40"], ["08:50", "09:30"], ["09:50", "10:30"], ["10:40", "11:20"],
+  ["14:00", "14:40"], ["14:50", "15:30"], ["15:50", "16:30"], ["16:40", "17:20"],
+] as const
+
+function createScheduleTemplates(): MockScheduleTemplate[] {
+  return [
+    {
+      id: "schedule-template-standard",
+      classId: MOCK_CLASS_ID,
+      name: "标准作息",
+      periods: STANDARD_PERIODS.map(([startTime, endTime], index) => ({ periodNo: index + 1, startTime, endTime })),
+    },
+    {
+      id: "schedule-template-late",
+      classId: MOCK_CLASS_ID,
+      name: "晚起作息",
+      periods: STANDARD_PERIODS.map(([startTime, endTime], index) => {
+        const [hour, minute] = startTime.split(":").map(Number)
+        const [endHour, endMinute] = endTime.split(":").map(Number)
+        const shiftedStart = hour * 60 + minute + 30
+        const shiftedEnd = endHour * 60 + endMinute + 30
+        return {
+          periodNo: index + 1,
+          startTime: `${String(Math.floor(shiftedStart / 60)).padStart(2, "0")}:${String(shiftedStart % 60).padStart(2, "0")}`,
+          endTime: `${String(Math.floor(shiftedEnd / 60)).padStart(2, "0")}:${String(shiftedEnd % 60).padStart(2, "0")}`,
+        }
+      }),
+    },
+  ]
+}
+
+function createScheduleEntries(): MockScheduleEntry[] {
+  const courses = [
+    ["语文", "relation-head-lin"], ["数学", "relation-wang-math"], ["英语", "relation-chen-english"],
+    ["物理", "relation-li-physics"], ["化学", null], ["历史", null], ["生物", null], ["自习", null],
+  ] as const
+  return Array.from({ length: 5 * courses.length }, (_, index) => {
+    const weekday = Math.floor(index / courses.length) + 1
+    const periodNo = (index % courses.length) + 1
+    const [courseName, classTeacherId] = courses[index % courses.length]
+    return {
+      id: `schedule-entry-${weekday}-${periodNo}`,
+      classId: MOCK_CLASS_ID,
+      weekday,
+      periodNo,
+      courseName,
+      classTeacherId,
+    }
+  })
+}
+
 export function createMockDatabaseState(): MockDatabaseState {
   const students = createStudents()
   const classroom: Classroom = {
@@ -311,8 +381,9 @@ export function createMockDatabaseState(): MockDatabaseState {
     name: "海州市第一中学·高一（3）班",
     grade: "高一",
     schoolYear: "2026-2027",
-    gridRows: 6,
-    gridCols: 8,
+    gridRows: 7,
+    gridCols: 11,
+    activeScheduleTemplateId: "schedule-template-standard",
     currentLayoutVersionId: "layout-version-2",
     role: "HEAD_TEACHER",
     subject: "语文",
@@ -324,6 +395,8 @@ export function createMockDatabaseState(): MockDatabaseState {
     classrooms: [classroom],
     students,
     teachers: createTeachers(),
+    scheduleTemplates: createScheduleTemplates(),
+    scheduleEntries: createScheduleEntries(),
     scoreRules: createScoreRules(),
     scoreRecords: createScoreRecords(),
     seatLayoutVersions: createSeatVersions(students),

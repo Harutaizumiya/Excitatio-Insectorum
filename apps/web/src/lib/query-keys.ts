@@ -6,6 +6,7 @@ export const classroomQueryKeys = {
   students: (classId: string, query: StudentListQuery = {}) =>
     ["classrooms", classId, "students", query] as const,
   teachers: (classId: string) => ["classrooms", classId, "teachers"] as const,
+  schedule: (classId: string) => ["classrooms", classId, "schedule"] as const,
   seatLayout: (classId: string) => ["classrooms", classId, "seat-layout"] as const,
   seatLayoutVersions: (classId: string, page = 1, pageSize = 20) =>
     ["classrooms", classId, "seat-layout", "versions", page, pageSize] as const,

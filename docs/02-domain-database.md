@@ -2,7 +2,8 @@
 
 ## 1. 数据库选型
 
-- PostgreSQL
+- SQLite（当前版本默认启用）
+- PostgreSQL（保留兼容支持，按需切换）
 - ORM：Prisma
 - Migration：Prisma Migrate
 - 所有时间统一使用 UTC 存储。
@@ -24,6 +25,9 @@ MVP 核心表：
 8. ScoreRule
 9. ScoreRecord
 10. DisplayDevice
+11. ScheduleTemplate
+12. ScheduleTemplatePeriod
+13. ScheduleEntry
 
 建议额外保留：
 
@@ -46,6 +50,9 @@ User
 │                               │          └── 1:N Seat
 │                               ├── 1:N ScoreRule
 │                               ├── 1:N ScoreRecord
+│                               ├── 1:N ScheduleTemplate
+│                               │          └── 1:N ScheduleTemplatePeriod
+│                               ├── 1:N ScheduleEntry
 │                               └── 1:N DisplayDevice
 │
 └── 1:N TeacherInvitation
@@ -95,6 +102,7 @@ Classroom
 - gridRows
 - gridCols
 - currentLayoutVersionId
+- activeScheduleTemplateId
 - status
 - createdAt
 - updatedAt
@@ -106,6 +114,19 @@ Classroom
 - `gridCols >= 1`
 - 当前 MVP 建议限制最大值，例如 `20 × 20`。
 - `currentLayoutVersionId` 可为空，表示尚未建立座位布局。
+- `activeScheduleTemplateId` 可为空，表示尚未建立课表；当前模板覆盖整周课程。
+
+### 5.1 课表
+
+`ScheduleTemplate` 保存班级作息模板，`ScheduleTemplatePeriod` 保存节次时间，`ScheduleEntry` 保存周一至周日的课程格子。
+
+```text
+ScheduleTemplate: id, classId, name
+ScheduleTemplatePeriod: id, templateId, periodNo, startTime, endTime
+ScheduleEntry: id, classId, weekday, periodNo, courseName, classTeacherId?
+```
+
+模板最多 12 节，节次编号一致；时间使用 `HH:mm` 且不得重叠；课程格子以 `classId + weekday + periodNo` 唯一；任课教师必须是本班 ACTIVE `ClassTeacher`。
 
 ---
 

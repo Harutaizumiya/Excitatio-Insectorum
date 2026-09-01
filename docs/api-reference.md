@@ -154,7 +154,16 @@
 
 历史版本 Query 支持 `page`（默认 1）和 `pageSize`（默认 20）。
 
-### 4.6 Score Rules
+### 4.6 Schedule
+
+| 方法 | 路径 | 权限 | 请求 | 用途 |
+| ---- | ---- | ---- | ---- | ---- |
+| GET | `/classes/:classId/schedule` | HEAD / SUBJECT | 无 | 获取周课表与作息模板 |
+| PUT | `/classes/:classId/schedule` | HEAD | `SaveScheduleRequest` | 事务保存模板、当前模板和课程 |
+
+`SaveScheduleRequest` 的模板节次使用 `periodNo`、`startTime`、`endTime`；时间格式为 `HH:mm`，模板最多 12 节且节次集合一致。课程名称必填，`classTeacherId` 只能引用本班 ACTIVE 任课教师。
+
+### 4.7 Score Rules
 
 | 方法  | 路径                                            | 权限           | 请求                     | 用途         |
 | ----- | ----------------------------------------------- | -------------- | ------------------------ | ------------ |
@@ -163,7 +172,7 @@
 | PATCH | `/classes/:classId/score-rules/:ruleId`         | HEAD           | `UpdateScoreRuleRequest` | 更新积分规则 |
 | POST  | `/classes/:classId/score-rules/:ruleId/disable` | HEAD           | 无                       | 停用积分规则 |
 
-### 4.7 Score Records
+### 4.8 Score Records
 
 | 方法 | 路径                                        | 权限           | 请求                 | 用途             |
 | ---- | ------------------------------------------- | -------------- | -------------------- | ---------------- |
@@ -185,7 +194,7 @@
 
 任课教师只能撤销本人创建的积分记录；班主任可以撤销本班任意可撤销记录。
 
-### 4.8 Ranking and Random Pick
+### 4.9 Ranking and Random Pick
 
 | 方法 | 路径                            | 权限           | 请求                | 用途                       |
 | ---- | ------------------------------- | -------------- | ------------------- | -------------------------- |
@@ -194,7 +203,7 @@
 
 排行榜使用 UTC 周一 00:00 为周边界，响应不返回学生积分。
 
-### 4.9 Display
+### 4.10 Display
 
 | 方法 | 路径                                                 | 权限           | 请求                        | 用途                           |
 | ---- | ---------------------------------------------------- | -------------- | --------------------------- | ------------------------------ |
@@ -363,6 +372,12 @@ interface ClassroomSummary {
   gridCols: number;
   role: 'HEAD_TEACHER' | 'SUBJECT_TEACHER';
   subject: string | null;
+}
+
+interface ClassSchedule {
+  activeTemplateId: string | null;
+  templates: Array<{ id: string; name: string; periods: Array<{ periodNo: number; startTime: string; endTime: string }> }>;
+  entries: Array<{ weekday: number; periodNo: number; courseName: string; classTeacherId: string | null; teacher: { id: string; name: string } | null }>;
 }
 
 interface Student {
@@ -588,6 +603,7 @@ interface ClassRealtimeEvent<T> {
     | 'RANKING_CHANGED'
     | 'SEAT_LAYOUT_CHANGED'
     | 'STUDENT_CHANGED'
+    | 'SCHEDULE_CHANGED'
     | 'RANDOM_PICKED';
   classId: string;
   occurredAt: string;
@@ -602,9 +618,10 @@ interface ClassRealtimeEvent<T> {
 | `RANKING_CHANGED`     | `{ period: "WEEK" }`                                         |
 | `SEAT_LAYOUT_CHANGED` | `{ version }`                                                |
 | `STUDENT_CHANGED`     | `{ studentId, action: "CREATED"\|"UPDATED"\|"DEACTIVATED" }` |
+| `SCHEDULE_CHANGED`    | `{ activeTemplateId }`                                      |
 | `RANDOM_PICKED`       | `{ studentId, name, displayDurationMs: 8000 }`               |
 
-客户端首次连接和每次重连后都应调用 `GET /display/bootstrap`，以 REST/PostgreSQL
+客户端首次连接和每次重连后都应调用 `GET /display/bootstrap`，以 REST/数据库
 状态覆盖本地状态；实时事件只用于通知和临时动画。
 
 ## 9. 限流与安全注意事项

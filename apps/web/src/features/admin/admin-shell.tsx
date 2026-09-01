@@ -3,6 +3,7 @@
 import {
   AppstoreOutlined,
   BellOutlined,
+  CalendarOutlined,
   BookOutlined,
   DesktopOutlined,
   ExclamationCircleOutlined,
@@ -24,7 +25,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { adminResources, classroom, cloneSeats, navItems, type AdminRoute } from "./admin-data";
 import { AdminNotificationDrawer } from "./admin-notification-drawer";
-import { useAdminNotifications, useAdminSeating } from "./admin-queries";
+import { useAdminNotifications, useAdminSchedule, useAdminSeating } from "./admin-queries";
 
 const { Header, Sider, Content } = Layout;
 
@@ -32,6 +33,7 @@ const iconByRoute: Record<AdminRoute, ReactNode> = {
   overview: <AppstoreOutlined />,
   students: <TeamOutlined />,
   seating: <LayoutOutlined />,
+  schedule: <CalendarOutlined />,
   teachers: <ReadOutlined />,
   "score-rules": <BookOutlined />,
   "score-records": <FileTextOutlined />,
@@ -42,6 +44,7 @@ const pageTitleByPath: Record<string, string> = {
   "/admin": "班级概览",
   "/admin/students": "学生管理",
   "/admin/seating": "座位管理",
+  "/admin/schedule": "课程表",
   "/admin/teachers": "任课教师",
   "/admin/score-rules": "积分规则",
   "/admin/score-records": "积分流水",
@@ -96,18 +99,19 @@ function AdminShellContent({ children }: AdminShellProps) {
   const title = pageTitleByPath[pathname] ?? "班级概览";
 
   const { isDirty, savedLayout, updateDraft } = useAdminSeating();
-  const { unreadCount } = useAdminNotifications();
+  const { isDirty: isScheduleDirty, savedSchedule, updateDraft: updateScheduleDraft } = useAdminSchedule();
+  const { unreadCount, markAllAsRead } = useAdminNotifications();
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (currentRoute === "seating" && isDirty) {
+      if ((currentRoute === "seating" && isDirty) || (currentRoute === "schedule" && isScheduleDirty)) {
         e.preventDefault();
         e.returnValue = "";
       }
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [currentRoute, isDirty]);
+  }, [currentRoute, isDirty, isScheduleDirty]);
 
   const handleNavClick = (e: React.MouseEvent, href: string) => {
     if (currentRoute === "seating" && isDirty && href !== "/admin/seating") {
@@ -121,6 +125,26 @@ function AdminShellContent({ children }: AdminShellProps) {
         cancelText: "留在原处",
         onOk: () => {
           updateDraft({ ...savedLayout, seats: cloneSeats(savedLayout.seats) });
+          router.push(href);
+        },
+      });
+      return;
+    }
+    if (currentRoute === "schedule" && isScheduleDirty && href !== "/admin/schedule") {
+      e.preventDefault();
+      modal.confirm({
+        title: "课程表未保存",
+        icon: <ExclamationCircleOutlined style={{ color: "#faad14" }} />,
+        content: "未保存的修改将丢失，确定离开？",
+        okText: "离开",
+        okButtonProps: { danger: true },
+        cancelText: "取消",
+        onOk: () => {
+          updateScheduleDraft({
+            ...savedSchedule,
+            templates: savedSchedule.templates.map((template) => ({ ...template, periods: template.periods.map((period) => ({ ...period })) })),
+            entries: savedSchedule.entries.map((entry) => ({ ...entry })),
+          });
           router.push(href);
         },
       });
@@ -250,9 +274,6 @@ function AdminShellContent({ children }: AdminShellProps) {
                           {iconByRoute[item.key]}
                         </span>
                         {!collapsed && <span>{item.label}</span>}
-                        {!collapsed && item.key === "score-records" && (
-                          <Badge count={3} size="small" style={{ marginLeft: "auto" }} />
-                        )}
                       </Link>
                     );
                   })}
@@ -328,7 +349,10 @@ function AdminShellContent({ children }: AdminShellProps) {
                     shape="circle"
                     icon={<BellOutlined />}
                     aria-label="通知"
-                    onClick={() => setNotificationDrawerOpen(true)}
+                    onClick={() => {
+                      setNotificationDrawerOpen(true);
+                      void markAllAsRead();
+                    }}
                   />
                 </Badge>
                 <Space size={9}>

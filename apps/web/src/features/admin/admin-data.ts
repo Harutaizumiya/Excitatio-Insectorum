@@ -14,6 +14,7 @@ export type AdminRoute =
   | "overview"
   | "students"
   | "seating"
+  | "schedule"
   | "teachers"
   | "score-rules"
   | "score-records"
@@ -115,7 +116,7 @@ export const classroom: Pick<ApiClassroomSummary, "id" | "name" | "grade" | "gri
   school: "南昌市第二中学",
   teacherName: "林怡君",
   gridRows: 7,
-  gridCols: 9,
+  gridCols: 11,
 };
 
 export const navItems: Array<{
@@ -127,6 +128,7 @@ export const navItems: Array<{
   { key: "overview", label: "班级概览", href: "/admin", description: "查看班级运行状态" },
   { key: "students", label: "学生管理", href: "/admin/students", description: "维护学生与学号" },
   { key: "seating", label: "座位管理", href: "/admin/seating", description: "编辑课堂座位布局" },
+  { key: "schedule", label: "课程表", href: "/admin/schedule", description: "编辑班级课程表" },
   { key: "teachers", label: "任课教师", href: "/admin/teachers", description: "管理教师关系与邀请" },
   { key: "score-rules", label: "积分规则", href: "/admin/score-rules", description: "配置快捷积分规则" },
   { key: "score-records", label: "积分记录", href: "/admin/score-records", description: "查看与撤销积分记录" },
@@ -403,37 +405,32 @@ export const initialRecords: ScoreRecord[] = [
   },
 ];
 
-export const initialSeats: Seat[] = [
-  { id: "seat-1-0", row: 1, col: 0, studentId: "stu-001" },
-  { id: "seat-1-1", row: 1, col: 1, studentId: "stu-002" },
-  { id: "seat-1-2", row: 1, col: 2, studentId: "stu-003" },
-  { id: "seat-1-3", row: 1, col: 3, studentId: "stu-004" },
-  { id: "seat-1-5", row: 1, col: 5, studentId: "stu-005" },
-  { id: "seat-1-7", row: 1, col: 7, studentId: "stu-006" },
-  { id: "seat-1-8", row: 1, col: 8, studentId: "stu-007" },
-  { id: "seat-2-0", row: 2, col: 0, studentId: "stu-008" },
-  { id: "seat-2-1", row: 2, col: 1, studentId: "stu-009" },
-  { id: "seat-2-2", row: 2, col: 2, studentId: "stu-010" },
-  { id: "seat-2-3", row: 2, col: 3, studentId: "stu-011" },
-  { id: "seat-2-5", row: 2, col: 5, studentId: null },
-  { id: "seat-2-7", row: 2, col: 7, studentId: null },
-  { id: "seat-2-8", row: 2, col: 8, studentId: null },
-  { id: "seat-3-0", row: 3, col: 0, studentId: null },
-  { id: "seat-3-1", row: 3, col: 1, studentId: null },
-  { id: "seat-3-2", row: 3, col: 2, studentId: null },
-  { id: "seat-3-3", row: 3, col: 3, studentId: null },
-  { id: "seat-3-5", row: 3, col: 5, studentId: null },
-  { id: "seat-3-7", row: 3, col: 7, studentId: null },
-  { id: "seat-3-8", row: 3, col: 8, studentId: null },
-  { id: "cell-0-4", row: 0, col: 4, studentId: null, cellType: "podium" },
-  ...[1, 2, 3, 4, 5, 6].flatMap((row) => [4, 6].map((col) => ({
+const defaultAisleColumns = [2, 5, 8];
+const defaultStudentPositions = new Map([
+  ["1-0", "stu-001"], ["1-1", "stu-002"], ["1-3", "stu-003"],
+  ["1-4", "stu-004"], ["1-6", "stu-005"], ["1-7", "stu-006"], ["1-9", "stu-007"],
+]);
+
+export const initialSeats: Seat[] = Array.from({ length: classroom.gridRows * classroom.gridCols }, (_, index) => {
+  const row = Math.floor(index / classroom.gridCols);
+  const col = index % classroom.gridCols;
+  const key = `${row}-${col}`;
+  const cellType = row === 0 && col === 4
+    ? "podium"
+    : row === 0
+      ? "empty"
+      : defaultAisleColumns.includes(col)
+        ? "aisle"
+        : "seat";
+
+  return {
     id: `cell-${row}-${col}`,
     row,
     col,
-    studentId: null,
-    cellType: "aisle" as const,
-  }))),
-];
+    studentId: cellType === "seat" ? defaultStudentPositions.get(key) ?? null : null,
+    cellType,
+  };
+});
 
 export const initialVersions: SeatLayoutVersion[] = [
   {
@@ -454,7 +451,7 @@ export const initialVersions: SeatLayoutVersion[] = [
     gridRows: classroom.gridRows,
     gridCols: classroom.gridCols,
     seats: initialSeats.map((seat) =>
-      seat.id === "seat-2-3" ? { ...seat, studentId: null } : seat,
+      seat.id === "cell-2-3" ? { ...seat, studentId: null } : seat,
     ),
     sourceVersionId: null,
   },

@@ -10,7 +10,6 @@ import {
   RollbackOutlined,
 } from "@ant-design/icons";
 import {
-  Alert,
   App as AntApp,
   Button,
   Card,
@@ -56,16 +55,15 @@ export function DisplayBindSurface(): ReactElement {
 function DisplayBindContent(): ReactElement {
   const router = useRouter();
   const service = useClassroomService();
+  const { message } = AntApp.useApp();
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<BindingStatus>("INPUT");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [classroomName, setClassroomName] = useState<string>("");
   const [redirectSeconds, setRedirectSeconds] = useState(3);
 
   const handleSubmit = async (inputCode: string) => {
     if (inputCode.length !== 6) return;
     setStatus("SUBMITTING");
-    setErrorMessage(null);
 
     try {
       if (service.bindDisplayByCode) {
@@ -80,14 +78,17 @@ function DisplayBindContent(): ReactElement {
       setRedirectSeconds(3);
     } catch (error) {
       setStatus("INPUT");
-      setErrorMessage(error instanceof Error ? error.message : "绑定失败，请稍后重试");
       setCode("");
+      const errorText =
+        error instanceof Error
+          ? error.message
+          : "绑定码无效、已过期或已被使用";
+      message.error(errorText);
     }
   };
 
   const handleKeypadPress = (key: string) => {
     if (status !== "INPUT") return;
-    setErrorMessage(null);
 
     if (key === "BACK") {
       setCode((prev) => prev.slice(0, -1));
@@ -105,7 +106,6 @@ function DisplayBindContent(): ReactElement {
   };
 
   const handleOtpChange = (value: string) => {
-    setErrorMessage(null);
     setCode(value);
     if (value.length === 6) {
       void handleSubmit(value);
@@ -203,15 +203,6 @@ function DisplayBindContent(): ReactElement {
           />
         ) : (
           <div style={{ marginTop: 24 }}>
-            {errorMessage ? (
-              <Alert
-                type="error"
-                showIcon
-                description={errorMessage}
-                style={{ marginBottom: 18, textAlign: "left" }}
-              />
-            ) : null}
-
             <div style={{ marginBottom: 24 }}>
               <Input.OTP
                 value={code}

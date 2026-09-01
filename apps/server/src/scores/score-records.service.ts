@@ -8,7 +8,7 @@ import {
   TeacherRole,
 } from '@prisma/client';
 import { BusinessException, ClassEventType } from '../common';
-import { PrismaService } from '../prisma';
+import { isPostgresDatabase, PrismaService } from '../prisma';
 import { RealtimeService } from '../realtime/realtime.service';
 import type {
   CreateCustomScoreDto,
@@ -170,13 +170,27 @@ export class ScoreRecordsService {
     let reverted: ScoreRecordWithRelations;
     try {
       reverted = await this.prisma.$transaction(async (tx) => {
-        const records = await tx.$queryRaw<LockedScoreRecord[]>(Prisma.sql`
-          SELECT "id", "classId", "studentId", "operatorId", "ruleId", "delta", "recordType"
-          FROM "ScoreRecord"
-          WHERE "id" = ${recordId} AND "classId" = ${classId}
-          FOR UPDATE
-        `);
-        const original = records[0];
+        const original = isPostgresDatabase()
+          ? (
+              await tx.$queryRaw<LockedScoreRecord[]>(Prisma.sql`
+                SELECT "id", "classId", "studentId", "operatorId", "ruleId", "delta", "recordType"
+                FROM "ScoreRecord"
+                WHERE "id" = ${recordId} AND "classId" = ${classId}
+                FOR UPDATE
+              `)
+            )[0]
+          : await tx.scoreRecord.findFirst({
+              where: { id: recordId, classId },
+              select: {
+                id: true,
+                classId: true,
+                studentId: true,
+                operatorId: true,
+                ruleId: true,
+                delta: true,
+                recordType: true,
+              },
+            });
         if (!original) {
           throw new BusinessException(
             'SCORE_RECORD_NOT_FOUND',

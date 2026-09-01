@@ -18,11 +18,14 @@ import {
 } from "./admin-data"
 import type {
   ClassTeacher,
+  ClassSchedule,
   ImportedStudentInput,
   ScoreRecord as ApiScoreRecord,
   ScoreRule as ApiScoreRule,
   SeatLayout,
   SeatLayoutVersionSummary,
+  ScheduleTemplateDraft,
+  SaveClassScheduleInput,
   Student as ApiStudent,
   DisplayDevice as ApiDisplayDevice,
 } from "@/lib"
@@ -38,6 +41,7 @@ export const adminQueryKeys = {
   scoreRecords: () => ["admin", "score-records"] as const,
   displayDevices: () => ["admin", "display-devices"] as const,
   seating: () => ["admin", "seating"] as const,
+  schedule: () => ["admin", "schedule"] as const,
   notifications: () => ["admin", "notifications"] as const,
 }
 
@@ -51,6 +55,14 @@ export interface SeatingDraft {
 }
 
 type SeatingQueryData = { draft: SeatingDraft; saved: SeatingDraft; versions: SeatLayoutVersion[] }
+
+export interface ScheduleDraft {
+  activeTemplateKey: string
+  templates: ScheduleTemplateDraft[]
+  entries: ClassSchedule["entries"]
+}
+
+type ScheduleQueryData = { draft: ScheduleDraft; saved: ScheduleDraft }
 
 function currentClassId(): string {
   return getActiveClassId() ?? FALLBACK_CLASS_ID
@@ -183,6 +195,32 @@ async function loadSeating(service: ReturnType<typeof useClassroomService>, clas
   }
 }
 
+function normalizeSchedule(schedule: ClassSchedule): ScheduleDraft {
+  const templates = schedule.templates.map((template) => ({
+    clientKey: template.id,
+    id: template.id,
+    name: template.name,
+    periods: template.periods.map((period) => ({ ...period })),
+  }))
+  return {
+    activeTemplateKey: schedule.activeTemplateId ?? templates[0]?.clientKey ?? "",
+    templates,
+    entries: schedule.entries.map((entry) => ({ ...entry })),
+  }
+}
+
+async function loadSchedule(service: ReturnType<typeof useClassroomService>, classId: string): Promise<ScheduleQueryData> {
+  const saved = normalizeSchedule(await service.getSchedule(classId))
+  return {
+    draft: {
+      ...saved,
+      templates: saved.templates.map((template) => ({ ...template, periods: template.periods.map((period) => ({ ...period })) })),
+      entries: saved.entries.map((entry) => ({ ...entry })),
+    },
+    saved,
+  }
+}
+
 export function useAdminStudents() {
   const service = useClassroomService()
   const classId = currentClassId()
@@ -291,6 +329,36 @@ export function useAdminTeachers() {
     setTeacherStatus: setTeacherStatusMutation.mutateAsync,
     deleteTeacher: deleteTeacherMutation.mutateAsync,
     isLoading: query.isLoading,
+  }
+}
+
+export function useAdminSchedule() {
+  const service = useClassroomService()
+  const classId = currentClassId()
+  const queryClient = useQueryClient()
+  const fallback: ScheduleQueryData = { draft: { activeTemplateKey: "", templates: [], entries: [] }, saved: { activeTemplateKey: "", templates: [], entries: [] } }
+  const query = useQuery({ queryKey: adminQueryKeys.schedule(), queryFn: () => loadSchedule(service, classId), staleTime: STALE_TIME })
+  const state = query.data ?? fallback
+  const saveMutation = useMutation({
+    mutationFn: async (draft: ScheduleDraft) => {
+      const input: SaveClassScheduleInput = {
+        activeTemplateKey: draft.activeTemplateKey,
+        templates: draft.templates,
+        entries: draft.entries.map(({ weekday, periodNo, courseName, classTeacherId }) => ({ weekday, periodNo, courseName, classTeacherId })),
+      }
+      return normalizeSchedule(await service.saveSchedule(classId, input))
+    },
+    onSuccess: (saved) => queryClient.setQueryData<ScheduleQueryData>(adminQueryKeys.schedule(), { draft: saved, saved }),
+  })
+  const updateDraft = (draft: ScheduleDraft) => queryClient.setQueryData<ScheduleQueryData>(adminQueryKeys.schedule(), (old) => ({ ...(old ?? fallback), draft }))
+  return {
+    ...state.draft,
+    savedSchedule: state.saved,
+    isDirty: JSON.stringify(state.draft) !== JSON.stringify(state.saved),
+    updateDraft,
+    saveSchedule: () => saveMutation.mutateAsync(state.draft),
+    isLoading: query.isLoading,
+    isSaving: saveMutation.isPending,
   }
 }
 
@@ -415,17 +483,40 @@ export function useAdminSeating() {
 }
 
 export function useAdminNotifications() {
-  const queryClient = useQueryClient()
-  const query = useQuery({ queryKey: adminQueryKeys.notifications(), queryFn: () => initialNotifications, initialData: initialNotifications, staleTime: STALE_TIME })
-  const update = (mutator: (items: AdminNotification[]) => AdminNotification[]) => queryClient.setQueryData(adminQueryKeys.notifications(), mutator(query.data ?? []))
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: adminQueryKeys.notifications(),
+    queryFn: () => initialNotifications,
+    initialData: initialNotifications,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
+  const update = (
+    mutator: (items: AdminNotification[]) => AdminNotification[],
+  ) => {
+    queryClient.setQueryData<AdminNotification[]>(
+      adminQueryKeys.notifications(),
+      (old) => mutator(old ?? []),
+    );
+  };
+
+  const notifications = query.data ?? [];
+  const unreadCount = notifications.filter((item) => !item.read).length;
+
   return {
-    notifications: query.data ?? [],
-    unreadCount: (query.data ?? []).filter((item) => !item.read).length,
-    markAsRead: async (id: string) => update((items) => items.map((item) => item.id === id ? { ...item, read: true } : item)),
-    markAllAsRead: async () => update((items) => items.map((item) => ({ ...item, read: true }))),
-    deleteNotification: async (id: string) => update((items) => items.filter((item) => item.id !== id)),
-    clearReadNotifications: async () => update((items) => items.filter((item) => !item.read)),
+    notifications,
+    unreadCount,
+    markAsRead: async (id: string) =>
+      update((items) =>
+        items.map((item) => (item.id === id ? { ...item, read: true } : item)),
+      ),
+    markAllAsRead: async () =>
+      update((items) => items.map((item) => ({ ...item, read: true }))),
+    deleteNotification: async (id: string) =>
+      update((items) => items.filter((item) => item.id !== id)),
+    clearReadNotifications: async () =>
+      update((items) => items.filter((item) => !item.read)),
     clearAll: async () => update(() => []),
     isLoading: query.isLoading,
-  }
+  };
 }

@@ -25,6 +25,7 @@ import {
   UploadOutlined,
 } from "@ant-design/icons";
 import { SeatingPage } from "./seating/seating-page";
+import { SchedulePage } from "./schedule/schedule-page";
 import { StudentImportModal, type ImportStudentPayload } from "./student-import";
 import {
   Alert,
@@ -103,6 +104,8 @@ export function AdminPage({ route }: AdminPageProps) {
       return <StudentsPage />;
     case "seating":
       return <SeatingPage />;
+    case "schedule":
+      return <SchedulePage />;
     case "teachers":
       return <TeachersPage />;
     case "score-rules":
@@ -125,7 +128,7 @@ function PageHeader({
 }: {
   eyebrow?: string;
   title: string;
-  description: string;
+  description?: string;
   action?: ReactNode;
 }) {
   return (
@@ -147,9 +150,7 @@ function PageHeader({
         <Typography.Title level={2} style={{ margin: "5px 0 5px", color: "#172b4d", fontSize: 27 }}>
           {title}
         </Typography.Title>
-        <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-          {description}
-        </Typography.Text>
+        {description ? <Typography.Text type="secondary" style={{ fontSize: 13 }}>{description}</Typography.Text> : null}
       </div>
       {action}
     </div>

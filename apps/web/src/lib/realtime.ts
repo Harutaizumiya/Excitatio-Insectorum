@@ -29,6 +29,9 @@ export interface RealtimeEventPayloads {
   DISPLAY_CONFIG_CHANGED: {
     mode: "SEAT_AND_RANKING" | "SEAT_ONLY" | "RANKING_ONLY"
   }
+  SCHEDULE_CHANGED: {
+    activeTemplateId: string
+  }
 }
 
 export type ClassEventType = keyof RealtimeEventPayloads
@@ -139,9 +142,7 @@ export class SocketIoRealtimeClient implements ClassRealtimeClient {
     this.setStatus("CONNECTING")
     const socket = io(`${API_ORIGIN}/realtime`, {
       auth: { token, classId },
-      // Polling is the reliable local-development transport; the server still
-      // pushes events through the Socket.IO namespace without requiring a proxy upgrade.
-      transports: ["polling"],
+      transports: ["websocket", "polling"],
       reconnection: true,
     })
     this.socket = socket
@@ -203,6 +204,7 @@ function isClassEventType(value: string): value is ClassEventType {
     STUDENT_CHANGED: true,
     RANDOM_PICKED: true,
     DISPLAY_CONFIG_CHANGED: true,
+    SCHEDULE_CHANGED: true,
   }
 }
 

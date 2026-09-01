@@ -1,24 +1,45 @@
-"use client"
+"use client";
 
-import Image from "next/image"
-import Link from "next/link"
-import { useMemo, useState } from "react"
 import {
-  CheckCircle2,
-  ChevronRight,
-  CircleAlert,
-  Clock3,
-  Dice5,
-  History,
-  Minus,
-  Plus,
-  RotateCcw,
-  Search,
-  SlidersHorizontal,
-  Sparkles,
-  Undo2,
-  X,
-} from "lucide-react"
+  ArrowLeftOutlined,
+  CloseOutlined,
+  EditOutlined,
+  HistoryOutlined,
+  SearchOutlined,
+  ThunderboltFilled,
+  ThunderboltOutlined,
+  UndoOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
+import {
+  App as AntApp,
+  Avatar,
+  Button,
+  Card,
+  ConfigProvider,
+  Descriptions,
+  Drawer,
+  Empty,
+  Input,
+  InputNumber,
+  Popconfirm,
+  Radio,
+  Spin,
+  Tag,
+  Typography,
+} from "antd";
+import { AnimatePresence, motion } from "motion/react";
+import Image from "next/image";
+import Link from "next/link";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type ReactElement,
+} from "react";
 import {
   useClassroom,
   useCreateCustomScore,
@@ -27,341 +48,1698 @@ import {
   useRevertScore,
   useScoreRecords,
   useScoreRules,
+  useSeatLayout,
   useStudents,
-} from "@/components/providers/query-hooks"
-import type { ScoreRecord, ScoreRule, Student } from "@/lib"
-import { getActiveClassId, getUserSession } from "@/lib/session"
-
-type Feedback = { tone: "success" | "error"; message: string } | null
+} from "@/components/providers/query-hooks";
+import { useRealtimeClient } from "@/components/providers/classroom-system-provider";
+import { useRealtimeStatus } from "@/components/providers/realtime-hooks";
+import type { ScoreRecord, ScoreRule, Seat, Student } from "@/lib";
+import { getActiveClassId, getUserSession } from "@/lib/session";
+import { classroomRealtime } from "./classroom-realtime";
 
 function formatTime(date: string): string {
-  return new Intl.DateTimeFormat("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(date))
+  try {
+    return new Intl.DateTimeFormat("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(date));
+  } catch {
+    return date;
+  }
 }
 
 function formatDelta(delta: number): string {
-  return `${delta > 0 ? "+" : ""}${delta}`
+  return `${delta > 0 ? "+" : ""}${delta}`;
 }
 
-function initials(name: string): string {
-  return name.slice(0, 1)
+function subscribeToTeacherSession(onStoreChange: () => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  window.addEventListener("classroom-auth-changed", onStoreChange);
+  return () => window.removeEventListener("classroom-auth-changed", onStoreChange);
 }
 
-function FeedbackBanner({ feedback }: { feedback: Feedback }): React.ReactElement | null {
-  if (!feedback) return null
-  const success = feedback.tone === "success"
+function getTeacherNameSnapshot(): string {
+  return getUserSession()?.user.name ?? "任课教师";
+}
+
+function getServerTeacherNameSnapshot(): string {
+  return "任课教师";
+}
+
+export function TeacherSurface(): ReactElement {
   return (
-    <div
-      className={`flex items-center gap-2 rounded-2xl border px-3 py-2.5 text-sm ${
-        success
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-          : "border-rose-200 bg-rose-50 text-rose-700"
-      }`}
-      role="status"
+    <ConfigProvider
+      theme={{
+        token: {
+          colorPrimary: "#0a59f7",
+          colorInfo: "#0a59f7",
+          colorBgLayout: "#f3f6fb",
+          colorBorderSecondary: "#e7edf5",
+          borderRadius: 12,
+          fontFamily: '"Inter", "Noto Sans TC", Arial, sans-serif',
+        },
+        components: {
+          Button: { borderRadius: 999 },
+          Card: { borderRadiusLG: 16 },
+        },
+      }}
     >
-      {success ? <CheckCircle2 className="size-4" aria-hidden="true" /> : <CircleAlert className="size-4" aria-hidden="true" />}
-      <span>{feedback.message}</span>
-    </div>
-  )
+      <AntApp>
+        <TeacherMainContent />
+      </AntApp>
+    </ConfigProvider>
+  );
 }
 
-function TeacherHeader({ classroomName, subject, teacherName }: { classroomName: string; subject: string; teacherName: string }): React.ReactElement {
+type PickAnimationState = "idle" | "running" | "locked" | "showcase";
+
+function TeacherMainContent(): ReactElement {
+  const { notification, message } = AntApp.useApp();
+  const classId = getActiveClassId() ?? "class-1";
+  const realtime = useRealtimeClient();
+  const realtimeStatus = useRealtimeStatus();
+
+  // Data Queries
+  const classroomQuery = useClassroom(classId);
+  const studentsQuery = useStudents(classId, { page: 1, pageSize: 100 });
+  const layoutQuery = useSeatLayout(classId);
+  const rulesQuery = useScoreRules(classId, true);
+  // Mutations
+  const ruleScoreMutation = useCreateRuleScore(classId);
+  const customScoreMutation = useCreateCustomScore(classId);
+  const randomPickMutation = useRandomPick(classId);
+
+  const students = useMemo(
+    () => studentsQuery.data?.data ?? [],
+    [studentsQuery.data],
+  );
+  const rules = useMemo(() => rulesQuery.data ?? [], [rulesQuery.data]);
+  const layout = layoutQuery.data;
+
+  // Selected student state for manual or picked evaluation
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const teacherName = useSyncExternalStore(
+    subscribeToTeacherSession,
+    getTeacherNameSnapshot,
+    getServerTeacherNameSnapshot,
+  );
+
+  // Random Pick Interactive States
+  const [pickState, setPickState] = useState<PickAnimationState>("idle");
+  const [highlightSeatId, setHighlightSeatId] = useState<string | null>(null);
+  const [pickedStudent, setPickedStudent] = useState<Student | null>(null);
+  const [excludedIds, setExcludedIds] = useState<string[]>([]);
+  const marqueeTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Normalize grid seats
+  const gridSeats = useMemo(() => {
+    if (layout?.seats && layout.seats.length > 0) {
+      return layout.seats;
+    }
+    // Fallback: arrange all active students in a 4-column grid
+    return students.map((s, idx) => ({
+      id: `seat-${Math.floor(idx / 4)}-${idx % 4}`,
+      row: Math.floor(idx / 4),
+      col: idx % 4,
+      cellType: "seat" as const,
+      student: { id: s.id, name: s.name },
+    }));
+  }, [layout, students]);
+
+  // Clean up marquee timer
+  useEffect(() => {
+    return () => {
+      if (marqueeTimerRef.current) clearInterval(marqueeTimerRef.current);
+    };
+  }, []);
+
+  // WebSocket & Broadcast Realtime Subscriptions
+  useEffect(() => {
+    const unsubscribers = [
+      realtime.subscribe("SCORE_CHANGED", classId, () => {
+        void studentsQuery.refetch();
+      }),
+      realtime.subscribe("SCORE_REVERTED", classId, () => {
+        void studentsQuery.refetch();
+      }),
+      realtime.subscribe("SEAT_LAYOUT_CHANGED", classId, () => {
+        void layoutQuery.refetch();
+      }),
+      realtime.subscribe("STUDENT_CHANGED", classId, () => {
+        void studentsQuery.refetch();
+        void layoutQuery.refetch();
+      }),
+      realtime.subscribe("RANDOM_PICKED", classId, (event) => {
+        const picked = students.find((s) => s.id === event.payload.studentId);
+        if (picked) {
+          setPickedStudent(picked);
+          const matchedSeat = gridSeats.find(
+            (s) => s.student?.id === picked.id,
+          );
+          setHighlightSeatId(matchedSeat?.id ?? null);
+        }
+      }),
+    ];
+
+    const unsubscribeBroadcast = classroomRealtime.subscribe((event) => {
+      if (event.classId !== classId) return;
+      if (event.type === "SCORE_CHANGED" || event.type === "SCORE_REVERTED") {
+        void studentsQuery.refetch();
+      } else if (event.type === "SEAT_LAYOUT_CHANGED") {
+        void layoutQuery.refetch();
+      } else if (event.type === "STUDENT_CHANGED") {
+        void studentsQuery.refetch();
+        void layoutQuery.refetch();
+      }
+    });
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub());
+      unsubscribeBroadcast();
+    };
+  }, [realtime, classId, students, gridSeats, studentsQuery, layoutQuery]);
+
+  // Handle Random Pick flow
+  const startRandomPick = async () => {
+    if (pickState !== "idle" || students.length === 0) return;
+
+    const availableStudents = students.filter(
+      (s) => !excludedIds.includes(s.id),
+    );
+    const candidateList =
+      availableStudents.length > 0 ? availableStudents : students;
+
+    setPickState("running");
+    setSelectedStudent(null);
+    setDrawerOpen(false);
+
+    // 1. Start rapid marquee hopping animation across seats
+    const validSeatIds = gridSeats
+      .filter((seat) => seat.student !== null)
+      .map((seat) => seat.id);
+
+    let hopCount = 0;
+    const maxHops = 18;
+    const intervalMs = 90;
+
+    marqueeTimerRef.current = setInterval(() => {
+      hopCount += 1;
+      const randomSeatId =
+        validSeatIds[Math.floor(Math.random() * validSeatIds.length)];
+      setHighlightSeatId(randomSeatId ?? null);
+
+      if (hopCount >= maxHops) {
+        if (marqueeTimerRef.current) clearInterval(marqueeTimerRef.current);
+      }
+    }, intervalMs);
+
+    try {
+      // 2. Call backend random pick API
+      const result = await randomPickMutation.mutateAsync(
+        excludedIds.length >= students.length ? [] : excludedIds,
+      );
+      const chosenStudent =
+        students.find((s) => s.id === result.student.id) ??
+        candidateList[Math.floor(Math.random() * candidateList.length)] ??
+        students[0];
+
+      // Wait until marquee finishes
+      await new Promise((r) => setTimeout(r, maxHops * intervalMs + 80));
+
+      if (chosenStudent) {
+        // Find matching seat in grid
+        const matchedSeat = gridSeats.find(
+          (s) => s.student?.id === chosenStudent.id,
+        );
+        setHighlightSeatId(matchedSeat?.id ?? gridSeats[0]?.id ?? null);
+        setPickedStudent(chosenStudent);
+        setExcludedIds((prev) =>
+          prev.includes(chosenStudent.id) ? prev : [...prev, chosenStudent.id],
+        );
+
+        // Step 3: Lock highlight on seat
+        setPickState("locked");
+
+        // Broadcast to classroomRealtime
+        classroomRealtime.publish({
+          id: `event-${Date.now()}`,
+          type: "RANDOM_PICKED",
+          classId,
+          occurredAt: new Date().toISOString(),
+          payload: {
+            studentId: chosenStudent.id,
+            name: chosenStudent.name,
+            displayDurationMs: 8000,
+          },
+        });
+
+        // Step 4: After 400ms, pop up showcase modal with spring animation
+        setTimeout(() => {
+          setPickState("showcase");
+        }, 400);
+      }
+    } catch {
+      if (marqueeTimerRef.current) clearInterval(marqueeTimerRef.current);
+      setPickState("idle");
+      setHighlightSeatId(null);
+      message.error("随机点名失败，请稍后重试");
+    }
+  };
+
+  // Open drawer from showcase or manual seat click
+  const openEvaluationDrawer = (student: Student) => {
+    setSelectedStudent(student);
+    setDrawerOpen(true);
+    setPickState("idle");
+    setHighlightSeatId(null);
+  };
+
+  const handleSeatClick = (seat: Seat) => {
+    if (pickState === "running") return;
+    if (!seat.student) return;
+
+    const matched = students.find((s) => s.id === seat.student?.id);
+    if (matched) {
+      setHighlightSeatId(seat.id);
+      openEvaluationDrawer(matched);
+    }
+  };
+
+  const classroomName = classroomQuery.data?.name ?? "高一(10)班";
+  const subjectName = classroomQuery.data?.subject ?? "数学";
+  const seatColumnCount = layout?.cols ?? 4;
+  const seatGridMinWidth = `${Math.max(
+    0,
+    seatColumnCount * 56 + (seatColumnCount - 1) * 8,
+  )}px`;
+
   return (
-    <header className="sticky top-0 z-10 -mx-4 mb-4 border-b border-white/70 bg-[#eef5ff]/90 px-4 py-3 backdrop-blur-md sm:mx-0 sm:rounded-b-3xl sm:border sm:border-[#dbe9ff]">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Image
-            src="/logo.png"
-            alt="课序 Logo"
-            width={40}
-            height={40}
-            className="size-10 shrink-0 rounded-xl shadow-sm"
-            priority
-          />
-          <div>
-            <p className="text-xs font-medium tracking-[0.18em] text-[#55709d]">CLASSROOM QUICK ACTIONS</p>
-            <h1 className="mt-0.5 text-lg font-semibold tracking-tight text-[#102344]">{classroomName}</h1>
-            <p className="text-xs text-[#667794]">{subject} · {teacherName}</p>
-          </div>
-        </div>
-        <Link
-          href="/teacher/history"
-          className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-[#cdddf8] bg-white/80 px-3 text-sm font-medium text-[#315180] shadow-sm transition hover:border-[#0a59f7] hover:text-[#0a59f7]"
+    <main
+      className="teacher-surface"
+      style={{
+        minHeight: "100vh",
+        background: "#f3f6fb",
+        paddingBottom: "calc(112px + env(safe-area-inset-bottom))",
+      }}
+    >
+      <div
+        className="teacher-surface__content"
+        style={{
+          maxWidth: 480,
+          margin: "0 auto",
+          padding: "16px 14px",
+        }}
+      >
+        {/* Header (Teacher App Header) */}
+        <header
+          className="teacher-surface__header"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: "#ffffff",
+            padding: "12px 16px",
+            borderRadius: 18,
+            boxShadow: "0 4px 20px rgba(25, 48, 86, 0.04)",
+            border: "1px solid #e9f0f8",
+            marginBottom: 14,
+          }}
         >
-          <History className="size-4" aria-hidden="true" />
-          记录
-        </Link>
-      </div>
-    </header>
-  )
-}
-
-function RuleButton({ rule, onClick, disabled }: { rule: ScoreRule; onClick: () => void; disabled: boolean }): React.ReactElement {
-  const positive = rule.delta > 0
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="flex min-h-16 items-center justify-between gap-3 rounded-2xl border border-[#dbe6f7] bg-white px-4 text-left shadow-[0_6px_18px_rgba(39,78,135,0.06)] transition hover:-translate-y-0.5 hover:border-[#0a59f7] hover:shadow-[0_8px_20px_rgba(10,89,247,0.12)] active:translate-y-0 disabled:cursor-wait disabled:opacity-60"
-    >
-      <span className="flex min-w-0 items-center gap-3">
-        <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${positive ? "bg-[#eaf2ff] text-[#0a59f7]" : "bg-[#fff1f0] text-[#dd5148]"}`}>
-          {positive ? <Plus className="size-5" aria-hidden="true" /> : <Minus className="size-5" aria-hidden="true" />}
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold text-[#182b4e]">{rule.name}</span>
-          <span className="mt-0.5 block truncate text-xs text-[#7c8ba5]">{rule.description}</span>
-        </span>
-      </span>
-      <span className={`shrink-0 text-lg font-semibold tabular-nums ${positive ? "text-[#0a59f7]" : "text-[#dd5148]"}`}>{formatDelta(rule.delta)}</span>
-    </button>
-  )
-}
-
-function RandomPickPanel({
-  open,
-  selected,
-  excluded,
-  onPick,
-  onReset,
-  onClose,
-  feedback,
-}: {
-  open: boolean
-  selected: Student | null
-  excluded: Student[]
-  onPick: () => void
-  onReset: () => void
-  onClose: () => void
-  feedback: Feedback
-}): React.ReactElement | null {
-  if (!open) return null
-  return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center bg-[#122342]/30 p-3 backdrop-blur-[2px] sm:items-center">
-      <section className="w-full max-w-[430px] rounded-[28px] border border-white/80 bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="random-pick-title">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium tracking-[0.16em] text-[#6d83a5]">ROUND PICK</p>
-            <h2 id="random-pick-title" className="mt-1 text-xl font-semibold text-[#102344]">随机点名</h2>
-          </div>
-          <button type="button" onClick={onClose} className="flex size-11 items-center justify-center rounded-full text-[#6b7e9e] hover:bg-[#f0f5fc]" aria-label="关闭随机点名">
-            <X className="size-5" aria-hidden="true" />
-          </button>
-        </div>
-
-        {selected ? (
-          <div className="my-6 rounded-3xl bg-[#edf4ff] px-4 py-7 text-center">
-            <div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-[#0a59f7] text-2xl font-semibold text-white shadow-lg shadow-[#0a59f7]/20">{initials(selected.name)}</div>
-            <p className="mt-3 text-3xl font-semibold tracking-tight text-[#102344]">{selected.name}</p>
-            <p className="mt-1 text-sm text-[#6680a7]">已从本轮未点名单中选出</p>
-          </div>
-        ) : (
-          <div className="my-6 rounded-3xl border border-dashed border-[#bfd2f1] bg-[#f7faff] px-4 py-10 text-center">
-            <Dice5 className="mx-auto size-9 text-[#0a59f7]" aria-hidden="true" />
-            <p className="mt-3 font-medium text-[#253c62]">准备好后开始抽取</p>
-            <p className="mt-1 text-sm text-[#7083a3]">本轮已点 {excluded.length} 人</p>
-          </div>
-        )}
-
-        <FeedbackBanner feedback={feedback} />
-        <div className="mt-4 flex gap-2">
-          <button type="button" onClick={onPick} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-full bg-[#0a59f7] px-4 font-semibold text-white shadow-lg shadow-[#0a59f7]/20 transition hover:bg-[#084bd4] active:translate-y-px">
-            <Dice5 className="size-5" aria-hidden="true" />
-            {selected ? "再次抽取" : "开始抽取"}
-          </button>
-          <button type="button" onClick={onReset} className="flex min-h-12 items-center justify-center gap-2 rounded-full border border-[#d4e1f5] bg-white px-4 font-medium text-[#486183] transition hover:border-[#0a59f7] hover:text-[#0a59f7]">
-            <RotateCcw className="size-4" aria-hidden="true" />
-            重置
-          </button>
-        </div>
-        <p className="mt-4 text-xs leading-5 text-[#7a8ba5]">本轮排除：{excluded.length ? excluded.map((student) => student.name).join("、") : "暂无"}</p>
-      </section>
-    </div>
-  )
-}
-
-export function TeacherSurface(): React.ReactElement {
-  const classId = getActiveClassId() ?? "class-1"
-  const classroomQuery = useClassroom(classId)
-  const studentsQuery = useStudents(classId, { page: 1, pageSize: 100 })
-  const rulesQuery = useScoreRules(classId, true)
-  const recordsQuery = useScoreRecords(classId, { page: 1, pageSize: 100 })
-  const ruleScore = useCreateRuleScore(classId)
-  const customScore = useCreateCustomScore(classId)
-  const randomPick = useRandomPick(classId)
-  const studentsData = studentsQuery.data?.data
-  const students = useMemo(() => studentsData ?? [], [studentsData])
-  const rules = rulesQuery.data ?? []
-  const recordsData = recordsQuery.data?.data
-  const records = useMemo(() => recordsData ?? [], [recordsData])
-  const [query, setQuery] = useState("")
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
-  const [customDelta, setCustomDelta] = useState("2")
-  const [customReason, setCustomReason] = useState("")
-  const [feedback, setFeedback] = useState<Feedback>(null)
-  const [randomFeedback, setRandomFeedback] = useState<Feedback>(null)
-  const [randomOpen, setRandomOpen] = useState(false)
-  const [randomStudent, setRandomStudent] = useState<Student | null>(null)
-  const [excludedIds, setExcludedIds] = useState<string[]>([])
-
-  const selectedStudent = students.find((student) => student.id === selectedStudentId) ?? null
-  const filteredStudents = useMemo(
-    () => students.filter((student) => `${student.name}${student.studentNo}`.includes(query.trim())),
-    [query, students],
-  )
-  const selectedRecords = useMemo(
-    () => selectedStudent ? records.filter((record) => record.student.id === selectedStudent.id).slice(0, 3) : [],
-    [records, selectedStudent],
-  )
-  const excludedStudents = students.filter((student) => excludedIds.includes(student.id))
-
-  function showFeedback(next: Feedback): void {
-    setFeedback(next)
-    window.setTimeout(() => setFeedback(null), 2800)
-  }
-
-  async function handleRuleScore(rule: ScoreRule): Promise<void> {
-    if (!selectedStudent) return
-    try {
-      await ruleScore.mutateAsync({ studentId: selectedStudent.id, ruleId: rule.id })
-      showFeedback({ tone: "success", message: `${selectedStudent.name} · ${rule.name} 已记录` })
-    } catch (error) {
-      showFeedback({ tone: "error", message: error instanceof Error ? error.message : "记录失败，请稍后重试" })
-    }
-  }
-
-  async function handleCustomScore(event: React.FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault()
-    if (!selectedStudent) return
-    try {
-      await customScore.mutateAsync({ studentId: selectedStudent.id, delta: Number(customDelta), reason: customReason })
-      setCustomReason("")
-      showFeedback({ tone: "success", message: `${selectedStudent.name} · 自定义积分已记录` })
-    } catch (error) {
-      showFeedback({ tone: "error", message: error instanceof Error ? error.message : "请检查输入内容" })
-    }
-  }
-
-  async function handleRandomPick(): Promise<void> {
-    try {
-      const result = await randomPick.mutateAsync(excludedIds)
-      const picked = students.find((student) => student.id === result.student.id)
-      if (!picked) throw new Error("点名结果中的学生不在当前班级")
-      setRandomStudent(picked)
-      setExcludedIds((current) => [...current, picked.id])
-      setRandomFeedback({ tone: "success", message: `已点到 ${picked.name}` })
-      window.setTimeout(() => setRandomFeedback(null), 2200)
-    } catch (error) {
-      setRandomFeedback({ tone: "error", message: error instanceof Error ? error.message : "暂时无法点名" })
-    }
-  }
-
-  const isSubmitting = ruleScore.isPending || customScore.isPending
-
-  function resetRound(): void {
-    setExcludedIds([])
-    setRandomStudent(null)
-    setRandomFeedback(null)
-  }
-
-  return (
-    <main className="min-h-screen bg-[#eef5ff] px-4 pb-8 text-[#102344] sm:px-6">
-      <div className="mx-auto w-full max-w-[430px]">
-        <TeacherHeader
-          classroomName={classroomQuery.data?.name ?? "班级工作台"}
-          subject={classroomQuery.data?.subject ?? "课堂"}
-          teacherName={getUserSession()?.user.name ?? "任课教师"}
-        />
-        <div className="space-y-4">
-          <button type="button" onClick={() => setRandomOpen(true)} className="flex min-h-[68px] w-full items-center justify-between rounded-3xl bg-[#0a59f7] px-5 text-left text-white shadow-[0_14px_28px_rgba(10,89,247,0.22)] transition hover:bg-[#084bd4] active:translate-y-px">
-            <span className="flex items-center gap-3">
-              <span className="flex size-11 items-center justify-center rounded-2xl bg-white/15"><Dice5 className="size-6" aria-hidden="true" /></span>
-              <span><span className="block text-base font-semibold">随机点名</span><span className="mt-0.5 block text-xs text-blue-100">本轮已点 {excludedIds.length} 人</span></span>
-            </span>
-            <ChevronRight className="size-5 text-blue-100" aria-hidden="true" />
-          </button>
-
-          <section className="rounded-3xl border border-[#dce8f7] bg-white p-4 shadow-[0_8px_24px_rgba(42,82,141,0.05)]">
-            <label className="flex min-h-12 items-center gap-2 rounded-2xl bg-[#f4f7fb] px-3 text-[#6a7b98] focus-within:ring-2 focus-within:ring-[#0a59f7]/20" htmlFor="student-search">
-              <Search className="size-5 shrink-0" aria-hidden="true" />
-              <input id="student-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索姓名或学号" className="min-w-0 flex-1 bg-transparent text-base text-[#1d3356] outline-none placeholder:text-[#96a5ba]" />
-              {query ? <button type="button" onClick={() => setQuery("")} aria-label="清除搜索" className="flex size-8 items-center justify-center rounded-full hover:bg-white"><X className="size-4" aria-hidden="true" /></button> : null}
-            </label>
-            <div className="mt-4 flex items-center justify-between">
-              <div><h2 className="text-base font-semibold">选择学生</h2><p className="mt-0.5 text-xs text-[#8494ac]">点击后打开快捷积分</p></div>
-              <span className="rounded-full bg-[#edf4ff] px-2.5 py-1 text-xs font-medium text-[#0a59f7]">{filteredStudents.length} 人</span>
+          <div
+            className="teacher-surface__header-main"
+            style={{ display: "flex", alignItems: "center", gap: 10 }}
+          >
+            <Image
+              src="/logo.png"
+              alt="课序"
+              width={36}
+              height={36}
+              className="rounded-xl shadow-sm"
+              priority
+            />
+            <div className="teacher-surface__header-copy">
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <Typography.Text
+                  strong
+                  className="teacher-surface__header-title"
+                  style={{ fontSize: 15, color: "#14233c" }}
+                >
+                  {classroomName} · {subjectName}
+                </Typography.Text>
+                <Tag
+                  color={realtimeStatus === "CONNECTED" ? "success" : "processing"}
+                  style={{
+                    borderRadius: 999,
+                    fontSize: 11,
+                    padding: "0 7px",
+                    margin: 0,
+                  }}
+                >
+                  {realtimeStatus === "CONNECTED" ? "授课中 · 在线" : "授课中"}
+                </Tag>
+              </div>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {teacherName}
+              </Typography.Text>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2.5">
-              {filteredStudents.map((student) => {
-                const active = selectedStudentId === student.id
-                return <button key={student.id} type="button" onClick={() => setSelectedStudentId(student.id)} className={`flex min-h-16 items-center gap-2.5 rounded-2xl border px-3 text-left transition ${active ? "border-[#0a59f7] bg-[#edf4ff] shadow-sm" : "border-[#e4ebf4] bg-white hover:border-[#adc7f3]"}`}>
-                  <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-semibold ${active ? "bg-[#0a59f7] text-white" : "bg-[#f0f4fa] text-[#55709b]"}`}>{initials(student.name)}</span>
-                  <span className="min-w-0"><span className="block truncate text-sm font-semibold text-[#213758]">{student.name}</span><span className="block text-xs text-[#8b9ab0]">{student.studentNo}</span></span>
-                </button>
+          </div>
+
+          <Link href="/teacher/history">
+            <Button
+              size="small"
+              icon={<HistoryOutlined />}
+              style={{ borderRadius: 999, fontSize: 12 }}
+            >
+              记录
+            </Button>
+          </Link>
+        </header>
+
+        {/* Top Action Cards */}
+        <div
+          className="teacher-surface__top-actions"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 10,
+            marginBottom: 14,
+          }}
+        >
+          <Card
+            hoverable
+            onClick={startRandomPick}
+            style={{
+              borderRadius: 16,
+              background: "linear-gradient(135deg, #0a59f7 0%, #1e6bfb 100%)",
+              color: "#ffffff",
+              border: "none",
+              cursor: "pointer",
+            }}
+            styles={{ body: { padding: "14px 16px" } }}
+          >
+            <div
+              className="teacher-surface__action-content"
+              style={{ display: "flex", alignItems: "center", gap: 10 }}
+            >
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: "rgba(255, 255, 255, 0.2)",
+                  display: "grid",
+                  placeItems: "center",
+                  fontSize: 18,
+                }}
+              >
+                <ThunderboltFilled />
+              </div>
+              <div className="teacher-surface__action-copy">
+                <Typography.Text
+                  strong
+                  className="teacher-surface__action-title"
+                  style={{ color: "#ffffff", fontSize: 14, display: "block" }}
+                >
+                  随堂点名
+                </Typography.Text>
+                <Typography.Text
+                  style={{ color: "rgba(255, 255, 255, 0.8)", fontSize: 11 }}
+                >
+                  已点 {excludedIds.length} / {students.length}
+                </Typography.Text>
+              </div>
+            </div>
+          </Card>
+
+          <Card
+            hoverable
+            onClick={() => setSearchOpen(true)}
+            style={{
+              borderRadius: 16,
+              background: "#ffffff",
+              border: "1px solid #e6edf5",
+              cursor: "pointer",
+            }}
+            styles={{ body: { padding: "14px 16px" } }}
+          >
+            <div
+              className="teacher-surface__action-content"
+              style={{ display: "flex", alignItems: "center", gap: 10 }}
+            >
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: "#f0f5ff",
+                  color: "#0a59f7",
+                  display: "grid",
+                  placeItems: "center",
+                  fontSize: 18,
+                }}
+              >
+                <SearchOutlined />
+              </div>
+              <div className="teacher-surface__action-copy">
+                <Typography.Text
+                  strong
+                  className="teacher-surface__action-title"
+                  style={{ color: "#14233c", fontSize: 14, display: "block" }}
+                >
+                  查找学生
+                </Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  共 {students.length} 名学生
+                </Typography.Text>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Seat Area (Podium + Seat Grid) */}
+        <section
+          className="teacher-seat-area teacher-seat-map"
+          style={{
+            background: "#ffffff",
+            borderRadius: 20,
+            padding: "16px 14px",
+            border:
+              pickState === "running"
+                ? "2px solid #0a59f7"
+                : "1px solid #e7edf5",
+            boxShadow:
+              pickState === "running"
+                ? "0 0 24px rgba(10, 89, 247, 0.25)"
+                : "0 8px 24px rgba(28, 52, 92, 0.04)",
+            transition: "all 250ms ease",
+            marginBottom: 16,
+          }}
+        >
+          {/* Podium */}
+          <div
+            style={{
+              background: "#f0f4fa",
+              borderRadius: 10,
+              padding: "7px 0",
+              textAlign: "center",
+              marginBottom: 16,
+              border: "1px solid #e1e9f4",
+            }}
+          >
+            <Typography.Text
+              type="secondary"
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: 2,
+                color: "#6b7d96",
+              }}
+            >
+              讲 台 · 黑 板 方 向
+            </Typography.Text>
+          </div>
+
+          {/* Seat Grid */}
+          {studentsQuery.isLoading ? (
+            <div style={{ textAlign: "center", padding: "48px 0" }}>
+              <Spin />
+            </div>
+          ) : gridSeats.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="班级暂无学生"
+            />
+          ) : (
+            <div className="teacher-seat-grid-scroll">
+              <div
+                className="teacher-seat-grid"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `repeat(${seatColumnCount}, minmax(0, 1fr))`,
+                  gap: 8,
+                  "--teacher-seat-grid-min-width": seatGridMinWidth,
+                } as CSSProperties}
+              >
+              {gridSeats.map((seat) => {
+                const hasStudent = Boolean(seat.student);
+                const isHighlighted = highlightSeatId === seat.id;
+                const isSelected = selectedStudent?.id === seat.student?.id;
+
+                if (seat.cellType === "aisle") {
+                  return (
+                    <div
+                      key={seat.id}
+                      style={{
+                        minHeight: 56,
+                        display: "grid",
+                        placeItems: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 2,
+                          height: "60%",
+                          background: "#edf2f7",
+                          borderRadius: 999,
+                        }}
+                      />
+                    </div>
+                  );
+                }
+
+                if (!hasStudent) {
+                  return (
+                    <div
+                      key={seat.id}
+                      style={{
+                        minHeight: 56,
+                        borderRadius: 12,
+                        border: "1px dashed #e2e8f0",
+                        background: "#fafbfd",
+                        display: "grid",
+                        placeItems: "center",
+                      }}
+                    >
+                      <Typography.Text
+                        type="secondary"
+                        style={{
+                          fontSize: 11,
+                          color: "#cbd5e1",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        空座
+                      </Typography.Text>
+                    </div>
+                  );
+                }
+
+                return (
+                  <motion.div
+                    key={seat.id}
+                    whileTap={{ scale: 0.95 }}
+                    animate={{
+                      scale: isHighlighted ? 1.08 : isSelected ? 1.04 : 1,
+                    }}
+                    transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                    onClick={() => handleSeatClick(seat)}
+                    style={{
+                      minHeight: 58,
+                      borderRadius: 12,
+                      padding: "8px 6px",
+                      cursor: "pointer",
+                      border: isHighlighted
+                        ? "2px solid #0a59f7"
+                        : isSelected
+                          ? "2px solid #0a59f7"
+                          : "1px solid #e2e8f0",
+                      background: isHighlighted
+                        ? "#0a59f7"
+                        : isSelected
+                          ? "#edf4ff"
+                          : "#ffffff",
+                      boxShadow: isHighlighted
+                        ? "0 6px 18px rgba(10, 89, 247, 0.35)"
+                        : "0 2px 6px rgba(0, 0, 0, 0.02)",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "center",
+                      alignItems: "center",
+                      textAlign: "center",
+                      transition:
+                        "background 150ms ease, border-color 150ms ease",
+                    }}
+                  >
+                    <Typography.Text
+                      strong
+                      style={{
+                        fontSize: 13,
+                        color: isHighlighted
+                          ? "#ffffff"
+                          : isSelected
+                            ? "#0a59f7"
+                            : "#1e293b",
+                        lineHeight: 1.2,
+                        maxWidth: "100%",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {seat.student?.name}
+                    </Typography.Text>
+                    <Typography.Text
+                      style={{
+                        fontSize: 10,
+                        color: isHighlighted
+                          ? "rgba(255, 255, 255, 0.8)"
+                          : "#94a3b8",
+                        marginTop: 2,
+                      }}
+                    >
+                      {seat.student?.id.slice(-3) ?? ""}
+                    </Typography.Text>
+                  </motion.div>
+                );
+              })}
+              </div>
+              {seatColumnCount > 4 ? (
+                <p className="teacher-seat-grid-hint">左右滑动查看完整座位表</p>
+              ) : null}
+            </div>
+          )}
+        </section>
+
+        <section
+          className="teacher-mobile-students"
+          aria-label="学生列表"
+          style={{
+            background: "#ffffff",
+            borderRadius: 20,
+            padding: 16,
+            border: "1px solid #e7edf5",
+            boxShadow: "0 8px 24px rgba(28, 52, 92, 0.04)",
+            marginBottom: 16,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              marginBottom: 12,
+            }}
+          >
+            <div>
+              <Typography.Text strong style={{ fontSize: 16, color: "#14233c" }}>
+                选择学生
+              </Typography.Text>
+              <Typography.Text
+                type="secondary"
+                style={{ display: "block", fontSize: 12, marginTop: 2 }}
+              >
+                点选学生快速评价
+              </Typography.Text>
+            </div>
+            <Tag color="blue" style={{ margin: 0, borderRadius: 999 }}>
+              {students.length} 人
+            </Tag>
+          </div>
+
+          {studentsQuery.isLoading ? (
+            <div style={{ textAlign: "center", padding: "32px 0" }}>
+              <Spin />
+            </div>
+          ) : students.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="班级暂无学生"
+            />
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: 8,
+              }}
+            >
+              {students.map((student) => {
+                const isSelected = selectedStudent?.id === student.id;
+                return (
+                  <button
+                    key={student.id}
+                    type="button"
+                    onClick={() => openEvaluationDrawer(student)}
+                    style={{
+                      minWidth: 0,
+                      minHeight: 64,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 9,
+                      padding: "10px 11px",
+                      borderRadius: 14,
+                      border: isSelected
+                        ? "1px solid #0a59f7"
+                        : "1px solid #e4ebf4",
+                      background: isSelected ? "#edf4ff" : "#ffffff",
+                      textAlign: "left",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 34,
+                        height: 34,
+                        flexShrink: 0,
+                        display: "grid",
+                        placeItems: "center",
+                        borderRadius: 10,
+                        background: isSelected ? "#0a59f7" : "#f0f4fa",
+                        color: isSelected ? "#ffffff" : "#55709b",
+                        fontSize: 14,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {student.name.slice(0, 1)}
+                    </span>
+                    <span style={{ minWidth: 0 }}>
+                      <span
+                        style={{
+                          display: "block",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          color: "#213758",
+                          fontSize: 13,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {student.name}
+                      </span>
+                      <span style={{ color: "#8b9ab0", fontSize: 11 }}>
+                        {student.studentNo}
+                      </span>
+                    </span>
+                  </button>
+                );
               })}
             </div>
-            {!filteredStudents.length ? <div className="py-8 text-center text-sm text-[#7b8da8]">没有找到匹配学生</div> : null}
-          </section>
+          )}
+        </section>
 
-          {selectedStudent ? <section className="rounded-3xl border border-[#d6e4f8] bg-white p-4 shadow-[0_8px_24px_rgba(42,82,141,0.07)]" aria-labelledby="quick-score-title">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3"><span className="flex size-12 items-center justify-center rounded-2xl bg-[#0a59f7] text-lg font-semibold text-white">{initials(selectedStudent.name)}</span><div><h2 id="quick-score-title" className="text-lg font-semibold">{selectedStudent.name}</h2><p className="text-sm text-[#7b8da8]">快捷积分</p></div></div>
-              <button type="button" onClick={() => setSelectedStudentId(null)} className="flex size-11 items-center justify-center rounded-full text-[#7587a2] hover:bg-[#f0f5fc]" aria-label="关闭积分面板"><X className="size-5" aria-hidden="true" /></button>
-            </div>
-            <div className="mt-4"><p className="mb-2 text-xs font-medium tracking-wide text-[#7285a4]">积分规则</p><div className="grid gap-2">{rules.map((rule) => <RuleButton key={rule.id} rule={rule} onClick={() => handleRuleScore(rule)} disabled={isSubmitting} />)}</div></div>
-            <div className="my-5 h-px bg-[#edf1f6]" />
-            <form onSubmit={handleCustomScore} className="space-y-3">
-              <div className="flex items-center gap-2"><Sparkles className="size-4 text-[#0a59f7]" aria-hidden="true" /><h3 className="text-sm font-semibold">自定义积分</h3><span className="ml-auto text-xs text-[#8a9ab2]">需填写详细原因</span></div>
-              <div className="flex gap-2"><label className="sr-only" htmlFor="custom-delta">积分变化</label><input id="custom-delta" type="number" step="1" value={customDelta} onChange={(event) => setCustomDelta(event.target.value)} className="min-h-12 w-28 rounded-2xl border border-[#dbe6f4] bg-[#f9fbfe] px-3 text-center text-lg font-semibold text-[#18345e] outline-none focus:border-[#0a59f7] focus:ring-2 focus:ring-[#0a59f7]/15" /><label className="sr-only" htmlFor="custom-reason">详细原因</label><textarea id="custom-reason" value={customReason} onChange={(event) => setCustomReason(event.target.value)} placeholder="详细原因（至少 10 个字符）" rows={2} className="min-h-12 flex-1 resize-none rounded-2xl border border-[#dbe6f4] bg-[#f9fbfe] px-3 py-3 text-sm text-[#18345e] outline-none placeholder:text-[#9aa8bc] focus:border-[#0a59f7] focus:ring-2 focus:ring-[#0a59f7]/15" /></div>
-              <button type="submit" disabled={isSubmitting} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-[#c6d9f6] bg-[#f2f7ff] px-4 text-sm font-semibold text-[#0a59f7] transition hover:bg-[#e7f0ff] disabled:cursor-wait disabled:opacity-60"><Sparkles className="size-4" aria-hidden="true" />确认记录</button>
-            </form>
-            <div className="mt-4"><div className="mb-2 flex items-center justify-between"><p className="text-xs font-medium tracking-wide text-[#7285a4]">近期记录</p><Link href="/teacher/history" className="text-xs font-medium text-[#0a59f7]">查看全部</Link></div>{selectedRecords.length ? <div className="space-y-2">{selectedRecords.map((record) => <div key={record.id} className="flex items-center justify-between gap-2 rounded-2xl bg-[#f7f9fc] px-3 py-2.5"><span className="min-w-0"><span className="block truncate text-sm text-[#324767]">{record.rule?.name ?? "自定义积分"}</span><span className="flex items-center gap-1 text-xs text-[#91a0b4]"><Clock3 className="size-3" aria-hidden="true" />{formatTime(record.createdAt)}</span></span><span className={`text-sm font-semibold ${record.delta > 0 ? "text-[#0a59f7]" : "text-[#dd5148]"}`}>{formatDelta(record.delta)}</span></div>)}</div> : <p className="rounded-2xl bg-[#f7f9fc] px-3 py-4 text-center text-xs text-[#8b9ab0]">暂无记录</p>}</div>
-            <div className="mt-4"><FeedbackBanner feedback={feedback} /></div>
-          </section> : <div className="rounded-3xl border border-dashed border-[#c5d7f1] bg-white/60 px-4 py-7 text-center"><SlidersHorizontal className="mx-auto size-6 text-[#0a59f7]" aria-hidden="true" /><p className="mt-2 text-sm font-medium text-[#3e567d]">先选择一名学生</p><p className="mt-1 text-xs text-[#8798b1]">常用积分会在这里展开</p></div>}
+        {/* Bottom CTA Bar */}
+        <div
+          className="teacher-surface__bottom-bar"
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            padding: "10px 16px calc(12px + env(safe-area-inset-bottom))",
+            background: "rgba(255, 255, 255, 0.92)",
+            backdropFilter: "blur(12px)",
+            borderTop: "1px solid #e7edf5",
+            zIndex: 10,
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 480,
+              margin: "0 auto",
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+            }}
+          >
+            <Button
+              type="primary"
+              size="large"
+              icon={<ThunderboltOutlined />}
+              disabled={pickState === "running"}
+              onClick={startRandomPick}
+              style={{
+                flex: 1,
+                height: 48,
+                borderRadius: 999,
+                fontSize: 15,
+                fontWeight: 600,
+                background: "linear-gradient(135deg, #0a59f7 0%, #1e6bfb 100%)",
+                boxShadow: "0 6px 16px rgba(10, 89, 247, 0.25)",
+              }}
+            >
+              {pickState === "running" ? "正在随机点名..." : "随机点名"}
+            </Button>
+
+            <Button
+              size="large"
+              icon={<SearchOutlined />}
+              onClick={() => setSearchOpen(true)}
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 999,
+                display: "grid",
+                placeItems: "center",
+              }}
+            />
+          </div>
         </div>
       </div>
-      <RandomPickPanel open={randomOpen} selected={randomStudent} excluded={excludedStudents} onPick={handleRandomPick} onReset={resetRound} onClose={() => setRandomOpen(false)} feedback={randomFeedback} />
+
+      {/* Step 4: Non-linear Pop-up Showcase Modal */}
+      <AnimatePresence>
+        {pickState === "showcase" && pickedStudent && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 50,
+              background: "rgba(10, 25, 48, 0.45)",
+              backdropFilter: "blur(4px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 20,
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.6, opacity: 0, y: 30 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 380, damping: 22 }}
+              style={{
+                width: "100%",
+                maxWidth: 360,
+                background: "#ffffff",
+                borderRadius: 24,
+                padding: "32px 24px",
+                textAlign: "center",
+                boxShadow: "0 24px 60px rgba(0, 0, 0, 0.2)",
+                border: "1px solid #e7edf5",
+              }}
+            >
+              <div
+                style={{
+                  width: 76,
+                  height: 76,
+                  borderRadius: 22,
+                  background:
+                    "linear-gradient(135deg, #0a59f7 0%, #2f7bff 100%)",
+                  color: "#ffffff",
+                  fontSize: 32,
+                  display: "grid",
+                  placeItems: "center",
+                  margin: "0 auto 16px",
+                  boxShadow: "0 10px 24px rgba(10, 89, 247, 0.28)",
+                }}
+              >
+                <UserOutlined />
+              </div>
+
+              <Tag
+                color="blue"
+                style={{ borderRadius: 999, padding: "2px 10px", fontSize: 12 }}
+              >
+                随机点名命中
+              </Tag>
+
+              <Typography.Title
+                level={2}
+                style={{ margin: "10px 0 4px", color: "#14233c" }}
+              >
+                {pickedStudent.name}
+              </Typography.Title>
+              <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                学号 · {pickedStudent.studentNo}
+              </Typography.Text>
+
+              <div style={{ marginTop: 24, display: "flex", gap: 10 }}>
+                <Button
+                  size="large"
+                  onClick={() => {
+                    setPickState("idle");
+                    setHighlightSeatId(null);
+                  }}
+                  style={{ flex: 1, height: 44, borderRadius: 999 }}
+                >
+                  关闭
+                </Button>
+                <Button
+                  type="primary"
+                  size="large"
+                  icon={<EditOutlined />}
+                  onClick={() => openEvaluationDrawer(pickedStudent)}
+                  style={{
+                    flex: 1.5,
+                    height: 44,
+                    borderRadius: 999,
+                    fontWeight: 600,
+                  }}
+                >
+                  进行评价
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Step 6: Bottom Action Drawer (AntD Action Drawer) */}
+      <TeacherScoreActionDrawer
+        open={drawerOpen}
+        student={selectedStudent}
+        rules={rules}
+        onClose={() => setDrawerOpen(false)}
+        onSubmitRule={async (rule) => {
+          if (!selectedStudent) return;
+          try {
+            await ruleScoreMutation.mutateAsync({
+              studentId: selectedStudent.id,
+              ruleId: rule.id,
+            });
+            classroomRealtime.publish({
+              id: `event-${Date.now()}`,
+              type: "SCORE_CHANGED",
+              classId,
+              occurredAt: new Date().toISOString(),
+              payload: {
+                studentId: selectedStudent.id,
+                direction: rule.delta > 0 ? "INCREASE" : "DECREASE",
+              },
+            });
+            notification.success({
+              title: "评价记录成功",
+              description: `${selectedStudent.name} · ${rule.name} (${formatDelta(rule.delta)}) 已同步。`,
+            });
+            setDrawerOpen(false);
+          } catch {
+            message.error("评价提交失败");
+          }
+        }}
+        onSubmitCustom={async (delta, reason) => {
+          if (!selectedStudent) return;
+          try {
+            await customScoreMutation.mutateAsync({
+              studentId: selectedStudent.id,
+              delta,
+              reason,
+            });
+            classroomRealtime.publish({
+              id: `event-${Date.now()}`,
+              type: "SCORE_CHANGED",
+              classId,
+              occurredAt: new Date().toISOString(),
+              payload: {
+                studentId: selectedStudent.id,
+                direction: delta > 0 ? "INCREASE" : "DECREASE",
+              },
+            });
+            notification.success({
+              title: "自定义积分记录成功",
+              description: `${selectedStudent.name} (${formatDelta(delta)}) 已同步。`,
+            });
+            setDrawerOpen(false);
+          } catch {
+            message.error("提交失败，请检查输入");
+          }
+        }}
+      />
+
+      {/* Student Quick Search Drawer */}
+      <Drawer
+        title="查找学生"
+        placement="bottom"
+        size="min(82vh, 640px)"
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        styles={{
+          body: {
+            padding: "16px 16px calc(16px + env(safe-area-inset-bottom))",
+            overflowY: "auto",
+          },
+        }}
+      >
+        <Input
+          prefix={<SearchOutlined />}
+          placeholder="输入学生姓名或学号"
+          allowClear
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          size="large"
+          style={{ borderRadius: 12, marginBottom: 16 }}
+          autoFocus
+        />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {students
+            .filter(
+              (s) =>
+                s.name.includes(searchQuery.trim()) ||
+                Boolean(s.studentNo?.includes(searchQuery.trim())),
+            )
+            .map((student) => (
+              <div
+                key={student.id}
+                onClick={() => {
+                  setSearchOpen(false);
+                  openEvaluationDrawer(student);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "12px 14px",
+                  borderRadius: 14,
+                  background: "#f8fafc",
+                  border: "1px solid #edf2f7",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Avatar
+                    style={{
+                      background: "#e8f0fe",
+                      color: "#0a59f7",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {student.name.slice(0, 1)}
+                  </Avatar>
+                  <div>
+                    <Typography.Text strong style={{ fontSize: 14 }}>
+                      {student.name}
+                    </Typography.Text>
+                    <Typography.Text
+                      type="secondary"
+                      style={{ fontSize: 12, display: "block" }}
+                    >
+                      学号 · {student.studentNo}
+                    </Typography.Text>
+                  </div>
+                </div>
+                <Button size="small" type="primary">
+                  评价
+                </Button>
+              </div>
+            ))}
+        </div>
+      </Drawer>
     </main>
-  )
+  );
 }
 
-function HistoryRecordCard({ record, teacherId = getUserSession()?.user.id, onDetail, onRevert }: { record: ScoreRecord; teacherId?: string; onDetail: () => void; onRevert: () => void }): React.ReactElement {
-  const isReverted = record.reverted || record.recordType === "REVERT"
-  return <article className="rounded-3xl border border-[#dce7f5] bg-white p-4 shadow-[0_6px_20px_rgba(42,82,141,0.05)]"><button type="button" onClick={onDetail} className="w-full text-left"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><span className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${record.delta > 0 ? "bg-[#eaf2ff] text-[#0a59f7]" : "bg-[#fff1f0] text-[#dd5148]"}`}>{record.delta > 0 ? <Plus className="size-5" aria-hidden="true" /> : <Minus className="size-5" aria-hidden="true" />}</span><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#213758]">{record.student.name} · {record.rule?.name ?? "自定义积分"}</p><p className="mt-1 flex items-center gap-1 text-xs text-[#8b9ab0]"><Clock3 className="size-3" aria-hidden="true" />{formatTime(record.createdAt)} · {record.operator.name}</p></div></div><span className={`shrink-0 text-base font-semibold ${record.delta > 0 ? "text-[#0a59f7]" : "text-[#dd5148]"}`}>{formatDelta(record.delta)}</span></div></button><div className="mt-3 flex items-center justify-between border-t border-[#edf1f6] pt-3"><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${isReverted ? "bg-[#f1f3f6] text-[#7d8999]" : "bg-[#edf4ff] text-[#3c66a1]"}`}>{isReverted ? "已撤销" : record.recordType === "REVERT" ? "撤销流水" : "有效记录"}</span>{!isReverted && record.operator.id === teacherId ? <button type="button" onClick={onRevert} className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-[#667994] hover:bg-[#f2f5f9] hover:text-[#c44742]"><Undo2 className="size-4" aria-hidden="true" />撤销</button> : null}</div></article>
+// -------------------------------------------------------------
+// Bottom Evaluation Action Drawer (Step 6 AntD Action Drawer)
+// -------------------------------------------------------------
+
+interface TeacherScoreActionDrawerProps {
+  open: boolean;
+  student: Student | null;
+  rules: ScoreRule[];
+  onClose: () => void;
+  onSubmitRule: (rule: ScoreRule) => Promise<void>;
+  onSubmitCustom: (delta: number, reason: string) => Promise<void>;
 }
 
-export function TeacherHistorySurface(): React.ReactElement {
-  const classId = getActiveClassId() ?? "class-1"
-  const recordsQuery = useScoreRecords(classId, { page: 1, pageSize: 100 })
-  const revertScore = useRevertScore(classId)
-  const recordsData = recordsQuery.data?.data
-  const records = useMemo(() => recordsData ?? [], [recordsData])
-  const teacherId = getUserSession()?.user.id
-  const [filter, setFilter] = useState<"all" | "mine" | "reverted">("all")
-  const [selected, setSelected] = useState<ScoreRecord | null>(null)
-  const [revertTarget, setRevertTarget] = useState<ScoreRecord | null>(null)
-  const [feedback, setFeedback] = useState<Feedback>(null)
+function TeacherScoreActionDrawer({
+  open,
+  student,
+  rules,
+  onClose,
+  onSubmitRule,
+  onSubmitCustom,
+}: TeacherScoreActionDrawerProps): ReactElement {
+  return (
+    <Drawer
+      placement="bottom"
+      size="min(82vh, 640px)"
+      open={open && student !== null}
+      onClose={onClose}
+      destroyOnHidden
+      styles={{
+        section: {
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          overflow: "hidden",
+        },
+        body: {
+          padding: "14px 20px calc(24px + env(safe-area-inset-bottom))",
+          overflowY: "auto",
+        },
+      }}
+      closeIcon={null}
+    >
+      {student && (
+        <TeacherScoreDrawerContent
+          key={student.id}
+          student={student}
+          rules={rules}
+          onClose={onClose}
+          onSubmitRule={onSubmitRule}
+          onSubmitCustom={onSubmitCustom}
+        />
+      )}
+    </Drawer>
+  );
+}
 
-  const filtered = useMemo(() => records.filter((record) => {
-    if (filter === "mine") return record.operator.id === teacherId
-    if (filter === "reverted") return record.reverted || record.recordType === "REVERT"
-    return true
-  }), [filter, records, teacherId])
+interface TeacherScoreDrawerContentProps {
+  student: Student;
+  rules: ScoreRule[];
+  onClose: () => void;
+  onSubmitRule: (rule: ScoreRule) => Promise<void>;
+  onSubmitCustom: (delta: number, reason: string) => Promise<void>;
+}
 
-  async function confirmRevert(): Promise<void> {
-    if (!revertTarget) return
-    try {
-      await revertScore.mutateAsync(revertTarget.id)
-      setRevertTarget(null)
-      setFeedback({ tone: "success", message: "已生成撤销流水，原记录保留" })
-      window.setTimeout(() => setFeedback(null), 2800)
-    } catch (error) {
-      setFeedback({ tone: "error", message: error instanceof Error ? error.message : "撤销失败" })
+function TeacherScoreDrawerContent({
+  student,
+  rules,
+  onClose,
+  onSubmitRule,
+  onSubmitCustom,
+}: TeacherScoreDrawerContentProps): ReactElement {
+  // Preset fallback rules if system has none
+  const displayRules: Array<{
+    id: string;
+    name: string;
+    delta: number;
+    description: string;
+    color: string;
+  }> = useMemo(() => {
+    if (rules.length > 0) {
+      return rules.map((r) => ({
+        id: r.id,
+        name: r.name,
+        delta: r.delta,
+        description: r.description ?? "",
+        color: r.delta > 0 ? "#52c41a" : "#faad14",
+      }));
     }
-  }
+    return [
+      {
+        id: "p1",
+        name: "精彩回答",
+        delta: 5,
+        description: "优秀解法与思考",
+        color: "#52c41a",
+      },
+      {
+        id: "p2",
+        name: "积极发言",
+        delta: 2,
+        description: "主动回答问题",
+        color: "#1677ff",
+      },
+      {
+        id: "p3",
+        name: "认真听讲",
+        delta: 1,
+        description: "课堂专注良好",
+        color: "#1677ff",
+      },
+      {
+        id: "p4",
+        name: "课堂提醒",
+        delta: -1,
+        description: "注意课堂专注",
+        color: "#faad14",
+      },
+    ];
+  }, [rules]);
 
-  return <main className="min-h-screen bg-[#eef5ff] px-4 pb-8 text-[#102344] sm:px-6"><div className="mx-auto w-full max-w-[430px]"><header className="sticky top-0 z-10 -mx-4 mb-4 flex items-center gap-3 border-b border-white/70 bg-[#eef5ff]/90 px-4 py-3 backdrop-blur-md sm:mx-0 sm:rounded-b-3xl sm:border sm:border-[#dbe9ff]"><Link href="/teacher" className="flex size-11 items-center justify-center rounded-full border border-[#cdddf8] bg-white/80 text-[#49648a] hover:text-[#0a59f7]" aria-label="返回教师端"><ChevronRight className="size-5 rotate-180" aria-hidden="true" /></Link><div><p className="text-xs font-medium tracking-[0.16em] text-[#6d83a5]">ACTIVITY LOG</p><h1 className="text-lg font-semibold text-[#102344]">积分流水</h1></div></header><section className="space-y-4"><div className="rounded-3xl border border-[#dce8f7] bg-white p-4 shadow-[0_8px_24px_rgba(42,82,141,0.05)]"><div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold">最近操作</h2><p className="mt-1 text-xs text-[#8798b1]">任课教师可撤销本人记录</p></div><History className="size-5 text-[#0a59f7]" aria-hidden="true" /></div><div className="mt-4 flex gap-2 overflow-x-auto pb-1"><button type="button" onClick={() => setFilter("all")} className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-medium ${filter === "all" ? "bg-[#0a59f7] text-white" : "bg-[#f1f5fb] text-[#637896]"}`}>全部</button><button type="button" onClick={() => setFilter("mine")} className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-medium ${filter === "mine" ? "bg-[#0a59f7] text-white" : "bg-[#f1f5fb] text-[#637896]"}`}>本人记录</button><button type="button" onClick={() => setFilter("reverted")} className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-medium ${filter === "reverted" ? "bg-[#0a59f7] text-white" : "bg-[#f1f5fb] text-[#637896]"}`}>已撤销</button></div></div><FeedbackBanner feedback={feedback} />{filtered.length ? <div className="space-y-3">{filtered.map((record) => <HistoryRecordCard key={record.id} record={record} onDetail={() => setSelected(record)} onRevert={() => setRevertTarget(record)} />)}</div> : <div className="rounded-3xl border border-dashed border-[#bfd2f1] bg-white/70 px-4 py-12 text-center"><History className="mx-auto size-7 text-[#0a59f7]" aria-hidden="true" /><p className="mt-3 text-sm font-medium text-[#3d557c]">暂无匹配记录</p></div>}</section></div>{selected ? <div className="fixed inset-0 z-30 flex items-end justify-center bg-[#122342]/30 p-3 backdrop-blur-[2px] sm:items-center"><section className="w-full max-w-[430px] rounded-[28px] bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="record-detail-title"><div className="flex items-start justify-between"><div><p className="text-xs tracking-[0.16em] text-[#6d83a5]">RECORD DETAIL</p><h2 id="record-detail-title" className="mt-1 text-xl font-semibold">积分记录</h2></div><button type="button" onClick={() => setSelected(null)} className="flex size-11 items-center justify-center rounded-full text-[#7587a2] hover:bg-[#f0f5fc]" aria-label="关闭详情"><X className="size-5" aria-hidden="true" /></button></div><dl className="mt-5 divide-y divide-[#edf1f6] rounded-2xl bg-[#f7f9fc] px-4"><div className="flex justify-between gap-3 py-3 text-sm"><dt className="text-[#8090a8]">学生</dt><dd className="font-medium">{selected.student.name}</dd></div><div className="flex justify-between gap-3 py-3 text-sm"><dt className="text-[#8090a8]">操作教师</dt><dd className="font-medium">{selected.operator.name}</dd></div><div className="flex justify-between gap-3 py-3 text-sm"><dt className="text-[#8090a8]">类型</dt><dd className="font-medium">{selected.rule?.name ?? "自定义积分"}</dd></div><div className="flex justify-between gap-3 py-3 text-sm"><dt className="text-[#8090a8]">积分变化</dt><dd className={`font-semibold ${selected.delta > 0 ? "text-[#0a59f7]" : "text-[#dd5148]"}`}>{formatDelta(selected.delta)}</dd></div></dl>{selected.reason ? <p className="mt-4 rounded-2xl border border-[#e0e9f5] px-4 py-3 text-sm leading-6 text-[#526887]">{selected.reason}</p> : null}<p className="mt-4 flex items-center gap-2 text-xs text-[#8b9ab0]"><Clock3 className="size-3.5" aria-hidden="true" />{new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(selected.createdAt))}</p></section></div> : null}{revertTarget ? <div className="fixed inset-0 z-40 flex items-end justify-center bg-[#122342]/35 p-3 backdrop-blur-[2px] sm:items-center"><section className="w-full max-w-[430px] rounded-[28px] bg-white p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="revert-title"><div className="flex size-11 items-center justify-center rounded-2xl bg-[#fff1f0] text-[#c44742]"><Undo2 className="size-5" aria-hidden="true" /></div><h2 id="revert-title" className="mt-4 text-xl font-semibold">撤销这次积分操作？</h2><p className="mt-2 text-sm leading-6 text-[#71829d]">原积分流水不会删除，系统会生成一条反向流水以保留记录。</p><div className="mt-5 flex gap-2"><button type="button" onClick={() => setRevertTarget(null)} className="min-h-12 flex-1 rounded-full border border-[#d5e1f1] text-sm font-medium text-[#617493]">取消</button><button type="button" onClick={confirmRevert} className="min-h-12 flex-1 rounded-full bg-[#c44742] text-sm font-semibold text-white">确认撤销</button></div></section></div> : null}</main>
+  const [activeTab, setActiveTab] = useState<"presets" | "custom">("presets");
+  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(
+    () => displayRules[0]?.id ?? null,
+  );
+  const [customDelta, setCustomDelta] = useState<number>(2);
+  const [customReason, setCustomReason] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleConfirm = async () => {
+    setSubmitting(true);
+    try {
+      if (activeTab === "presets") {
+        const found = rules.find((r) => r.id === selectedRuleId);
+        if (found) {
+          await onSubmitRule(found);
+        } else {
+          const preset = displayRules.find((p) => p.id === selectedRuleId);
+          await onSubmitCustom(
+            preset?.delta ?? 2,
+            preset?.name ?? "课堂快速评价",
+          );
+        }
+      } else {
+        await onSubmitCustom(
+          customDelta,
+          customReason.trim() || "课堂自定义评价",
+        );
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div>
+      {/* Drawer Drag Handle */}
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+        <div
+          style={{
+            width: 36,
+            height: 4,
+            borderRadius: 2,
+            background: "#d9d9d9",
+          }}
+        />
+      </div>
+
+      {/* Drawer Student Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <Avatar
+            size={44}
+            style={{
+              background: "#0a59f7",
+              color: "#ffffff",
+              fontSize: 18,
+              fontWeight: 700,
+            }}
+          >
+            {student.name.slice(0, 1)}
+          </Avatar>
+          <div>
+            <Typography.Title level={4} style={{ margin: 0, color: "#14233c" }}>
+              {student.name}
+            </Typography.Title>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              学号 · {student.studentNo}
+            </Typography.Text>
+          </div>
+        </div>
+
+        <Button
+          type="text"
+          shape="circle"
+          icon={<CloseOutlined />}
+          onClick={onClose}
+        />
+      </div>
+
+      {/* Tabs Switcher */}
+      <Radio.Group
+        value={activeTab}
+        onChange={(e) => setActiveTab(e.target.value as "presets" | "custom")}
+        buttonStyle="solid"
+        style={{ width: "100%", marginBottom: 16, display: "flex" }}
+      >
+        <Radio.Button
+          value="presets"
+          style={{ flex: 1, textAlign: "center", borderRadius: 10 }}
+        >
+          快捷规则
+        </Radio.Button>
+        <Radio.Button
+          value="custom"
+          style={{ flex: 1, textAlign: "center", borderRadius: 10 }}
+        >
+          自定义分值
+        </Radio.Button>
+      </Radio.Group>
+
+      {/* Presets Grid */}
+      {activeTab === "presets" ? (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+            gap: 10,
+            marginBottom: 20,
+            minWidth: 0,
+          }}
+        >
+          {displayRules.map((rule) => {
+            const isSelected = selectedRuleId === rule.id;
+            const isPositive = rule.delta > 0;
+            return (
+              <div
+                key={rule.id}
+                onClick={() => setSelectedRuleId(rule.id)}
+                style={{
+                  padding: "14px 12px",
+                  borderRadius: 14,
+                  border: isSelected
+                    ? `2px solid ${rule.color}`
+                    : "1px solid #e2e8f0",
+                  background: isSelected
+                    ? isPositive
+                      ? "#f6ffed"
+                      : "#fffbe6"
+                    : "#fafbfd",
+                  cursor: "pointer",
+                  transition: "all 120ms ease",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 20,
+                    fontWeight: 700,
+                    color: rule.color,
+                    minWidth: 40,
+                  }}
+                >
+                  {formatDelta(rule.delta)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Typography.Text
+                    strong
+                    style={{
+                      fontSize: 13,
+                      display: "block",
+                      color: "#1e293b",
+                    }}
+                  >
+                    {rule.name}
+                  </Typography.Text>
+                  <Typography.Text
+                    type="secondary"
+                    style={{
+                      fontSize: 11,
+                      display: "block",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {rule.description}
+                  </Typography.Text>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ marginBottom: 12 }}>
+            <Typography.Text
+              type="secondary"
+              style={{ fontSize: 13, display: "block", marginBottom: 6 }}
+            >
+              分值调整 (正数加分，负数扣分)：
+            </Typography.Text>
+            <InputNumber
+              value={customDelta}
+              onChange={(val) => setCustomDelta(val ?? 0)}
+              size="large"
+              style={{ width: "100%", borderRadius: 12 }}
+            />
+          </div>
+          <div>
+            <Typography.Text
+              type="secondary"
+              style={{ fontSize: 13, display: "block", marginBottom: 6 }}
+            >
+              评价备注原因：
+            </Typography.Text>
+            <Input.TextArea
+              value={customReason}
+              onChange={(e) => setCustomReason(e.target.value)}
+              placeholder="例如：课堂发言条理清晰，提出新的解题思路"
+              rows={2}
+              style={{ borderRadius: 12 }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Button */}
+      <Button
+        type="primary"
+        size="large"
+        block
+        loading={submitting}
+        onClick={handleConfirm}
+        style={{
+          height: 46,
+          borderRadius: 999,
+          fontWeight: 600,
+          background: "linear-gradient(135deg, #0a59f7 0%, #1e6bfb 100%)",
+        }}
+      >
+        确定并记录评价
+      </Button>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------
+// Teacher History View (/teacher/history)
+// -------------------------------------------------------------
+
+export function TeacherHistorySurface(): ReactElement {
+  const classId = getActiveClassId() ?? "class-1";
+  const recordsQuery = useScoreRecords(classId, { page: 1, pageSize: 100 });
+  const revertScoreMutation = useRevertScore(classId);
+  const records = useMemo(
+    () => recordsQuery.data?.data ?? [],
+    [recordsQuery.data],
+  );
+  const teacherId = getUserSession()?.user.id;
+
+  const [filter, setFilter] = useState<"all" | "mine" | "reverted">("all");
+  const [detailRecord, setDetailRecord] = useState<ScoreRecord | null>(null);
+
+  const filtered = useMemo(() => {
+    return records.filter((r) => {
+      if (filter === "mine") return r.operator.id === teacherId;
+      if (filter === "reverted") return r.reverted || r.recordType === "REVERT";
+      return true;
+    });
+  }, [records, filter, teacherId]);
+
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "#f3f6fb",
+        padding: "16px 14px 40px",
+      }}
+    >
+      <div style={{ maxWidth: 480, margin: "0 auto" }}>
+        {/* Header */}
+        <header
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 16,
+          }}
+        >
+          <Link href="/teacher">
+            <Button shape="circle" icon={<ArrowLeftOutlined />} />
+          </Link>
+          <div>
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              积分流水记录
+            </Typography.Title>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              任课教师可查看并撤销本人记录
+            </Typography.Text>
+          </div>
+        </header>
+
+        {/* Filter Pills */}
+        <div style={{ marginBottom: 14 }}>
+          <Radio.Group
+            value={filter}
+            onChange={(e) =>
+              setFilter(e.target.value as "all" | "mine" | "reverted")
+            }
+            buttonStyle="solid"
+            style={{ display: "flex", width: "100%" }}
+          >
+            <Radio.Button
+              value="all"
+              style={{ flex: 1, textAlign: "center", borderRadius: 10 }}
+            >
+              全部记录
+            </Radio.Button>
+            <Radio.Button
+              value="mine"
+              style={{ flex: 1, textAlign: "center", borderRadius: 10 }}
+            >
+              本人操作
+            </Radio.Button>
+            <Radio.Button
+              value="reverted"
+              style={{ flex: 1, textAlign: "center", borderRadius: 10 }}
+            >
+              已撤销
+            </Radio.Button>
+          </Radio.Group>
+        </div>
+
+        {/* List */}
+        {filtered.length === 0 ? (
+          <Card style={{ borderRadius: 16, textAlign: "center", padding: "40px 0" }}>
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无匹配流水"
+            />
+          </Card>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {filtered.map((record) => {
+              const isReverted =
+                record.reverted || record.recordType === "REVERT";
+              const isPositive = record.delta > 0;
+              return (
+                <Card
+                  key={record.id}
+                  hoverable
+                  onClick={() => setDetailRecord(record)}
+                  style={{
+                    borderRadius: 16,
+                    border: "1px solid #e8eef6",
+                  }}
+                  styles={{ body: { padding: "14px 16px" } }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        <Typography.Text
+                          strong
+                          style={{ fontSize: 14, color: "#1e293b" }}
+                        >
+                          {record.student.name}
+                        </Typography.Text>
+                        <Tag
+                          color={isReverted ? "default" : "blue"}
+                          style={{ borderRadius: 999, fontSize: 11 }}
+                        >
+                          {record.rule?.name ?? "自定义积分"}
+                        </Tag>
+                        {isReverted ? (
+                          <Tag style={{ borderRadius: 999, fontSize: 11 }}>
+                            已撤销
+                          </Tag>
+                        ) : null}
+                      </div>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 10,
+                          alignItems: "center",
+                          marginTop: 4,
+                        }}
+                      >
+                        <Typography.Text
+                          type="secondary"
+                          style={{ fontSize: 12 }}
+                        >
+                          {formatTime(record.createdAt)} ·{" "}
+                          {record.operator.name}
+                        </Typography.Text>
+                      </div>
+                    </div>
+
+                    <Typography.Text
+                      strong
+                      style={{
+                        fontSize: 18,
+                        color: isPositive ? "#52c41a" : "#faad14",
+                      }}
+                    >
+                      {formatDelta(record.delta)}
+                    </Typography.Text>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Record Detail Drawer */}
+      <Drawer
+        title="积分流水详情"
+        placement="bottom"
+        open={detailRecord !== null}
+        onClose={() => setDetailRecord(null)}
+        styles={{
+          section: { borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+          body: { padding: 20 },
+        }}
+      >
+        {detailRecord && (
+          <div>
+            <Descriptions column={1} bordered size="small">
+              <Descriptions.Item label="学生姓名">
+                {detailRecord.student.name}
+              </Descriptions.Item>
+              <Descriptions.Item label="积分规则">
+                {detailRecord.rule?.name ?? "自定义积分"}
+              </Descriptions.Item>
+              <Descriptions.Item label="分值变动">
+                <Typography.Text
+                  strong
+                  style={{
+                    color: detailRecord.delta > 0 ? "#52c41a" : "#faad14",
+                  }}
+                >
+                  {formatDelta(detailRecord.delta)}
+                </Typography.Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="操作教师">
+                {detailRecord.operator.name}
+              </Descriptions.Item>
+              <Descriptions.Item label="时间">
+                {detailRecord.createdAt}
+              </Descriptions.Item>
+              <Descriptions.Item label="原因">
+                {detailRecord.reason || "无"}
+              </Descriptions.Item>
+            </Descriptions>
+
+            {!detailRecord.reverted &&
+            detailRecord.recordType === "NORMAL" &&
+            detailRecord.operator.id === teacherId ? (
+              <Popconfirm
+                title="撤销这笔积分？"
+                description="系统将自动创建一笔相反分值的反向流水。"
+                okText="确认撤销"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={async () => {
+                  try {
+                    await revertScoreMutation.mutateAsync(detailRecord.id);
+                    setDetailRecord(null);
+                  } catch {
+                    // handled by query hook
+                  }
+                }}
+              >
+                <Button
+                  danger
+                  block
+                  size="large"
+                  icon={<UndoOutlined />}
+                  style={{ marginTop: 18, borderRadius: 999 }}
+                >
+                  撤销本条记录
+                </Button>
+              </Popconfirm>
+            ) : null}
+          </div>
+        )}
+      </Drawer>
+    </main>
+  );
 }

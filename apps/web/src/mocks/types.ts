@@ -6,6 +6,7 @@ import type {
   IsoDateTime,
   ScoreRecordType,
   ScoreRule,
+  SchedulePeriod,
   SeatLayoutVersion,
   Student,
 } from "@/lib/domain"
@@ -46,10 +47,28 @@ export interface MockDisplayDevice extends DisplayDevice {
   classId: string
 }
 
+export interface MockScheduleTemplate {
+  id: string
+  classId: string
+  name: string
+  periods: SchedulePeriod[]
+}
+
+export interface MockScheduleEntry {
+  id: string
+  classId: string
+  weekday: number
+  periodNo: number
+  courseName: string
+  classTeacherId: string | null
+}
+
 export interface MockDatabaseState {
   classrooms: Classroom[]
   students: Student[]
   teachers: ClassTeacher[]
+  scheduleTemplates: MockScheduleTemplate[]
+  scheduleEntries: MockScheduleEntry[]
   scoreRules: ScoreRule[]
   scoreRecords: MockScoreRecord[]
   seatLayoutVersions: SeatLayoutVersion[]

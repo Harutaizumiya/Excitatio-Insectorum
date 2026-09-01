@@ -7,7 +7,7 @@ Node.js
 TypeScript
 NestJS
 Prisma
-PostgreSQL
+SQLite（当前默认）/ PostgreSQL（可选兼容）
 Passport / JWT
 Socket.IO
 Redis
@@ -39,7 +39,7 @@ MVP 采用模块化单体。
 原则：
 
 ```text
-REST API / PostgreSQL = 最终状态
+REST API / 数据库 = 最终状态
 Socket.IO = 状态变化通知
 ```
 
@@ -72,6 +72,7 @@ src/
 ├── teachers/
 ├── students/
 ├── seating/
+├── schedules/
 ├── scores/
 ├── ranking/
 ├── displays/
@@ -151,6 +152,10 @@ src/
 - 历史恢复。
 - 网格边界校验。
 - 学生重复座位校验。
+
+### SchedulesModule
+
+负责周课表、多套作息模板、当前模板切换、统一事务保存及课表校验，并向 RealtimeModule 发布 `SCHEDULE_CHANGED`。
 
 ### ScoresModule
 
@@ -681,7 +686,7 @@ OpenAPI 是接口结构的唯一事实来源。
 
 - NestJS 初始化。
 - Prisma。
-- PostgreSQL。
+- SQLite（默认）/ PostgreSQL（可选兼容）。
 - Redis。
 - Config。
 - Logging。

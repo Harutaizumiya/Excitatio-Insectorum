@@ -40,6 +40,7 @@ export interface ClassroomSummary {
 }
 
 export interface Classroom extends ClassroomSummary {
+  activeScheduleTemplateId: string | null
   currentLayoutVersionId: string | null
   createdAt: IsoDateTime
   updatedAt: IsoDateTime
@@ -51,6 +52,52 @@ export interface UpdateClassroomInput {
   schoolYear?: string
   gridRows?: number
   gridCols?: number
+}
+
+export type Weekday = 1 | 2 | 3 | 4 | 5 | 6 | 7
+
+export interface SchedulePeriod {
+  periodNo: number
+  startTime: string
+  endTime: string
+}
+
+export interface ScheduleTemplate {
+  id: string
+  name: string
+  periods: SchedulePeriod[]
+}
+
+export interface ScheduleEntry {
+  weekday: Weekday
+  periodNo: number
+  courseName: string
+  classTeacherId: string | null
+  teacher: NamedEntity | null
+}
+
+export interface ClassSchedule {
+  activeTemplateId: string | null
+  templates: ScheduleTemplate[]
+  entries: ScheduleEntry[]
+}
+
+export interface ScheduleTemplateDraft {
+  clientKey: string
+  id?: string
+  name: string
+  periods: SchedulePeriod[]
+}
+
+export interface SaveClassScheduleInput {
+  activeTemplateKey: string
+  templates: ScheduleTemplateDraft[]
+  entries: Array<{
+    weekday: Weekday
+    periodNo: number
+    courseName: string
+    classTeacherId?: string | null
+  }>
 }
 
 export interface Student {
@@ -334,6 +381,14 @@ export interface DisplayBootstrap {
   ranking: {
     top3: TopRankingItem[]
     progress: Array<Pick<ProgressRankingItem, "studentId" | "name" | "change">>
+  }
+  schedule: {
+    periods: SchedulePeriod[]
+    entries: Array<{
+      weekday: Weekday
+      periodNo: number
+      courseName: string
+    }>
   }
 }
 

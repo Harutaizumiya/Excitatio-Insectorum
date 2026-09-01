@@ -95,6 +95,11 @@ function RealtimeQuerySync({ client }: { client: ClassRealtimeClient }) {
         })
         void queryClient.invalidateQueries({ queryKey: ["display"] })
       }),
+      client.subscribe("SCHEDULE_CHANGED", undefined, (event) => {
+        void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.schedule(event.classId) })
+        void queryClient.invalidateQueries({ queryKey: ["admin", "schedule"] })
+        void queryClient.invalidateQueries({ queryKey: ["display"] })
+      }),
     ]
     return () => {
       for (const unsubscribe of unsubscribers) unsubscribe()

@@ -15,6 +15,7 @@ import type {
   CreateStudentInput,
   CreateTeacherInput,
   CreateTeacherResult,
+  ClassSchedule,
   DeviceTokenInput,
   DeviceTokenResult,
   DisplayBootstrap,
@@ -30,6 +31,7 @@ import type {
   RandomPickResult,
   RefreshInput,
   SaveSeatLayoutInput,
+  SaveClassScheduleInput,
   ScoreRecord,
   ScoreRecordListQuery,
   ScoreRule,
@@ -102,6 +104,9 @@ export interface ClassroomService {
   getSeatLayoutVersion(classId: string, versionId: string): Promise<SeatLayout>
   saveSeatLayout(classId: string, input: SaveSeatLayoutInput): Promise<SeatLayoutMutation>
   restoreSeatLayout(classId: string, versionId: string): Promise<SeatLayoutMutation>
+
+  getSchedule(classId: string): Promise<ClassSchedule>
+  saveSchedule(classId: string, input: SaveClassScheduleInput): Promise<ClassSchedule>
 
   getWeeklyRanking(classId: string): Promise<WeeklyRanking>
   randomPick(classId: string, input?: RandomPickInput): Promise<RandomPickResult>

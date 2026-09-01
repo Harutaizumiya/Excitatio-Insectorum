@@ -6,7 +6,7 @@ export const environmentValidationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
   PORT: Joi.number().port().default(3000),
   DATABASE_URL: Joi.string()
-    .uri({ scheme: ['postgres', 'postgresql'] })
+    .uri({ scheme: ['file', 'postgres', 'postgresql'] })
     .required(),
   REDIS_URL: Joi.string()
     .uri({ scheme: ['redis', 'rediss'] })

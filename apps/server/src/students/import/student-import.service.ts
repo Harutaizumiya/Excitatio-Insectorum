@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs';
 import { parse as parseCsv } from 'csv-parse/sync';
 import { BusinessException, ClassEventType } from '../../common';
 import { ClassroomsService } from '../../classrooms';
-import { PrismaService } from '../../prisma';
+import { isPostgresDatabase, PrismaService } from '../../prisma';
 import { RealtimeService } from '../../realtime';
 import {
   FIELD_ALIASES,
@@ -597,10 +597,13 @@ export class StudentImportService {
 
       let created = 0;
       if (candidates.length > 0) {
-        const createdResult = await transaction.student.createMany({
-          data: candidates.map((student) => ({ classId, ...student })),
-          skipDuplicates: true,
-        });
+        const data = candidates.map((student) => ({ classId, ...student }));
+        const createManyArgs = isPostgresDatabase()
+          ? ({ data, skipDuplicates: true } as unknown as Parameters<
+              typeof transaction.student.createMany
+            >[0])
+          : { data };
+        const createdResult = await transaction.student.createMany(createManyArgs);
         created = createdResult.count;
         const persisted = await transaction.student.findMany({
           where: {

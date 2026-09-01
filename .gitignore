@@ -7,5 +7,9 @@ coverage/
 !.env.example
 *.log
 *.tsbuildinfo
+*.db
+*.db-journal
 .DS_Store
 .playwright-cli/
+deploy/server.env
+deploy/data/

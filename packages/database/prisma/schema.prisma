@@ -82,17 +82,21 @@ model Classroom {
   name                   String              @db.VarChar(120)
   grade                  String?             @db.VarChar(50)
   schoolYear             String?             @db.VarChar(20)
-  gridRows               Int                 @default(6)
-  gridCols               Int                 @default(8)
+  gridRows               Int                 @default(7)
+  gridCols               Int                 @default(11)
   currentLayoutVersionId String?             @unique
+  activeScheduleTemplateId String?           @unique
   status                 String              @default("ACTIVE") @db.VarChar(30)
   currentLayout          SeatLayoutVersion?  @relation("CurrentClassroomLayout", fields: [currentLayoutVersionId], references: [id], onDelete: SetNull)
+  activeScheduleTemplate  ScheduleTemplate?  @relation("ClassroomActiveScheduleTemplate", fields: [activeScheduleTemplateId], references: [id], onDelete: SetNull)
   teachers               ClassTeacher[]
   students               Student[]
   layouts                SeatLayoutVersion[] @relation("ClassroomLayoutVersions")
   scoreRules             ScoreRule[]
   scoreRecords           ScoreRecord[]
   displayDevices         DisplayDevice[]
+  scheduleTemplates      ScheduleTemplate[]  @relation("ClassroomScheduleTemplates")
+  scheduleEntries        ScheduleEntry[]
   createdAt              DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt              DateTime            @updatedAt @db.Timestamptz(3)
 
@@ -109,12 +113,56 @@ model ClassTeacher {
   classroom   Classroom           @relation(fields: [classId], references: [id], onDelete: Restrict)
   teacher     User                @relation(fields: [teacherId], references: [id], onDelete: Restrict)
   invitations TeacherInvitation[]
+  scheduleEntries ScheduleEntry[]
   createdAt   DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
 
   @@index([classId, status])
   @@index([teacherId, status])
   @@index([classId, role, status])
+}
+
+model ScheduleTemplate {
+  id              String                    @id @default(cuid())
+  classId         String
+  name            String                    @db.VarChar(100)
+  classroom       Classroom                 @relation("ClassroomScheduleTemplates", fields: [classId], references: [id], onDelete: Restrict)
+  activeClassroom Classroom?                @relation("ClassroomActiveScheduleTemplate")
+  periods         ScheduleTemplatePeriod[]
+  createdAt       DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime                  @updatedAt @db.Timestamptz(3)
+
+  @@unique([classId, name])
+  @@index([classId, updatedAt])
+}
+
+model ScheduleTemplatePeriod {
+  id         String           @id @default(cuid())
+  templateId String
+  periodNo   Int
+  startTime  String           @db.VarChar(5)
+  endTime    String           @db.VarChar(5)
+  template   ScheduleTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, periodNo])
+  @@index([templateId, periodNo])
+}
+
+model ScheduleEntry {
+  id            String        @id @default(cuid())
+  classId       String
+  weekday       Int
+  periodNo      Int
+  courseName    String        @db.VarChar(100)
+  classTeacherId String?
+  classroom     Classroom     @relation(fields: [classId], references: [id], onDelete: Restrict)
+  classTeacher  ClassTeacher? @relation(fields: [classTeacherId], references: [id], onDelete: SetNull)
+  createdAt     DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@unique([classId, weekday, periodNo])
+  @@index([classId, weekday, periodNo])
+  @@index([classTeacherId])
 }
 
 model TeacherInvitation {

@@ -7,7 +7,7 @@ import {
   type ClassRealtimePublisher,
 } from '../common/realtime/class-realtime-event';
 import { BusinessException } from '../common/exceptions/business.exception';
-import { PrismaService } from '../prisma';
+import { isPostgresDatabase, PrismaService } from '../prisma';
 import {
   SaveSeatLayoutDto,
   seatCellTypeValues,
@@ -174,9 +174,9 @@ export class SeatingService {
             sourceVersionId: null,
           });
         },
-        {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        },
+        isPostgresDatabase()
+          ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+          : undefined,
       ),
     );
 
@@ -311,9 +311,9 @@ export class SeatingService {
             sourceVersionId: source.id,
           });
         },
-        {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        },
+        isPostgresDatabase()
+          ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+          : undefined,
       ),
     );
 

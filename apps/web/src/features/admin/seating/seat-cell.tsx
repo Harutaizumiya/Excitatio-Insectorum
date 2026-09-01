@@ -7,7 +7,7 @@ import { formatSeat, type Seat, type Student } from "../admin-data";
 import type { DragSource } from "./types";
 
 export interface StaticStudentProps {
-  student: Student;
+  student: Pick<Student, "id" | "name" | "studentNo">;
   compact?: boolean;
   isDragging?: boolean;
   disabled?: boolean;
@@ -85,8 +85,11 @@ interface SeatCellProps {
   row: number;
   col: number;
   seat?: Seat;
-  student?: Student;
+  student?: Pick<Student, "id" | "name" | "studentNo">;
   isLayoutStage: boolean;
+  readOnly?: boolean;
+  emphasized?: boolean;
+  studentContent?: React.ReactNode;
   isDraggingThis?: boolean;
   onCellClick?: (row: number, col: number) => void;
   onUnseat?: (seatId: string) => void;
@@ -103,6 +106,9 @@ export const SeatCell = memo(function SeatCell({
   seat,
   student,
   isLayoutStage,
+  readOnly = false,
+  emphasized = false,
+  studentContent,
   isDraggingThis = false,
   onCellClick,
   onUnseat,
@@ -133,7 +139,7 @@ export const SeatCell = memo(function SeatCell({
           }}
           title={formatSeat(row, col)}
         >
-          <span style={{ fontSize: 11, pointerEvents: "none" }}>留白</span>
+          <span style={{ fontSize: 11, pointerEvents: "none" }}>空</span>
         </div>
       );
     }
@@ -229,7 +235,7 @@ export const SeatCell = memo(function SeatCell({
   const occupied = Boolean(student);
   const isConfiguredSeat = Boolean(seat && isSeat);
 
-  // Assignment Stage: If cell is empty/留白, do not render grid cell box in assignment mode
+  // Assignment Stage: If cell is empty/空, do not render grid cell box in assignment mode
   if (!isConfiguredSeat && !occupied) {
     return <div style={{ height: 80, pointerEvents: "none" }} />;
   }
@@ -241,9 +247,15 @@ export const SeatCell = memo(function SeatCell({
         height: 80,
         position: "relative",
         borderRadius: 14,
-        border: occupied ? "1.5px solid #adc6ff" : "1.5px dashed #c4d4eb",
-        background: occupied ? "#ffffff" : "#fafcff",
-        boxShadow: occupied ? "0 2px 8px rgba(10, 89, 247, 0.06)" : "none",
+        border: occupied
+          ? `${emphasized ? 2.5 : 1.5}px solid ${emphasized ? "#1677ff" : "#adc6ff"}`
+          : "1.5px dashed #c4d4eb",
+        background: occupied && emphasized ? "#e6f4ff" : occupied ? "#ffffff" : "#fafcff",
+        boxShadow: occupied
+          ? emphasized
+            ? "0 2px 8px rgba(22, 119, 255, 0.16)"
+            : "0 2px 8px rgba(10, 89, 247, 0.06)"
+          : "none",
         padding: "6px 7px",
         display: "flex",
         flexDirection: "column",
@@ -255,7 +267,7 @@ export const SeatCell = memo(function SeatCell({
         <span style={{ fontSize: 10, fontWeight: 600, color: occupied ? "#64748b" : "#94a3b8", pointerEvents: "none" }}>
           {formatSeat(row, col)}
         </span>
-        {occupied ? (
+        {occupied && !readOnly ? (
           <Button
             type="text"
             size="small"
@@ -274,12 +286,14 @@ export const SeatCell = memo(function SeatCell({
       </div>
 
       {student ? (
-        <StaticStudent
-          student={student}
-          compact
-          isDragging={isDraggingThis}
-          onPointerDown={(e) => onStudentPointerDown?.(student.id, { row, col }, e)}
-        />
+        studentContent ?? (
+          <StaticStudent
+            student={student}
+            compact
+            isDragging={isDraggingThis}
+            onPointerDown={(e) => onStudentPointerDown?.(student.id, { row, col }, e)}
+          />
+        )
       ) : (
         <div
           style={{

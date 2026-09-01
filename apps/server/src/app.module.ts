@@ -12,6 +12,7 @@ import { RealtimeModule } from './realtime';
 import { RedisModule } from './redis';
 import { ScoresModule } from './scores';
 import { SeatingModule } from './seating';
+import { SchedulesModule } from './schedules';
 import { StudentsModule } from './students';
 import { TeachersModule } from './teachers';
 import { UsersModule } from './users';
@@ -75,6 +76,7 @@ import { UsersModule } from './users';
     SeatingModule,
     ScoresModule,
     RankingModule,
+    SchedulesModule,
     RealtimeModule,
     DisplaysModule,
     RandomPickModule,

@@ -26,7 +26,9 @@ import {
   type PollBindingSessionResult,
   type RandomPickInput,
   type RandomPickResult,
+  type ClassSchedule,
   type RefreshInput,
+  type SaveClassScheduleInput,
   type SaveSeatLayoutInput,
   type ScoreRecord,
   type ScoreRecordListQuery,
@@ -45,6 +47,7 @@ import {
   type UpdateStudentInput,
   type UpdateTeacherInput,
   type WeeklyRanking,
+  type Weekday,
 } from "@/lib"
 import {
   InMemoryRealtimeBus,
@@ -60,7 +63,7 @@ import {
   MOCK_HEAD_TEACHER_ID,
 } from "./data"
 import { MockClassroomRepository } from "./repository"
-import type { MockDatabaseState, MockScoreRecord } from "./types"
+import type { MockDatabaseState, MockScheduleEntry, MockScheduleTemplate, MockScoreRecord } from "./types"
 
 const DEFAULT_PAGE_SIZE = 20
 
@@ -258,6 +261,104 @@ export class MockClassroomService implements ClassroomService {
       this.requireClassroom(state, classId)
       return state.teachers.filter((teacher) => teacher.classId === classId)
     })
+  }
+
+  async getSchedule(classId: string): Promise<ClassSchedule> {
+    return this.repository.read((state) => {
+      this.requireClassroom(state, classId)
+      return {
+        activeTemplateId: state.classrooms.find((item) => item.id === classId)!.activeScheduleTemplateId,
+        templates: state.scheduleTemplates
+          .filter((template) => template.classId === classId)
+          .map(({ id, name, periods }) => ({ id, name, periods: periods.map((period) => ({ ...period })) })),
+        entries: state.scheduleEntries
+          .filter((entry) => entry.classId === classId)
+          .sort((left, right) => left.weekday - right.weekday || left.periodNo - right.periodNo)
+          .map((entry) => {
+            const relation = state.teachers.find((teacher) => teacher.id === entry.classTeacherId)
+            return {
+              weekday: entry.weekday as ClassSchedule["entries"][number]["weekday"],
+              periodNo: entry.periodNo,
+              courseName: entry.courseName,
+              classTeacherId: entry.classTeacherId,
+              teacher: relation ? { id: relation.teacher.id, name: relation.teacher.name } : null,
+            }
+          }),
+      }
+    })
+  }
+
+  async saveSchedule(classId: string, input: SaveClassScheduleInput): Promise<ClassSchedule> {
+    const identity = this.repository.issueIdentity("schedule")
+    this.repository.transact((state) => {
+      const classroom = this.requireClassroom(state, classId)
+      if (input.templates.length === 0 || input.templates.length > 12) {
+        throw new ClassroomServiceError("SCHEDULE_TEMPLATE_REQUIRED", "至少保留一套作息模板", 400)
+      }
+      const keys = new Set<string>()
+      const names = new Set<string>()
+      const periodKeys = new Set(input.templates[0].periods.map((period) => period.periodNo))
+      for (const template of input.templates) {
+        const key = template.clientKey.trim()
+        const name = template.name.trim()
+        if (!key || keys.has(key)) throw new ClassroomServiceError("SCHEDULE_TEMPLATE_KEY_INVALID", "作息模板标识无效", 400)
+        if (!name || names.has(name)) throw new ClassroomServiceError("SCHEDULE_TEMPLATE_NAME_INVALID", "作息模板名称重复或为空", 400)
+        keys.add(key)
+        names.add(name)
+        const sorted = [...template.periods].sort((left, right) => left.periodNo - right.periodNo)
+        if (sorted.length === 0 || sorted.length > 12 || sorted.some((period, index) => period.periodNo !== index + 1)) {
+          throw new ClassroomServiceError("SCHEDULE_PERIOD_SET_INVALID", "作息节次无效", 400)
+        }
+        for (let index = 0; index < sorted.length; index += 1) {
+          const period = sorted[index]
+          if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(period.startTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(period.endTime)) {
+            throw new ClassroomServiceError("SCHEDULE_TIME_INVALID", "上下课时间格式无效", 400)
+          }
+          if (period.startTime >= period.endTime || (index > 0 && sorted[index - 1].endTime > period.startTime)) {
+            throw new ClassroomServiceError("SCHEDULE_TIME_RANGE_INVALID", "作息时间无效", 400)
+          }
+        }
+        if (sorted.length !== periodKeys.size || sorted.some((period) => !periodKeys.has(period.periodNo))) {
+          throw new ClassroomServiceError("SCHEDULE_PERIOD_SET_MISMATCH", "所有作息模板必须使用相同节次", 400)
+        }
+      }
+      const existingIds = new Set(state.scheduleTemplates.filter((template) => template.classId === classId).map((template) => template.id))
+      const incomingIds = new Set(input.templates.flatMap((template) => template.id ? [template.id] : []))
+      if ([...incomingIds].some((id) => !existingIds.has(id))) throw new ClassroomServiceError("SCHEDULE_TEMPLATE_NOT_FOUND", "作息模板不存在", 404)
+      state.scheduleTemplates = state.scheduleTemplates.filter((template) => template.classId !== classId || incomingIds.has(template.id))
+      const templateIdByKey = new Map<string, string>()
+      for (const template of input.templates) {
+        const id = template.id ?? `${identity.id}-${template.clientKey}`
+        const saved: MockScheduleTemplate = { id, classId, name: template.name.trim(), periods: template.periods.map((period) => ({ ...period })) }
+        const index = state.scheduleTemplates.findIndex((item) => item.id === id)
+        if (index >= 0) state.scheduleTemplates[index] = saved
+        else state.scheduleTemplates.push(saved)
+        templateIdByKey.set(template.clientKey.trim(), id)
+      }
+      const activeTemplateId = templateIdByKey.get(input.activeTemplateKey.trim())
+      if (!activeTemplateId) throw new ClassroomServiceError("SCHEDULE_ACTIVE_TEMPLATE_REQUIRED", "当前作息模板不存在", 400)
+      const allowedPeriodNos = new Set(input.templates[0].periods.map((period) => period.periodNo))
+      const entryKeys = new Set<string>()
+      const activeTeacherIds = new Set(state.teachers.filter((teacher) => teacher.classId === classId && teacher.status === "ACTIVE").map((teacher) => teacher.id))
+      const nextEntries: MockScheduleEntry[] = []
+      for (const entry of input.entries) {
+        const courseName = entry.courseName.trim()
+        const key = `${entry.weekday}-${entry.periodNo}`
+        if (entry.weekday < 1 || entry.weekday > 7 || !allowedPeriodNos.has(entry.periodNo) || !courseName || entryKeys.has(key)) {
+          throw new ClassroomServiceError("SCHEDULE_ENTRY_INVALID", "课表课程格子无效", 400)
+        }
+        if (entry.classTeacherId && !activeTeacherIds.has(entry.classTeacherId)) throw new ClassroomServiceError("SCHEDULE_TEACHER_NOT_FOUND", "任课教师不存在或已停用", 400)
+        entryKeys.add(key)
+        nextEntries.push({ id: `${identity.id}-${key}`, classId, weekday: entry.weekday, periodNo: entry.periodNo, courseName, classTeacherId: entry.classTeacherId ?? null })
+      }
+      state.scheduleEntries = state.scheduleEntries.filter((entry) => entry.classId !== classId)
+      state.scheduleEntries.push(...nextEntries)
+      classroom.activeScheduleTemplateId = activeTemplateId
+      classroom.updatedAt = identity.occurredAt
+    })
+    const activeTemplateId = this.repository.read((state) => state.classrooms.find((item) => item.id === classId)!.activeScheduleTemplateId)
+    this.emit(classId, "SCHEDULE_CHANGED", { activeTemplateId: activeTemplateId! })
+    return this.getSchedule(classId)
   }
 
   async createTeacher(classId: string, input: CreateTeacherInput): Promise<CreateTeacherResult> {
@@ -816,6 +917,9 @@ export class MockClassroomService implements ClassroomService {
       const classroom = this.requireClassroom(state, device.classId)
       const layout = this.currentLayoutVersion(state, classroom)
       const ranking = this.buildWeeklyRanking(state, device.classId)
+      const activeTemplate = state.scheduleTemplates.find(
+        (template) => template.id === classroom.activeScheduleTemplateId,
+      )
       return {
         classroom: {
           id: classroom.id,
@@ -830,6 +934,12 @@ export class MockClassroomService implements ClassroomService {
         ranking: {
           top3: ranking.top3,
           progress: ranking.progress.map(({ studentId, name, change }) => ({ studentId, name, change })),
+        },
+        schedule: {
+          periods: activeTemplate?.periods ?? [],
+          entries: state.scheduleEntries
+            .filter((entry) => entry.classId === device.classId)
+            .map(({ weekday, periodNo, courseName }) => ({ weekday: weekday as Weekday, periodNo, courseName })),
         },
       }
     })

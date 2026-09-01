@@ -7,13 +7,21 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "db:generate": "prisma generate",
-    "db:format": "prisma format",
-    "db:validate": "prisma validate",
-    "db:migrate:dev": "prisma migrate dev",
-    "db:migrate:deploy": "prisma migrate deploy",
-    "db:push": "prisma db push",
-    "postinstall": "prisma generate"
+    "db:sync:sqlite": "node scripts/sync-sqlite-schema.mjs",
+    "db:generate": "node scripts/sync-sqlite-schema.mjs && node scripts/run-sqlite-prisma.mjs generate --schema prisma/sqlite/schema.prisma",
+    "db:generate:sqlite": "node scripts/sync-sqlite-schema.mjs && node scripts/run-sqlite-prisma.mjs generate --schema prisma/sqlite/schema.prisma",
+    "db:generate:postgresql": "prisma generate --schema prisma/schema.prisma",
+    "db:format": "node scripts/sync-sqlite-schema.mjs && node scripts/run-sqlite-prisma.mjs format --schema prisma/sqlite/schema.prisma",
+    "db:format:postgresql": "prisma format --schema prisma/schema.prisma",
+    "db:validate": "node scripts/sync-sqlite-schema.mjs && node scripts/run-sqlite-prisma.mjs validate --schema prisma/sqlite/schema.prisma",
+    "db:validate:postgresql": "prisma validate --schema prisma/schema.prisma",
+    "db:migrate:dev": "node scripts/sync-sqlite-schema.mjs && node scripts/run-sqlite-prisma.mjs migrate dev --schema prisma/sqlite/schema.prisma",
+    "db:migrate:deploy": "node scripts/sync-sqlite-schema.mjs && node scripts/run-sqlite-prisma.mjs migrate deploy --schema prisma/sqlite/schema.prisma",
+    "db:migrate:dev:postgresql": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:migrate:deploy:postgresql": "prisma migrate deploy --schema prisma/schema.prisma",
+    "db:push": "node scripts/sync-sqlite-schema.mjs && node scripts/run-sqlite-prisma.mjs db push --schema prisma/sqlite/schema.prisma",
+    "db:push:postgresql": "prisma db push --schema prisma/schema.prisma",
+    "postinstall": "node scripts/sync-sqlite-schema.mjs && node scripts/run-sqlite-prisma.mjs generate --schema prisma/sqlite/schema.prisma"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0"

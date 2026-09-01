@@ -1,0 +1,31 @@
+services:
+  server:
+    image: excitatio-insectorum-server:latest
+    container_name: excitatio-insectorum-server
+    restart: unless-stopped
+    env_file:
+      - ./server.env
+    command:
+      - sh
+      - -c
+      - export PATH=/app/packages/database/node_modules/.bin:/app/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin && node packages/database/scripts/run-sqlite-prisma.mjs migrate deploy --schema prisma/sqlite/schema.prisma && node apps/server/dist/main.js
+    volumes:
+      - ./data/sqlite/dev.db:/app/packages/database/prisma/sqlite/dev.db
+    ports:
+      - '127.0.0.1:3000:3000'
+    networks:
+      - panel
+
+  web:
+    image: excitatio-insectorum-web:latest
+    container_name: excitatio-insectorum-web
+    restart: unless-stopped
+    working_dir: /app/apps/web
+    command: ['node', 'node_modules/next/dist/bin/next', 'start', '-p', '3001']
+    ports:
+      - '127.0.0.1:3001:3001'
+
+networks:
+  panel:
+    external: true
+    name: 1panel-network

@@ -17,7 +17,7 @@ MVP 单实例可以不启用 Redis Adapter。
 WebSocket 只负责实时通知。
 
 ```text
-PostgreSQL / REST = 最终状态
+数据库 / REST = 最终状态
 Socket.IO = 发生了什么
 ```
 
@@ -126,6 +126,7 @@ SEAT_LAYOUT_CHANGED
 RANKING_CHANGED
 STUDENT_CHANGED
 DISPLAY_CONFIG_CHANGED
+SCHEDULE_CHANGED
 ```
 
 ### 临时交互事件
@@ -321,7 +322,20 @@ MVP 可先保留事件定义，不实现后台功能。
 
 ---
 
-## 15. 连接生命周期
+## 15. SCHEDULE_CHANGED
+
+课表事务保存成功后发布。后台和大屏收到事件后重新请求对应状态；大屏重新请求 `/display/bootstrap`。
+
+```json
+{
+  "type": "SCHEDULE_CHANGED",
+  "payload": { "activeTemplateId": "schedule-template-id" }
+}
+```
+
+---
+
+## 16. 连接生命周期
 
 ### 大屏启动
 
@@ -369,7 +383,7 @@ GET /display/bootstrap
 
 ---
 
-## 16. 心跳和在线状态
+## 17. 心跳和在线状态
 
 Socket.IO 自带 ping/pong。
 
@@ -393,7 +407,7 @@ now - lastSeenAt < 90s
 
 ---
 
-## 17. 事件发布接口
+## 18. 事件发布接口
 
 业务 Module 不直接依赖 Gateway。
 
@@ -437,7 +451,7 @@ this.realtime.publishClassEvent(classId, {
 
 ---
 
-## 18. 事务与事件顺序
+## 19. 事务与事件顺序
 
 要求：
 
@@ -462,7 +476,7 @@ MVP 不需要引入可靠消息队列。
 
 ---
 
-## 19. Redis Adapter
+## 20. Redis Adapter
 
 单 NestJS 实例：
 
@@ -493,7 +507,7 @@ class:{classId}
 
 ---
 
-## 20. 客户端封装建议
+## 21. 客户端封装建议
 
 React 端建立：
 
@@ -521,7 +535,7 @@ useRealtimeStatus();
 
 ---
 
-## 21. MVP 必须实现的事件
+## 22. MVP 必须实现的事件
 
 最终 P0：
 

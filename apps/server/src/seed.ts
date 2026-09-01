@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { PrismaClient, SeatCellType, ScoreRecordType, TeacherRole, UserStatus } from '@repo/database';
 import { hash } from 'bcryptjs';
 
@@ -36,8 +37,8 @@ async function main(): Promise<void> {
 
   await prisma.classroom.upsert({
     where: { id: classId },
-    update: { name: '高一（10）班', grade: '高一年级', schoolYear: '2026', gridRows: 7, gridCols: 9, status: 'ACTIVE' },
-    create: { id: classId, name: '高一（10）班', grade: '高一年级', schoolYear: '2026', gridRows: 7, gridCols: 9 },
+    update: { name: '高一（10）班', grade: '高一年级', schoolYear: '2026', gridRows: 7, gridCols: 11, status: 'ACTIVE' },
+    create: { id: classId, name: '高一（10）班', grade: '高一年级', schoolYear: '2026', gridRows: 7, gridCols: 11 },
   });
 
   await prisma.classTeacher.upsert({
@@ -49,6 +50,48 @@ async function main(): Promise<void> {
     where: { id: 'class-teacher-math' },
     update: { classId, teacherId: subjectTeacherId, role: TeacherRole.SUBJECT_TEACHER, subject: '数学', status: 'ACTIVE' },
     create: { id: 'class-teacher-math', classId, teacherId: subjectTeacherId, role: TeacherRole.SUBJECT_TEACHER, subject: '数学' },
+  });
+
+  const periodTimes = [
+    ['08:00', '08:40'], ['08:50', '09:30'], ['09:50', '10:30'], ['10:40', '11:20'],
+    ['14:00', '14:40'], ['14:50', '15:30'], ['15:50', '16:30'], ['16:40', '17:20'],
+  ] as const;
+  for (const [templateId, name, offset] of [
+    ['schedule-template-standard', '标准作息', 0],
+    ['schedule-template-late', '晚起作息', 30],
+  ] as const) {
+    await prisma.scheduleTemplate.upsert({
+      where: { id: templateId },
+      update: { classId, name },
+      create: { id: templateId, classId, name },
+    });
+    await prisma.scheduleTemplatePeriod.deleteMany({ where: { templateId } });
+    await prisma.scheduleTemplatePeriod.createMany({
+      data: periodTimes.map(([startTime, endTime], index) => {
+        const shift = (value: string) => {
+          const [hour, minute] = value.split(':').map(Number);
+          const total = hour * 60 + minute + offset;
+          return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+        };
+        return { templateId, periodNo: index + 1, startTime: shift(startTime), endTime: shift(endTime) };
+      }),
+    });
+  }
+  await prisma.classroom.update({ where: { id: classId }, data: { activeScheduleTemplateId: 'schedule-template-standard' } });
+  await prisma.scheduleEntry.deleteMany({ where: { classId } });
+  const courses = [
+    ['语文', 'class-teacher-head'], ['数学', 'class-teacher-math'], ['英语', null], ['物理', null],
+    ['化学', null], ['历史', null], ['生物', null], ['自习', null],
+  ] as const;
+  await prisma.scheduleEntry.createMany({
+    data: Array.from({ length: 5 * courses.length }, (_, index) => ({
+      id: `schedule-entry-${Math.floor(index / courses.length) + 1}-${(index % courses.length) + 1}`,
+      classId,
+      weekday: Math.floor(index / courses.length) + 1,
+      periodNo: (index % courses.length) + 1,
+      courseName: courses[index % courses.length][0],
+      classTeacherId: courses[index % courses.length][1],
+    })),
   });
 
   for (const [id, name, studentNo] of students) {
@@ -81,14 +124,13 @@ async function main(): Promise<void> {
   });
   await prisma.seat.deleteMany({ where: { layoutVersionId: layoutId } });
   const studentCells = new Map([
-    ['1-0', 'stu-001'], ['1-1', 'stu-002'], ['1-2', 'stu-003'], ['1-3', 'stu-004'],
-    ['1-5', 'stu-005'], ['1-7', 'stu-006'], ['1-8', 'stu-007'], ['2-0', 'stu-008'],
-    ['2-1', 'stu-009'], ['2-2', 'stu-010'], ['2-3', 'stu-011'], ['2-5', 'stu-012'],
+    ['1-0', 'stu-001'], ['1-1', 'stu-002'], ['1-3', 'stu-003'], ['1-4', 'stu-004'],
+    ['1-6', 'stu-005'], ['1-7', 'stu-006'], ['1-9', 'stu-007'],
   ]);
   await prisma.seat.createMany({
-    data: Array.from({ length: 63 }, (_, index) => {
-      const rowIndex = Math.floor(index / 9);
-      const colIndex = index % 9;
+    data: Array.from({ length: 77 }, (_, index) => {
+      const rowIndex = Math.floor(index / 11);
+      const colIndex = index % 11;
       const key = `${rowIndex}-${colIndex}`;
       return {
         layoutVersionId: layoutId,
@@ -97,7 +139,9 @@ async function main(): Promise<void> {
         studentId: studentCells.get(key) ?? null,
         cellType: rowIndex === 0 && colIndex === 4
           ? SeatCellType.PODIUM
-          : rowIndex > 0 && (colIndex === 4 || colIndex === 6)
+          : rowIndex === 0
+            ? SeatCellType.EMPTY
+            : [2, 5, 8].includes(colIndex)
             ? SeatCellType.AISLE
             : SeatCellType.SEAT,
       };

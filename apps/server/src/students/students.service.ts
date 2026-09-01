@@ -3,7 +3,7 @@ import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { Prisma, StudentGender, StudentStatus, TeacherRole } from '@prisma/client';
 import { BusinessException, ClassEventType } from '../common';
 import { ClassroomsService } from '../classrooms';
-import { PrismaService } from '../prisma';
+import { isPostgresDatabase, PrismaService } from '../prisma';
 import { RealtimeService } from '../realtime/realtime.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { ListStudentsQuery } from './dto/list-students.query';
@@ -23,14 +23,18 @@ export class StudentsService {
 
   async list(userId: string, classId: string, query: ListStudentsQuery) {
     await this.classrooms.assertAccess(userId, classId);
+    const keywordFilter = (value: string) =>
+      isPostgresDatabase()
+        ? ({ contains: value, mode: 'insensitive' } as unknown as Prisma.StudentWhereInput['name'])
+        : { contains: value };
     const where: Prisma.StudentWhereInput = {
       classId,
       status: query.status,
       ...(query.keyword
         ? {
             OR: [
-              { name: { contains: query.keyword, mode: 'insensitive' } },
-              { studentNo: { contains: query.keyword, mode: 'insensitive' } },
+              { name: keywordFilter(query.keyword) },
+              { studentNo: keywordFilter(query.keyword) },
             ],
           }
         : {}),
@@ -176,7 +180,9 @@ export class StudentsService {
 
           return { student: updated, layoutVersion };
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        isPostgresDatabase()
+          ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+          : undefined,
       ),
     );
 

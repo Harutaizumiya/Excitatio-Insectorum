@@ -4,28 +4,21 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { App as AntApp } from "antd";
 import { ArrowUpOutlined, CrownOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, UserOutlined } from "@ant-design/icons";
 import { Button } from "@/components/motion/button";
 import { useClassroomService, useRealtimeClient } from "@/components/providers/classroom-system-provider";
 import { ClassroomServiceError } from "@/lib/classroom-service";
 import type { ClassEventType, DisplayBootstrap, Seat } from "@/lib";
 import { clearDisplaySession, getDisplaySession } from "@/lib/session";
+import { SeatCell } from "@/features/admin/seating/seat-cell";
 
 type Highlight = { studentId: string; name: string } | null;
 type SeatKind = "seat" | "podium" | "corridor";
 
-const SELECTED_STUDENT_ID = "student-1";
-
-const courses = [
-  { label: "语", status: "completed" },
-  { label: "英", status: "completed" },
-  { label: "物", status: "completed" },
-  { label: "数学", status: "active" },
-  { label: "化", status: "upcoming" },
-  { label: "生", status: "upcoming" },
-  { label: "历", status: "upcoming" },
-  { label: "自", status: "upcoming" },
-] as const;
+const SEAT_UPDATE_NOTIFICATION_KEY = "display-seat-update";
+const SEAT_UPDATE_DURATION = 1800;
+const SEAT_UPDATE_TOTAL_DURATION = 3000;
 
 function getSeatKind(row: number, col: number, rows: number, cols: number, cellType?: Seat["cellType"]): SeatKind {
   if (cellType === "aisle") return "corridor";
@@ -44,16 +37,116 @@ function getSeatLabel(row: number, col: number, seat: Pick<Seat, "student" | "ce
   return String(row + 1) + "-" + String(col + 1);
 }
 
-function CourseTimeline(): React.ReactElement {
+function FlipFlapLabel({
+  value,
+  targetValue = value,
+  trigger,
+  delay = 0,
+  scrambleChars,
+}: {
+  value: string;
+  targetValue?: string;
+  trigger: number;
+  delay?: number;
+  scrambleChars: string[];
+}): React.ReactElement {
+  const [displayedValue, setDisplayedValue] = useState(value);
+  const [isFlipping, setIsFlipping] = useState(false);
+  const [flipTick, setFlipTick] = useState(0);
+  const currentValueRef = useRef(value);
+  const handledTriggerRef = useRef(trigger);
+
+  useEffect(() => {
+    if (trigger === handledTriggerRef.current) {
+      currentValueRef.current = value;
+      setDisplayedValue(value);
+      return;
+    }
+    handledTriggerRef.current = trigger;
+
+    let scrambleTimer: number | undefined;
+    let targetTimer: number | undefined;
+    let finishTimer: number | undefined;
+    const scrambleDuration = SEAT_UPDATE_DURATION;
+    const scrambleInterval = 72;
+    const nextValue = targetValue;
+
+    const startTimer = window.setTimeout(() => {
+      setIsFlipping(true);
+      scrambleTimer = window.setInterval(() => {
+        const scrambleLength = 2 + Math.floor(Math.random() * 2);
+        const nextName = Array.from({ length: scrambleLength }, () =>
+          scrambleChars[Math.floor(Math.random() * scrambleChars.length)]
+        ).join("");
+        setDisplayedValue(nextName);
+        setFlipTick((tick) => tick + 1);
+      }, scrambleInterval);
+
+      targetTimer = window.setTimeout(() => {
+        if (scrambleTimer !== undefined) window.clearInterval(scrambleTimer);
+        scrambleTimer = undefined;
+        currentValueRef.current = nextValue;
+        setDisplayedValue(nextValue);
+        setFlipTick((tick) => tick + 1);
+      }, scrambleDuration / 2);
+
+      finishTimer = window.setTimeout(() => {
+        setIsFlipping(false);
+      }, scrambleDuration);
+    }, delay);
+    return () => {
+      window.clearTimeout(startTimer);
+      if (scrambleTimer !== undefined) window.clearInterval(scrambleTimer);
+      if (targetTimer !== undefined) window.clearTimeout(targetTimer);
+      if (finishTimer !== undefined) window.clearTimeout(finishTimer);
+    };
+  }, [delay, scrambleChars, targetValue, trigger, value]);
+
+  return (
+    <motion.span
+      key={flipTick}
+      animate={isFlipping ? { rotateX: [0, -88, 0] } : { rotateX: 0 }}
+      transition={{ duration: 0.28, ease: "easeInOut" }}
+      style={{ display: "inline-block", transformOrigin: "center center", perspective: 400 }}
+    >
+      {displayedValue}
+    </motion.span>
+  );
+}
+
+function CourseTimeline({ schedule }: { schedule: DisplayBootstrap["schedule"] }): React.ReactElement | null {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const weekday = now.getDay() === 0 ? 7 : now.getDay()
+  const minutes = now.getHours() * 60 + now.getMinutes()
+  const periods = new Map(schedule.periods.map((period) => [period.periodNo, period]))
+  const courses = schedule.entries
+    .filter((entry) => entry.weekday === weekday)
+    .sort((left, right) => left.periodNo - right.periodNo)
+    .map((entry) => {
+      const period = periods.get(entry.periodNo)
+      const toMinutes = (value: string) => {
+        const [hour, minute] = value.split(":").map(Number)
+        return hour * 60 + minute
+      }
+      const active = period ? minutes >= toMinutes(period.startTime) && minutes < toMinutes(period.endTime) : false
+      const completed = period ? minutes >= toMinutes(period.endTime) : false
+      return { ...entry, active, completed }
+    })
+  if (courses.length === 0) return null
   return (
     <div className="flex h-[26px] w-[380px] max-w-full items-center gap-[6px]">
       <span className="shrink-0 text-[11px] leading-4 text-[#8c8c8c]">今日课程：</span>
       {courses.map((course) => {
-        const active = course.status === "active";
-        const completed = course.status === "completed";
+        const active = course.active
+        const completed = course.completed
         return (
           <div
-            key={course.label}
+            key={`${course.weekday}-${course.periodNo}`}
             className={
               active
                 ? "flex h-[26px] min-w-[95px] items-center justify-center rounded-[6px] border-[1.5px] border-[#1677ff] bg-[#e6f4ff] px-[10px] text-[12px] font-bold text-[#0958d9] shadow-[0_1px_4px_rgba(22,119,255,0.15)]"
@@ -62,7 +155,7 @@ function CourseTimeline(): React.ReactElement {
                   : "flex size-[26px] shrink-0 items-center justify-center rounded-[6px] border border-[#d9dce3] bg-white text-[11px] font-bold text-[#595959]"
             }
           >
-            {active ? "数学 (进行中)" : course.label}
+            {active ? `${course.courseName} (进行中)` : course.courseName.slice(0, 1)}
           </div>
         );
       })}
@@ -75,29 +168,35 @@ function DisplaySeat({
   col,
   seat,
   kind,
-  selected,
   highlighted,
+  nameAnimationTrigger,
+  nameAnimationDelay,
+  scrambleChars,
+  nameAnimationTarget,
 }: {
   row: number;
   col: number;
   seat: Pick<Seat, "student" | "cellType"> | undefined;
   kind: SeatKind;
-  selected: boolean;
   highlighted: boolean;
+  nameAnimationTrigger: number;
+  nameAnimationDelay: number;
+  scrambleChars: string[];
+  nameAnimationTarget?: string;
 }): React.ReactElement {
   const label = getSeatLabel(row, col, seat, kind);
-  const occupied = Boolean(seat?.student);
-  const emphasized = selected || highlighted;
-  const surface =
-    kind === "podium"
-      ? "border-[#9bb7e2] bg-[#e8eef8] text-[#2f54eb] shadow-[0_2px_6px_rgba(47,84,235,0.08)]"
-      : kind === "corridor"
-        ? "border-[#d5d9e2] bg-[#eceef2] text-[#8c93a3]"
-        : emphasized
-          ? "border-[#1677ff] bg-[#f0f5ff] text-[#1677ff] shadow-[0_3px_10px_rgba(22,119,255,0.22)]"
-          : row === 0
-            ? "border-[#d0d5dd] bg-transparent text-[#98a2b3]"
-            : "border-[#d9dce3] bg-white text-[#667085] shadow-[0_1.5px_4px_rgba(0,0,0,0.03)]";
+  const adminSeat = seat
+    ? {
+        id: `display-${row}-${col}`,
+        row,
+        col,
+        cellType: seat.cellType,
+        studentId: seat.student?.id ?? null,
+      }
+    : undefined;
+  const adminStudent = seat?.student
+    ? { id: seat.student.id, name: seat.student.name, studentNo: "" }
+    : undefined;
 
   return (
     <motion.div
@@ -106,12 +205,26 @@ function DisplaySeat({
       initial={false}
       animate={highlighted ? { scale: [1, 1.04, 1], boxShadow: ["0 0 0 0 rgba(22,119,255,0)", "0 0 0 6px rgba(22,119,255,0.16)", "0 0 0 0 rgba(22,119,255,0)"] } : { scale: 1 }}
       transition={highlighted ? { duration: 1.2, ease: "easeInOut" } : { duration: 0.2 }}
-      className={"relative flex h-20 w-24 shrink-0 items-center justify-center rounded-[14px] border text-center " + surface}
-      style={{ borderWidth: kind === "seat" && emphasized ? 2.5 : kind === "seat" ? 1.5 : kind === "podium" ? 1.5 : 1 }}
+      className="relative h-20 w-24 shrink-0 text-center"
     >
-      <span className={kind === "podium" ? "text-base font-bold" : kind === "corridor" ? "text-[13px] font-normal" : occupied ? "text-lg font-bold" : "text-sm font-bold"}>
-        {label}
-      </span>
+      <SeatCell
+        row={row}
+        col={col}
+        seat={adminSeat}
+        student={adminStudent}
+        isLayoutStage={false}
+        readOnly
+        emphasized={false}
+        studentContent={
+          <FlipFlapLabel
+            value={label}
+            targetValue={nameAnimationTarget ?? label}
+            trigger={nameAnimationTrigger}
+            delay={nameAnimationDelay}
+            scrambleChars={scrambleChars}
+          />
+        }
+      />
       {highlighted ? (
         <span className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-[4px] border border-[#91caff] bg-[#e6f4ff] px-1.5 py-0.5 text-[10px] font-bold text-[#1677ff]">
           本轮点名
@@ -130,7 +243,9 @@ function SeatMatrix({
   onZoomChange,
   isDragging,
   setIsDragging,
-}: {
+  nameAnimationTrigger,
+  nameAnimationTargets,
+  }: {
   data: DisplayBootstrap;
   highlight: Highlight;
   zoom: number;
@@ -139,11 +254,22 @@ function SeatMatrix({
   onZoomChange: React.Dispatch<React.SetStateAction<number>>;
   isDragging: boolean;
   setIsDragging: (dragging: boolean) => void;
+  nameAnimationTrigger: number;
+  nameAnimationTargets: Map<string, string>;
 }): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const pinchStartRef = useRef<{ distance: number; initialZoom: number } | null>(null);
-
+  const scrambleChars = useMemo(
+    () => Array.from(
+      new Set(
+        data.layout.seats
+          .flatMap((seat) => (seat.student?.name ? Array.from(seat.student.name) : []))
+          .filter((char) => char.trim().length > 0)
+      )
+    ),
+    [data.layout.seats]
+  );
   const seatLookup = useMemo(
     () => new Map(data.layout.seats.map((seat) => [String(seat.row) + "-" + String(seat.col), seat])),
     [data.layout.seats]
@@ -286,8 +412,11 @@ function SeatMatrix({
                 col={cell.col}
                 seat={seat}
                 kind={kind}
-                selected={studentId === SELECTED_STUDENT_ID}
                 highlighted={Boolean(highlight && studentId === highlight.studentId)}
+                nameAnimationTrigger={nameAnimationTrigger}
+                nameAnimationDelay={cell.row * 120}
+                scrambleChars={scrambleChars}
+                nameAnimationTarget={nameAnimationTargets.get(`${cell.row}-${cell.col}`)}
               />
             );
           })}
@@ -442,7 +571,12 @@ export function DisplaySurface(): React.ReactElement {
   const [zoom, setZoom] = useState(100);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [nameAnimationTrigger, setNameAnimationTrigger] = useState(0);
+  const [nameAnimationTargets, setNameAnimationTargets] = useState<Map<string, string>>(new Map());
   const highlightTimer = useRef<number | null>(null);
+  const seatUpdateTimer = useRef<number | null>(null);
+  const seatUpdatePendingRef = useRef(false);
+  const { notification } = AntApp.useApp();
 
   useEffect(() => {
     const session = getDisplaySession();
@@ -470,9 +604,55 @@ export function DisplaySurface(): React.ReactElement {
       }
     };
 
+    const refreshAfterSeatAnimation = async () => {
+      try {
+        // Fetch the new names first, but keep the old layout rendered until the
+        // flip sequence has finished. This lets names change during the flip
+        // instead of appearing only after the seats move.
+        const next = await service.getDisplayBootstrap(session.deviceId);
+        if (stopped) return;
+
+        const nextNames = new Map(
+          next.layout.seats
+            .filter((seat) => seat.student?.name)
+            .map((seat) => [String(seat.row) + "-" + String(seat.col), seat.student!.name])
+        );
+        seatUpdatePendingRef.current = true;
+        setNameAnimationTargets(nextNames);
+        setNameAnimationTrigger((trigger) => trigger + 1);
+      notification.open({
+        key: SEAT_UPDATE_NOTIFICATION_KEY,
+        title: "正在更新座位",
+        description: "座位信息即将完成更新",
+        duration: 0,
+        placement: "top",
+      });
+        if (seatUpdateTimer.current !== null) window.clearTimeout(seatUpdateTimer.current);
+        seatUpdateTimer.current = window.setTimeout(() => {
+          if (stopped) return;
+          setData(next);
+          setNameAnimationTargets(new Map());
+          seatUpdatePendingRef.current = false;
+          notification.destroy(SEAT_UPDATE_NOTIFICATION_KEY);
+        }, SEAT_UPDATE_TOTAL_DURATION);
+      } catch (error) {
+        if (stopped) return;
+        if (error instanceof ClassroomServiceError && error.status === 401) {
+          clearDisplaySession();
+          router.replace("/display/bind");
+          return;
+        }
+        setLoadError(error instanceof Error ? error.message : "大屏数据加载失败");
+      }
+    };
+
     void refresh();
-    const subscriptions = (['SCORE_CHANGED', 'SCORE_REVERTED', 'RANKING_CHANGED', 'SEAT_LAYOUT_CHANGED', 'STUDENT_CHANGED', 'DISPLAY_CONFIG_CHANGED'] as ClassEventType[])
+    const subscriptions = (['SCORE_CHANGED', 'SCORE_REVERTED', 'RANKING_CHANGED', 'DISPLAY_CONFIG_CHANGED', 'SCHEDULE_CHANGED'] as ClassEventType[])
       .map((type) => realtime.subscribe(type, session.classId, () => void refresh()));
+    subscriptions.push(
+      realtime.subscribe("SEAT_LAYOUT_CHANGED", session.classId, () => void refreshAfterSeatAnimation()),
+      realtime.subscribe("STUDENT_CHANGED", session.classId, () => void refreshAfterSeatAnimation()),
+    );
     subscriptions.push(
       realtime.subscribe("RANDOM_PICKED", session.classId, (event) => {
         setHighlight({ studentId: event.payload.studentId, name: event.payload.name });
@@ -486,8 +666,11 @@ export function DisplaySurface(): React.ReactElement {
       stopped = true;
       subscriptions.forEach((unsubscribe) => unsubscribe());
       if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
+      if (seatUpdateTimer.current !== null) window.clearTimeout(seatUpdateTimer.current);
+      seatUpdatePendingRef.current = false;
+      notification.destroy(SEAT_UPDATE_NOTIFICATION_KEY);
     };
-  }, [realtime, router, service]);
+  }, [notification, realtime, router, service]);
 
   if (!data) {
     return (
@@ -516,6 +699,8 @@ export function DisplaySurface(): React.ReactElement {
         onZoomChange={setZoom}
         isDragging={isDragging}
         setIsDragging={setIsDragging}
+        nameAnimationTrigger={nameAnimationTrigger}
+        nameAnimationTargets={nameAnimationTargets}
       />
 
       {/* 2. Floating Centered Top Header Bar */}
@@ -530,7 +715,7 @@ export function DisplaySurface(): React.ReactElement {
         />
         <h1 className="text-[18px] font-bold leading-none text-[#1f1f1f]">{data.classroom.name}</h1>
         <div className="h-4 w-px bg-[#e5e8ee]" />
-        <CourseTimeline />
+        <CourseTimeline schedule={data.schedule} />
       </header>
 
       {/* 3. Floating Bottom-Left Zoom & Reset Controls */}

@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+.git
+.codegraph
+.turbo
+.playwright-cli
+*.db
+*.db-journal
+*.log
+.env
+.env.*
+**/.env
+**/.env.*

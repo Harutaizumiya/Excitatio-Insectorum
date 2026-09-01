@@ -135,6 +135,36 @@ export class DisplayRankingDto {
   progress: DisplayProgressItemDto[];
 }
 
+export class DisplaySchedulePeriodDto {
+  @ApiProperty()
+  periodNo: number;
+
+  @ApiProperty({ example: '08:00' })
+  startTime: string;
+
+  @ApiProperty({ example: '08:40' })
+  endTime: string;
+}
+
+export class DisplayScheduleEntryDto {
+  @ApiProperty({ minimum: 1, maximum: 7 })
+  weekday: number;
+
+  @ApiProperty({ minimum: 1, maximum: 12 })
+  periodNo: number;
+
+  @ApiProperty()
+  courseName: string;
+}
+
+export class DisplayScheduleDto {
+  @ApiProperty({ type: [DisplaySchedulePeriodDto] })
+  periods: DisplaySchedulePeriodDto[];
+
+  @ApiProperty({ type: [DisplayScheduleEntryDto] })
+  entries: DisplayScheduleEntryDto[];
+}
+
 export class DisplayBootstrapDto {
   @ApiProperty({ type: DisplayClassroomDto })
   classroom: DisplayClassroomDto;
@@ -144,6 +174,9 @@ export class DisplayBootstrapDto {
 
   @ApiProperty({ type: DisplayRankingDto })
   ranking: DisplayRankingDto;
+
+  @ApiProperty({ type: DisplayScheduleDto })
+  schedule: DisplayScheduleDto;
 }
 
 export class DisplayBootstrapEnvelopeDto {

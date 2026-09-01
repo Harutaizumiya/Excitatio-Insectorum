@@ -17,6 +17,7 @@ import {
   type RandomPickInput,
   type RefreshInput,
   type SaveSeatLayoutInput,
+  type SaveClassScheduleInput,
   type UpdateClassroomInput,
   type UpdateScoreRuleInput,
   type UpdateStudentInput,
@@ -85,6 +86,12 @@ export function createMockHandlers(service: ClassroomService): HttpHandler[] {
           await body<UpdateClassroomInput>(request),
         ),
       ),
+    ),
+    http.get(`${API_PREFIX}/classes/:classId/schedule`, ({ params }) =>
+      envelope(() => service.getSchedule(param(params.classId))),
+    ),
+    http.put(`${API_PREFIX}/classes/:classId/schedule`, async ({ params, request }) =>
+      envelope(async () => service.saveSchedule(param(params.classId), await body<SaveClassScheduleInput>(request))),
     ),
     http.get(`${API_PREFIX}/classes/:classId/students`, ({ params, request }) => {
       const url = new URL(request.url)
