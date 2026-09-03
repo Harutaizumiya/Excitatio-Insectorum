@@ -67,12 +67,14 @@ function RealtimeQuerySync({ client }: { client: ClassRealtimeClient }) {
         void queryClient.invalidateQueries({
           queryKey: ["classrooms", event.classId, "score-records"],
         })
+        void queryClient.invalidateQueries({ queryKey: ["classrooms", event.classId, "score-periods"] })
         refreshRanking(event.classId)
       }),
       client.subscribe("SCORE_REVERTED", undefined, (event) => {
         void queryClient.invalidateQueries({
           queryKey: ["classrooms", event.classId, "score-records"],
         })
+        void queryClient.invalidateQueries({ queryKey: ["classrooms", event.classId, "score-periods"] })
         refreshRanking(event.classId)
       }),
       client.subscribe("RANKING_CHANGED", undefined, (event) => refreshRanking(event.classId)),

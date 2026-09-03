@@ -89,6 +89,7 @@ interface SeatCellProps {
   isLayoutStage: boolean;
   readOnly?: boolean;
   emphasized?: boolean;
+  height?: number | string;
   studentContent?: React.ReactNode;
   isDraggingThis?: boolean;
   onCellClick?: (row: number, col: number) => void;
@@ -108,6 +109,7 @@ export const SeatCell = memo(function SeatCell({
   isLayoutStage,
   readOnly = false,
   emphasized = false,
+  height = 80,
   studentContent,
   isDraggingThis = false,
   onCellClick,
@@ -126,7 +128,7 @@ export const SeatCell = memo(function SeatCell({
           data-seat-cell={`cell-${row}-${col}`}
           onClick={() => onCellClick?.(row, col)}
           style={{
-            height: 80,
+            height,
             borderRadius: 14,
             border: "1px dashed #d5dce7",
             background: "rgba(255,255,255,0.45)",
@@ -150,7 +152,7 @@ export const SeatCell = memo(function SeatCell({
           data-seat-cell={`cell-${row}-${col}`}
           onClick={() => onCellClick?.(row, col)}
           style={{
-            height: 80,
+            height,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -173,7 +175,7 @@ export const SeatCell = memo(function SeatCell({
         data-seat-cell={`cell-${row}-${col}`}
         onClick={() => onCellClick?.(row, col)}
         style={{
-          height: 80,
+          height,
           borderRadius: 14,
           border: "1.5px solid #adc6ff",
           background: "#ffffff",
@@ -215,7 +217,7 @@ export const SeatCell = memo(function SeatCell({
       <div
         data-seat-cell={`cell-${row}-${col}`}
         style={{
-          height: 80,
+          height,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -237,14 +239,14 @@ export const SeatCell = memo(function SeatCell({
 
   // Assignment Stage: If cell is empty/空, do not render grid cell box in assignment mode
   if (!isConfiguredSeat && !occupied) {
-    return <div style={{ height: 80, pointerEvents: "none" }} />;
+    return <div style={{ height, pointerEvents: "none" }} />;
   }
 
   return (
     <div
       data-seat-cell={`cell-${row}-${col}`}
       style={{
-        height: 80,
+        height,
         position: "relative",
         borderRadius: 14,
         border: occupied

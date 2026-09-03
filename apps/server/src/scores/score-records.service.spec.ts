@@ -16,6 +16,10 @@ describe('ScoreRecordsService', () => {
     recordType: ScoreRecordType.NORMAL,
     revertedRecordId: null,
     createdAt: new Date('2026-08-25T01:00:00.000Z'),
+    occurredAt: new Date('2026-08-25T01:00:00.000Z'),
+    periodId: null,
+    eventId: null,
+    violation: false,
     student: { id: 'student-1', name: '张三' },
     operator: { id: 'teacher-1', name: '王老师' },
     rule: { id: 'rule-1', name: '回答问题' },
@@ -35,6 +39,7 @@ describe('ScoreRecordsService', () => {
       },
       scoreRecord: {
         create: jest.fn().mockResolvedValue(baseRecord),
+        findFirst: jest.fn().mockResolvedValue(baseRecord),
         findUnique: jest.fn().mockResolvedValue(null),
       },
       $queryRaw: jest.fn(),
@@ -216,6 +221,15 @@ describe('ScoreRecordsService', () => {
         recordType: ScoreRecordType.NORMAL,
       },
     ]);
+    tx.scoreRecord.findFirst.mockResolvedValue({
+      id: 'original-1',
+      classId: 'class-1',
+      studentId: 'student-1',
+      operatorId: 'other-teacher',
+      ruleId: 'rule-1',
+      delta: 3,
+      recordType: ScoreRecordType.NORMAL,
+    });
     tx.classTeacher.findFirst.mockResolvedValue({
       role: TeacherRole.HEAD_TEACHER,
       subject: null,
@@ -255,6 +269,15 @@ describe('ScoreRecordsService', () => {
         recordType: ScoreRecordType.NORMAL,
       },
     ]);
+    tx.scoreRecord.findFirst.mockResolvedValue({
+      id: 'original-1',
+      classId: 'class-1',
+      studentId: 'student-1',
+      operatorId: 'other-teacher',
+      ruleId: null,
+      delta: 1,
+      recordType: ScoreRecordType.NORMAL,
+    });
 
     await expect(service.revert('class-1', 'original-1', 'teacher-1')).rejects.toMatchObject({
       code: 'FORBIDDEN_SCORE_REVERT',
@@ -302,6 +325,15 @@ describe('ScoreRecordsService', () => {
         recordType: ScoreRecordType.REVERT,
       },
     ]);
+    tx.scoreRecord.findFirst.mockResolvedValue({
+      id: 'revert-1',
+      classId: 'class-1',
+      studentId: 'student-1',
+      operatorId: 'teacher-1',
+      ruleId: null,
+      delta: -1,
+      recordType: ScoreRecordType.REVERT,
+    });
 
     await expect(service.revert('class-1', 'revert-1', 'teacher-1')).rejects.toMatchObject({
       code: 'SCORE_RECORD_NOT_REVERTIBLE',

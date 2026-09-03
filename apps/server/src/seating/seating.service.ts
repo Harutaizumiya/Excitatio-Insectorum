@@ -151,7 +151,9 @@ export class SeatingService {
             this.throwClassNotFound();
           }
 
-          this.validateSeatEntries(entries, classroom.gridRows, classroom.gridCols);
+          const gridRows = dto.gridRows ?? classroom.gridRows;
+          const gridCols = dto.gridCols ?? classroom.gridCols;
+          this.validateSeatEntries(entries, gridRows, gridCols);
           await this.assertActiveStudents(tx, classId, entries);
 
           const currentVersion = classroom.currentLayoutVersionId
@@ -170,6 +172,8 @@ export class SeatingService {
             classId,
             createdBy,
             currentLayoutVersionId: classroom.currentLayoutVersionId,
+            gridRows,
+            gridCols,
             entries,
             sourceVersionId: null,
           });
@@ -307,6 +311,8 @@ export class SeatingService {
             classId,
             createdBy,
             currentLayoutVersionId: classroom.currentLayoutVersionId,
+            gridRows: classroom.gridRows,
+            gridCols: classroom.gridCols,
             entries,
             sourceVersionId: source.id,
           });
@@ -331,6 +337,8 @@ export class SeatingService {
       classId: string;
       createdBy: string;
       currentLayoutVersionId: string | null;
+      gridRows: number;
+      gridCols: number;
       entries: readonly StoredSeatEntry[];
       sourceVersionId: string | null;
     },
@@ -369,7 +377,11 @@ export class SeatingService {
         id: input.classId,
         currentLayoutVersionId: input.currentLayoutVersionId,
       },
-      data: { currentLayoutVersionId: created.id },
+      data: {
+        currentLayoutVersionId: created.id,
+        gridRows: input.gridRows,
+        gridCols: input.gridCols,
+      },
     });
     if (activated.count !== 1) {
       this.throwVersionConflict();

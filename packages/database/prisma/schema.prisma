@@ -52,6 +52,35 @@ enum ScoreRecordType {
   REVERT
 }
 
+enum ScorePeriodStatus {
+  OPEN
+  SETTLED
+}
+
+enum ScoreEventType {
+  LATE
+  SCHOOL_UNIFORM
+  EVENING_SELF_STUDY_CALLOUT
+  NO_VIOLATION_REWARD
+  NOISIEST_CLASS_TOP3
+  HOMEWORK_MISSING
+  HOMEWORK_PRAISE
+  EXAM_GRADE_TOP10
+  SUBJECT_TOP3
+  BREAKTHROUGH
+  PROGRESS
+  DUTY_HYGIENE
+  DORM_HYGIENE
+  COMMITTEE_TASK_COMPLETED
+  COMMITTEE_REWARD
+  BLACKBOARD
+  INDIVIDUAL_ACTIVITY
+  GROUP_ACTIVITY
+  SPORTS_FINAL_TOP8
+  ACTIVITY_NEGATIVE
+  MANUAL
+}
+
 enum DeviceStatus {
   ACTIVE
   REVOKED
@@ -73,6 +102,7 @@ model User {
   createdLayouts SeatLayoutVersion[] @relation("LayoutCreator")
   createdRules   ScoreRule[]         @relation("RuleCreator")
   scoreRecords   ScoreRecord[]       @relation("ScoreOperator")
+  scoreEvents    ScoreEvent[]        @relation("ScoreEventOperator")
   createdAt      DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime            @updatedAt @db.Timestamptz(3)
 }
@@ -93,7 +123,10 @@ model Classroom {
   students               Student[]
   layouts                SeatLayoutVersion[] @relation("ClassroomLayoutVersions")
   scoreRules             ScoreRule[]
+  scorePeriods           ScorePeriod[]
+  scoreEvents            ScoreEvent[]
   scoreRecords           ScoreRecord[]
+  committeeAssignments   ClassCommitteeAssignment[]
   displayDevices         DisplayDevice[]
   scheduleTemplates      ScheduleTemplate[]  @relation("ClassroomScheduleTemplates")
   scheduleEntries        ScheduleEntry[]
@@ -190,6 +223,8 @@ model Student {
   classroom Classroom     @relation(fields: [classId], references: [id], onDelete: Restrict)
   seats     Seat[]
   scores    ScoreRecord[]
+  scoreEventParticipants ScoreEventParticipant[]
+  committeeAssignments  ClassCommitteeAssignment[]
   createdAt DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt DateTime      @updatedAt @db.Timestamptz(3)
 
@@ -240,6 +275,7 @@ model ScoreRule {
   group        String        @default("课堂表现") @db.VarChar(100)
   delta        Int
   description  String?       @db.Text
+  systemPolicyKey String?     @db.VarChar(100)
   enabled      Boolean       @default(true)
   createdBy    String
   classroom    Classroom     @relation(fields: [classId], references: [id], onDelete: Restrict)
@@ -249,7 +285,79 @@ model ScoreRule {
   updatedAt    DateTime      @updatedAt @db.Timestamptz(3)
 
   @@index([classId, enabled])
+  @@index([classId, systemPolicyKey])
   @@index([createdBy])
+}
+
+model ScorePeriod {
+  id          String            @id @default(cuid())
+  classId     String
+  startAt     DateTime          @db.Timestamptz(3)
+  endAt       DateTime          @db.Timestamptz(3)
+  initialScore Int                @default(100)
+  status      ScorePeriodStatus @default(OPEN)
+  settledAt   DateTime?         @db.Timestamptz(3)
+  classroom   Classroom         @relation(fields: [classId], references: [id], onDelete: Restrict)
+  events      ScoreEvent[]
+  records     ScoreRecord[]
+  createdAt   DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @db.Timestamptz(3)
+
+  @@unique([classId, startAt, endAt])
+  @@index([classId, startAt, endAt])
+  @@index([classId, status])
+}
+
+model ScoreEvent {
+  id            String          @id @default(cuid())
+  classId       String
+  periodId      String
+  type          ScoreEventType
+  operatorId    String
+  occurredAt    DateTime        @db.Timestamptz(3)
+  reason        String?         @db.Text
+  parameters    String?         @db.Text
+  businessKey   String?         @unique @db.VarChar(255)
+  classroom     Classroom       @relation(fields: [classId], references: [id], onDelete: Restrict)
+  period        ScorePeriod     @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  operator      User            @relation("ScoreEventOperator", fields: [operatorId], references: [id], onDelete: Restrict)
+  participants  ScoreEventParticipant[]
+  scoreRecords  ScoreRecord[]
+  createdAt     DateTime        @default(now()) @db.Timestamptz(3)
+
+  @@index([classId, occurredAt])
+  @@index([periodId, type])
+  @@index([operatorId, occurredAt])
+}
+
+model ScoreEventParticipant {
+  eventId   String
+  studentId String
+  event     ScoreEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  student   Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@id([eventId, studentId])
+  @@index([studentId])
+}
+
+model ClassCommitteeAssignment {
+  id          String         @id @default(cuid())
+  classId     String
+  studentId   String
+  role        String         @db.VarChar(50)
+  subject     String?        @db.VarChar(100)
+  termStartAt DateTime       @db.Timestamptz(3)
+  termEndAt   DateTime?      @db.Timestamptz(3)
+  trialEndsAt DateTime?      @db.Timestamptz(3)
+  status      RelationStatus @default(ACTIVE)
+  classroom   Classroom      @relation(fields: [classId], references: [id], onDelete: Restrict)
+  student     Student        @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@unique([classId, studentId, role, termStartAt])
+  @@index([classId, status, termStartAt, termEndAt])
+  @@index([studentId, status])
 }
 
 model ScoreRecord {
@@ -257,21 +365,29 @@ model ScoreRecord {
   classId          String
   studentId        String
   operatorId       String
+  periodId         String?
+  eventId          String?
   subject          String?         @db.VarChar(100)
   ruleId           String?
   delta            Int
   reason           String?         @db.Text
   recordType       ScoreRecordType @default(NORMAL)
+  occurredAt       DateTime?       @db.Timestamptz(3)
+  violation        Boolean         @default(false)
   revertedRecordId String?         @unique
   classroom        Classroom       @relation(fields: [classId], references: [id], onDelete: Restrict)
   student          Student         @relation(fields: [studentId], references: [id], onDelete: Restrict)
   operator         User            @relation("ScoreOperator", fields: [operatorId], references: [id], onDelete: Restrict)
+  period           ScorePeriod?    @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  event            ScoreEvent?     @relation(fields: [eventId], references: [id], onDelete: Restrict)
   rule             ScoreRule?      @relation(fields: [ruleId], references: [id], onDelete: Restrict)
   revertedRecord   ScoreRecord?    @relation("ScoreRecordReversion", fields: [revertedRecordId], references: [id], onDelete: Restrict)
   reversion        ScoreRecord?    @relation("ScoreRecordReversion")
   createdAt        DateTime        @default(now()) @db.Timestamptz(3)
 
   @@index([classId, createdAt])
+  @@index([periodId, studentId, createdAt])
+  @@index([eventId])
   @@index([studentId, createdAt])
   @@index([operatorId, createdAt])
   @@index([classId, studentId, createdAt])

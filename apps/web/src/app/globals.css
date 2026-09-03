@@ -180,6 +180,44 @@
   text-align: center;
 }
 
+.display-surface__header {
+  width: max-content;
+  max-width: calc(100vw - 32px);
+}
+
+.display-surface__course-timeline {
+  scrollbar-width: none;
+}
+
+.display-surface__course-timeline::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .display-surface__header {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 12px;
+    padding: 10px 12px;
+  }
+
+  .display-surface__course-timeline {
+    flex-basis: 100%;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: 26px;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .display-surface__header-divider {
+    display: none;
+  }
+}
+
 @media (max-width: 480px) {
   .teacher-seat-map {
     display: none;

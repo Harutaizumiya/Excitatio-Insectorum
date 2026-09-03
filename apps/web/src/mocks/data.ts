@@ -2,6 +2,7 @@ import type {
   Classroom,
   ClassTeacher,
   ScoreRule,
+  ScorePeriod,
   Seat,
   SeatLayoutVersion,
   Student,
@@ -102,7 +103,7 @@ function createTeachers(): ClassTeacher[] {
       status: "ACTIVE",
       createdAt: "2026-02-01T02:00:00.000Z",
       updatedAt: "2026-08-20T02:00:00.000Z",
-      teacher: { id: MOCK_HEAD_TEACHER_ID, name: "林雅雯", status: "ACTIVE" },
+      teacher: { id: MOCK_HEAD_TEACHER_ID, name: "张沙", status: "ACTIVE" },
     },
     {
       id: "relation-wang-math",
@@ -322,6 +323,44 @@ function createDisplayDevices(): MockDisplayDevice[] {
   ]
 }
 
+function createScorePeriods(): ScorePeriod[] {
+  return [{
+    id: "period-2026-08",
+    startAt: "2026-07-31T16:00:00.000Z",
+    endAt: "2026-08-31T16:00:00.000Z",
+    initialScore: 100,
+    status: "OPEN",
+    settledAt: null,
+  }]
+}
+
+function createCommitteeAssignments(): MockDatabaseState["committeeAssignments"] {
+  return [
+    {
+      id: "committee-1",
+      studentId: studentId(0),
+      studentName: "陈思远",
+      role: "班长",
+      subject: null,
+      termStartAt: "2026-08-01T00:00:00.000Z",
+      termEndAt: null,
+      trialEndsAt: "2026-09-01T00:00:00.000Z",
+      status: "ACTIVE",
+    },
+    {
+      id: "committee-2",
+      studentId: studentId(1),
+      studentName: "林语桐",
+      role: "学习委员",
+      subject: null,
+      termStartAt: "2026-08-01T00:00:00.000Z",
+      termEndAt: null,
+      trialEndsAt: "2026-09-01T00:00:00.000Z",
+      status: "ACTIVE",
+    },
+  ]
+}
+
 const STANDARD_PERIODS = [
   ["08:00", "08:40"], ["08:50", "09:30"], ["09:50", "10:30"], ["10:40", "11:20"],
   ["14:00", "14:40"], ["14:50", "15:30"], ["15:50", "16:30"], ["16:40", "17:20"],
@@ -398,6 +437,9 @@ export function createMockDatabaseState(): MockDatabaseState {
     scheduleTemplates: createScheduleTemplates(),
     scheduleEntries: createScheduleEntries(),
     scoreRules: createScoreRules(),
+    scorePeriods: createScorePeriods(),
+    scoreEvents: [],
+    committeeAssignments: createCommitteeAssignments(),
     scoreRecords: createScoreRecords(),
     seatLayoutVersions: createSeatVersions(students),
     displayDevices: createDisplayDevices(),

@@ -16,6 +16,7 @@ import {
   Avatar,
   Button,
   Card,
+  Checkbox,
   ConfigProvider,
   Descriptions,
   Drawer,
@@ -24,6 +25,7 @@ import {
   InputNumber,
   Popconfirm,
   Radio,
+  Select,
   Spin,
   Tag,
   Typography,
@@ -42,18 +44,16 @@ import {
 } from "react";
 import {
   useClassroom,
-  useCreateCustomScore,
-  useCreateRuleScore,
+  useCreateScoreEvent,
   useRandomPick,
   useRevertScore,
   useScoreRecords,
-  useScoreRules,
   useSeatLayout,
   useStudents,
 } from "@/components/providers/query-hooks";
 import { useRealtimeClient } from "@/components/providers/classroom-system-provider";
 import { useRealtimeStatus } from "@/components/providers/realtime-hooks";
-import type { ScoreRecord, ScoreRule, Seat, Student } from "@/lib";
+import type { CreateScoreEventInput, ScoreRecord, Seat, Student } from "@/lib";
 import { getActiveClassId, getUserSession } from "@/lib/session";
 import { classroomRealtime } from "./classroom-realtime";
 
@@ -123,17 +123,14 @@ function TeacherMainContent(): ReactElement {
   const classroomQuery = useClassroom(classId);
   const studentsQuery = useStudents(classId, { page: 1, pageSize: 100 });
   const layoutQuery = useSeatLayout(classId);
-  const rulesQuery = useScoreRules(classId, true);
   // Mutations
-  const ruleScoreMutation = useCreateRuleScore(classId);
-  const customScoreMutation = useCreateCustomScore(classId);
+  const scoreEventMutation = useCreateScoreEvent(classId);
   const randomPickMutation = useRandomPick(classId);
 
   const students = useMemo(
     () => studentsQuery.data?.data ?? [],
     [studentsQuery.data],
   );
-  const rules = useMemo(() => rulesQuery.data ?? [], [rulesQuery.data]);
   const layout = layoutQuery.data;
 
   // Selected student state for manual or picked evaluation
@@ -992,59 +989,15 @@ function TeacherMainContent(): ReactElement {
       <TeacherScoreActionDrawer
         open={drawerOpen}
         student={selectedStudent}
-        rules={rules}
+        students={students}
         onClose={() => setDrawerOpen(false)}
-        onSubmitRule={async (rule) => {
-          if (!selectedStudent) return;
+        onSubmitEvent={async (input) => {
           try {
-            await ruleScoreMutation.mutateAsync({
-              studentId: selectedStudent.id,
-              ruleId: rule.id,
-            });
-            classroomRealtime.publish({
-              id: `event-${Date.now()}`,
-              type: "SCORE_CHANGED",
-              classId,
-              occurredAt: new Date().toISOString(),
-              payload: {
-                studentId: selectedStudent.id,
-                direction: rule.delta > 0 ? "INCREASE" : "DECREASE",
-              },
-            });
-            notification.success({
-              title: "评价记录成功",
-              description: `${selectedStudent.name} · ${rule.name} (${formatDelta(rule.delta)}) 已同步。`,
-            });
+            await scoreEventMutation.mutateAsync(input);
+            notification.success({ title: "积分已记录" });
             setDrawerOpen(false);
           } catch {
-            message.error("评价提交失败");
-          }
-        }}
-        onSubmitCustom={async (delta, reason) => {
-          if (!selectedStudent) return;
-          try {
-            await customScoreMutation.mutateAsync({
-              studentId: selectedStudent.id,
-              delta,
-              reason,
-            });
-            classroomRealtime.publish({
-              id: `event-${Date.now()}`,
-              type: "SCORE_CHANGED",
-              classId,
-              occurredAt: new Date().toISOString(),
-              payload: {
-                studentId: selectedStudent.id,
-                direction: delta > 0 ? "INCREASE" : "DECREASE",
-              },
-            });
-            notification.success({
-              title: "自定义积分记录成功",
-              description: `${selectedStudent.name} (${formatDelta(delta)}) 已同步。`,
-            });
-            setDrawerOpen(false);
-          } catch {
-            message.error("提交失败，请检查输入");
+            message.error("提交失败");
           }
         }}
       />
@@ -1139,19 +1092,49 @@ function TeacherMainContent(): ReactElement {
 interface TeacherScoreActionDrawerProps {
   open: boolean;
   student: Student | null;
-  rules: ScoreRule[];
+  students: Student[];
   onClose: () => void;
-  onSubmitRule: (rule: ScoreRule) => Promise<void>;
-  onSubmitCustom: (delta: number, reason: string) => Promise<void>;
+  onSubmitEvent: (input: CreateScoreEventInput) => Promise<void>;
 }
+
+const SCORE_EVENT_OPTIONS: Array<{ value: CreateScoreEventInput["type"]; label: string }> = [
+  { value: "LATE", label: "迟到" },
+  { value: "SCHOOL_UNIFORM", label: "校服" },
+  { value: "EVENING_SELF_STUDY_CALLOUT", label: "晚自习点名" },
+  { value: "NOISIEST_CLASS_TOP3", label: "班级噪音前三" },
+  { value: "HOMEWORK_MISSING", label: "作业未交" },
+  { value: "HOMEWORK_PRAISE", label: "作业表扬" },
+  { value: "EXAM_GRADE_TOP10", label: "年级考试前十" },
+  { value: "SUBJECT_TOP3", label: "单科前三" },
+  { value: "BREAKTHROUGH", label: "突破性成绩" },
+  { value: "PROGRESS", label: "进步名次" },
+  { value: "DUTY_HYGIENE", label: "卫生事件" },
+  { value: "DORM_HYGIENE", label: "寝室卫生" },
+  { value: "COMMITTEE_TASK_COMPLETED", label: "班委任务完成" },
+  { value: "BLACKBOARD", label: "黑板报" },
+  { value: "INDIVIDUAL_ACTIVITY", label: "个人活动" },
+  { value: "GROUP_ACTIVITY", label: "团体活动" },
+  { value: "SPORTS_FINAL_TOP8", label: "运动会决赛" },
+  { value: "ACTIVITY_NEGATIVE", label: "活动违规" },
+  { value: "MANUAL", label: "自定义事件" },
+];
+
+const MANUAL_SCORE_EVENT_TYPES = new Set<CreateScoreEventInput["type"]>([
+  "HOMEWORK_MISSING",
+  "HOMEWORK_PRAISE",
+  "BREAKTHROUGH",
+  "PROGRESS",
+  "DUTY_HYGIENE",
+  "DORM_HYGIENE",
+  "MANUAL",
+]);
 
 function TeacherScoreActionDrawer({
   open,
   student,
-  rules,
+  students,
   onClose,
-  onSubmitRule,
-  onSubmitCustom,
+  onSubmitEvent,
 }: TeacherScoreActionDrawerProps): ReactElement {
   return (
     <Drawer
@@ -1177,10 +1160,9 @@ function TeacherScoreActionDrawer({
         <TeacherScoreDrawerContent
           key={student.id}
           student={student}
-          rules={rules}
+          students={students}
           onClose={onClose}
-          onSubmitRule={onSubmitRule}
-          onSubmitCustom={onSubmitCustom}
+          onSubmitEvent={onSubmitEvent}
         />
       )}
     </Drawer>
@@ -1189,96 +1171,47 @@ function TeacherScoreActionDrawer({
 
 interface TeacherScoreDrawerContentProps {
   student: Student;
-  rules: ScoreRule[];
+  students: Student[];
   onClose: () => void;
-  onSubmitRule: (rule: ScoreRule) => Promise<void>;
-  onSubmitCustom: (delta: number, reason: string) => Promise<void>;
+  onSubmitEvent: (input: CreateScoreEventInput) => Promise<void>;
 }
 
 function TeacherScoreDrawerContent({
   student,
-  rules,
+  students,
   onClose,
-  onSubmitRule,
-  onSubmitCustom,
+  onSubmitEvent,
 }: TeacherScoreDrawerContentProps): ReactElement {
-  // Preset fallback rules if system has none
-  const displayRules: Array<{
-    id: string;
-    name: string;
-    delta: number;
-    description: string;
-    color: string;
-  }> = useMemo(() => {
-    if (rules.length > 0) {
-      return rules.map((r) => ({
-        id: r.id,
-        name: r.name,
-        delta: r.delta,
-        description: r.description ?? "",
-        color: r.delta > 0 ? "#52c41a" : "#faad14",
-      }));
-    }
-    return [
-      {
-        id: "p1",
-        name: "精彩回答",
-        delta: 5,
-        description: "优秀解法与思考",
-        color: "#52c41a",
-      },
-      {
-        id: "p2",
-        name: "积极发言",
-        delta: 2,
-        description: "主动回答问题",
-        color: "#1677ff",
-      },
-      {
-        id: "p3",
-        name: "认真听讲",
-        delta: 1,
-        description: "课堂专注良好",
-        color: "#1677ff",
-      },
-      {
-        id: "p4",
-        name: "课堂提醒",
-        delta: -1,
-        description: "注意课堂专注",
-        color: "#faad14",
-      },
-    ];
-  }, [rules]);
-
-  const [activeTab, setActiveTab] = useState<"presets" | "custom">("presets");
-  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(
-    () => displayRules[0]?.id ?? null,
-  );
-  const [customDelta, setCustomDelta] = useState<number>(2);
-  const [customReason, setCustomReason] = useState<string>("");
+  const [studentIds, setStudentIds] = useState<string[]>([student.id]);
+  const [eventType, setEventType] = useState<CreateScoreEventInput["type"]>("LATE");
+  const [minutesLate, setMinutesLate] = useState<number | null>(null);
+  const [rank, setRank] = useState<number | null>(null);
+  const [manualDelta, setManualDelta] = useState<number | null>(null);
+  const [isOrganizer, setIsOrganizer] = useState(false);
+  const [specialContribution, setSpecialContribution] = useState(false);
+  const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const needsRank = ["NOISIEST_CLASS_TOP3", "EXAM_GRADE_TOP10", "SUBJECT_TOP3", "BLACKBOARD", "INDIVIDUAL_ACTIVITY", "SPORTS_FINAL_TOP8", "GROUP_ACTIVITY"].includes(eventType);
+  const needsManualDelta = MANUAL_SCORE_EVENT_TYPES.has(eventType);
+  const canSubmit = studentIds.length > 0 &&
+    (eventType !== "LATE" || (Number.isInteger(minutesLate) && minutesLate! > 0)) &&
+    (!needsRank || (Number.isInteger(rank) && rank! > 0)) &&
+    (!needsManualDelta || (Number.isInteger(manualDelta) && manualDelta !== 0 && reason.trim().length > 0));
 
   const handleConfirm = async () => {
+    if (studentIds.length === 0) return;
     setSubmitting(true);
     try {
-      if (activeTab === "presets") {
-        const found = rules.find((r) => r.id === selectedRuleId);
-        if (found) {
-          await onSubmitRule(found);
-        } else {
-          const preset = displayRules.find((p) => p.id === selectedRuleId);
-          await onSubmitCustom(
-            preset?.delta ?? 2,
-            preset?.name ?? "课堂快速评价",
-          );
-        }
-      } else {
-        await onSubmitCustom(
-          customDelta,
-          customReason.trim() || "课堂自定义评价",
-        );
+      const input: CreateScoreEventInput = { type: eventType, studentIds };
+      if (eventType === "LATE") input.minutesLate = minutesLate ?? undefined;
+      if (["NOISIEST_CLASS_TOP3", "EXAM_GRADE_TOP10", "SUBJECT_TOP3", "BLACKBOARD", "INDIVIDUAL_ACTIVITY", "SPORTS_FINAL_TOP8", "GROUP_ACTIVITY"].includes(eventType)) input.rank = rank ?? undefined;
+      if (MANUAL_SCORE_EVENT_TYPES.has(eventType)) input.manualDelta = manualDelta ?? undefined;
+      if (eventType === "GROUP_ACTIVITY") {
+        input.isOrganizer = isOrganizer;
+        input.specialContribution = specialContribution;
       }
+      if (reason.trim()) input.reason = reason.trim();
+      await onSubmitEvent(input);
     } finally {
       setSubmitting(false);
     }
@@ -1286,7 +1219,6 @@ function TeacherScoreDrawerContent({
 
   return (
     <div>
-      {/* Drawer Drag Handle */}
       <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
         <div
           style={{
@@ -1298,7 +1230,6 @@ function TeacherScoreDrawerContent({
         />
       </div>
 
-      {/* Drawer Student Header */}
       <div
         style={{
           display: "flex",
@@ -1337,141 +1268,33 @@ function TeacherScoreDrawerContent({
         />
       </div>
 
-      {/* Tabs Switcher */}
-      <Radio.Group
-        value={activeTab}
-        onChange={(e) => setActiveTab(e.target.value as "presets" | "custom")}
-        buttonStyle="solid"
-        style={{ width: "100%", marginBottom: 16, display: "flex" }}
-      >
-        <Radio.Button
-          value="presets"
-          style={{ flex: 1, textAlign: "center", borderRadius: 10 }}
-        >
-          快捷规则
-        </Radio.Button>
-        <Radio.Button
-          value="custom"
-          style={{ flex: 1, textAlign: "center", borderRadius: 10 }}
-        >
-          自定义分值
-        </Radio.Button>
-      </Radio.Group>
-
-      {/* Presets Grid */}
-      {activeTab === "presets" ? (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-            gap: 10,
-            marginBottom: 20,
-            minWidth: 0,
-          }}
-        >
-          {displayRules.map((rule) => {
-            const isSelected = selectedRuleId === rule.id;
-            const isPositive = rule.delta > 0;
-            return (
-              <div
-                key={rule.id}
-                onClick={() => setSelectedRuleId(rule.id)}
-                style={{
-                  padding: "14px 12px",
-                  borderRadius: 14,
-                  border: isSelected
-                    ? `2px solid ${rule.color}`
-                    : "1px solid #e2e8f0",
-                  background: isSelected
-                    ? isPositive
-                      ? "#f6ffed"
-                      : "#fffbe6"
-                    : "#fafbfd",
-                  cursor: "pointer",
-                  transition: "all 120ms ease",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 20,
-                    fontWeight: 700,
-                    color: rule.color,
-                    minWidth: 40,
-                  }}
-                >
-                  {formatDelta(rule.delta)}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <Typography.Text
-                    strong
-                    style={{
-                      fontSize: 13,
-                      display: "block",
-                      color: "#1e293b",
-                    }}
-                  >
-                    {rule.name}
-                  </Typography.Text>
-                  <Typography.Text
-                    type="secondary"
-                    style={{
-                      fontSize: 11,
-                      display: "block",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {rule.description}
-                  </Typography.Text>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ marginBottom: 12 }}>
-            <Typography.Text
-              type="secondary"
-              style={{ fontSize: 13, display: "block", marginBottom: 6 }}
-            >
-              分值调整 (正数加分，负数扣分)：
-            </Typography.Text>
-            <InputNumber
-              value={customDelta}
-              onChange={(val) => setCustomDelta(val ?? 0)}
-              size="large"
-              style={{ width: "100%", borderRadius: 12 }}
-            />
-          </div>
-          <div>
-            <Typography.Text
-              type="secondary"
-              style={{ fontSize: 13, display: "block", marginBottom: 6 }}
-            >
-              评价备注原因：
-            </Typography.Text>
-            <Input.TextArea
-              value={customReason}
-              onChange={(e) => setCustomReason(e.target.value)}
-              placeholder="例如：课堂发言条理清晰，提出新的解题思路"
-              rows={2}
-              style={{ borderRadius: 12 }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Confirm Button */}
+      <div style={{ display: "grid", gap: 12, marginBottom: 20 }}>
+        <Select
+          mode="multiple"
+          value={studentIds}
+          onChange={setStudentIds}
+          options={students.map((item) => ({ value: item.id, label: item.name }))}
+          maxTagCount="responsive"
+          placeholder="学生"
+        />
+        <Select
+          value={eventType}
+          onChange={setEventType}
+          options={SCORE_EVENT_OPTIONS}
+          placeholder="事件"
+        />
+        {eventType === "LATE" && <InputNumber value={minutesLate} onChange={setMinutesLate} min={1} precision={0} placeholder="迟到分钟" style={{ width: "100%" }} />}
+        {needsRank && <InputNumber value={rank} onChange={setRank} min={1} max={eventType === "EXAM_GRADE_TOP10" ? 10 : eventType === "SPORTS_FINAL_TOP8" ? 8 : 3} precision={0} placeholder="名次" style={{ width: "100%" }} />}
+        {MANUAL_SCORE_EVENT_TYPES.has(eventType) && <InputNumber value={manualDelta} onChange={setManualDelta} precision={0} placeholder="最终分值" style={{ width: "100%" }} />}
+        {eventType === "GROUP_ACTIVITY" && <div style={{ display: "flex", gap: 16 }}><Checkbox checked={isOrganizer} onChange={(event) => setIsOrganizer(event.target.checked)}>组织者</Checkbox><Checkbox checked={specialContribution} onChange={(event) => setSpecialContribution(event.target.checked)}>特殊贡献</Checkbox></div>}
+        <Input.TextArea value={reason} onChange={(event) => setReason(event.target.value)} rows={2} maxLength={200} placeholder="原因" />
+      </div>
       <Button
         type="primary"
         size="large"
         block
         loading={submitting}
+        disabled={!canSubmit}
         onClick={handleConfirm}
         style={{
           height: 46,
@@ -1480,7 +1303,7 @@ function TeacherScoreDrawerContent({
           background: "linear-gradient(135deg, #0a59f7 0%, #1e6bfb 100%)",
         }}
       >
-        确定并记录评价
+        记录
       </Button>
     </div>
   );
@@ -1536,9 +1359,6 @@ export function TeacherHistorySurface(): ReactElement {
             <Typography.Title level={4} style={{ margin: 0 }}>
               积分流水记录
             </Typography.Title>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              任课教师可查看并撤销本人记录
-            </Typography.Text>
           </div>
         </header>
 
@@ -1623,7 +1443,7 @@ export function TeacherHistorySurface(): ReactElement {
                           color={isReverted ? "default" : "blue"}
                           style={{ borderRadius: 999, fontSize: 11 }}
                         >
-                          {record.rule?.name ?? "自定义积分"}
+                          {record.eventId ? "事件积分" : record.rule?.name ?? "自定义积分"}
                         </Tag>
                         {isReverted ? (
                           <Tag style={{ borderRadius: 999, fontSize: 11 }}>
@@ -1713,7 +1533,6 @@ export function TeacherHistorySurface(): ReactElement {
             detailRecord.operator.id === teacherId ? (
               <Popconfirm
                 title="撤销这笔积分？"
-                description="系统将自动创建一笔相反分值的反向流水。"
                 okText="确认撤销"
                 cancelText="取消"
                 okButtonProps={{ danger: true }}

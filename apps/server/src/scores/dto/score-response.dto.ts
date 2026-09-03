@@ -14,6 +14,12 @@ export class ScoreRuleResponseDto {
   @ApiProperty()
   delta: number;
 
+  @ApiProperty()
+  group: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  systemPolicyKey: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   description: string | null;
 
@@ -49,6 +55,12 @@ export class ScoreRecordResponseDto {
   operator: NamedEntityResponseDto;
 
   @ApiPropertyOptional({ nullable: true })
+  periodId: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  eventId: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
   subject: string | null;
 
   @ApiPropertyOptional({ type: NamedEntityResponseDto, nullable: true })
@@ -65,6 +77,12 @@ export class ScoreRecordResponseDto {
 
   @ApiProperty()
   reverted: boolean;
+
+  @ApiProperty()
+  violation: boolean;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  occurredAt: Date;
 
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt: Date;

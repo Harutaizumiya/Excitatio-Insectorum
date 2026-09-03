@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   Prisma,
   RelationStatus,
@@ -10,6 +10,7 @@ import {
 import { BusinessException, ClassEventType } from '../common';
 import { isPostgresDatabase, PrismaService } from '../prisma';
 import { RealtimeService } from '../realtime/realtime.service';
+import { ScorePeriodsService } from './score-periods.service';
 import type {
   CreateCustomScoreDto,
   CreateRuleScoreDto,
@@ -34,8 +35,12 @@ interface LockedScoreRecord {
   studentId: string;
   operatorId: string;
   ruleId: string | null;
+  periodId?: string | null;
+  eventId?: string | null;
   delta: number;
   recordType: ScoreRecordType;
+  occurredAt?: Date | null;
+  violation?: boolean;
 }
 
 @Injectable()
@@ -45,6 +50,7 @@ export class ScoreRecordsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeService,
+    @Optional() private readonly periods?: ScorePeriodsService,
   ) {}
 
   async createFromRule(
@@ -52,6 +58,7 @@ export class ScoreRecordsService {
     operatorId: string,
     dto: CreateRuleScoreDto,
   ): Promise<ScoreRecordResponseDto> {
+    const period = this.periods ? await this.periods.ensureCurrentPeriod(classId, operatorId) : null;
     const record = await this.prisma.$transaction(async (tx) => {
       const [student, operator, rule] = await Promise.all([
         tx.student.findFirst({
@@ -83,6 +90,7 @@ export class ScoreRecordsService {
           delta: rule.delta,
           reason: null,
           recordType: ScoreRecordType.NORMAL,
+          ...(period ? { periodId: period.id, occurredAt: new Date(), violation: rule.delta < 0 } : {}),
         },
         include: scoreRecordInclude,
       });
@@ -103,6 +111,7 @@ export class ScoreRecordsService {
       throw new BusinessException('INVALID_SCORE_REASON', '自定义积分原因至少需要 10 个字符');
     }
 
+    const period = this.periods ? await this.periods.ensureCurrentPeriod(classId, operatorId) : null;
     const record = await this.prisma.$transaction(async (tx) => {
       const [student, operator] = await Promise.all([
         tx.student.findFirst({
@@ -125,6 +134,7 @@ export class ScoreRecordsService {
           delta: dto.delta,
           reason,
           recordType: ScoreRecordType.NORMAL,
+          ...(period ? { periodId: period.id, occurredAt: new Date(), violation: dto.delta < 0 } : {}),
         },
         include: scoreRecordInclude,
       });
@@ -173,7 +183,7 @@ export class ScoreRecordsService {
         const original = isPostgresDatabase()
           ? (
               await tx.$queryRaw<LockedScoreRecord[]>(Prisma.sql`
-                SELECT "id", "classId", "studentId", "operatorId", "ruleId", "delta", "recordType"
+                SELECT "id", "classId", "studentId", "operatorId", "ruleId", "periodId", "eventId", "delta", "recordType", "occurredAt", "violation"
                 FROM "ScoreRecord"
                 WHERE "id" = ${recordId} AND "classId" = ${classId}
                 FOR UPDATE
@@ -187,8 +197,12 @@ export class ScoreRecordsService {
                 studentId: true,
                 operatorId: true,
                 ruleId: true,
+                periodId: true,
+                eventId: true,
                 delta: true,
                 recordType: true,
+                occurredAt: true,
+                violation: true,
               },
             });
         if (!original) {
@@ -232,9 +246,13 @@ export class ScoreRecordsService {
             operatorId,
             subject: operator.subject,
             ruleId: original.ruleId,
+            periodId: original.periodId ?? null,
+            eventId: original.eventId ?? null,
             delta: -original.delta,
             reason: `撤销积分记录 ${original.id}`,
             recordType: ScoreRecordType.REVERT,
+            occurredAt: new Date(),
+            violation: false,
             revertedRecordId: original.id,
           },
           include: scoreRecordInclude,
@@ -344,12 +362,16 @@ export class ScoreRecordsService {
       id: record.id,
       student: record.student,
       operator: record.operator,
+      periodId: record.periodId ?? null,
+      eventId: record.eventId ?? null,
       subject: record.subject,
       rule: record.rule,
       delta: record.delta,
       reason: record.reason,
       recordType: record.recordType,
       reverted: record.reversion !== null,
+      violation: record.violation,
+      occurredAt: record.occurredAt ?? record.createdAt,
       createdAt: record.createdAt,
     };
   }

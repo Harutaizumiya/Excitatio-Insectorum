@@ -6,6 +6,7 @@ import {
   type ClassroomService,
   type ConsumeInvitationInput,
   type CreateCustomScoreInput,
+  type CreateScoreEventInput,
   type CreateRuleScoreInput,
   type CreateScoreRuleInput,
   type CreateStudentInput,
@@ -22,6 +23,7 @@ import {
   type UpdateScoreRuleInput,
   type UpdateStudentInput,
   type UpdateTeacherInput,
+  type UpdateCommitteeInput,
 } from "@/lib"
 
 const API_PREFIX = "/api/v1"
@@ -242,6 +244,29 @@ export function createMockHandlers(service: ClassroomService): HttpHandler[] {
         ),
       ),
     ),
+    http.post(`${API_PREFIX}/classes/:classId/score-events`, async ({ params, request }) =>
+      envelope(async () => service.createScoreEvent(param(params.classId), await body<CreateScoreEventInput>(request))),
+    ),
+    http.get(`${API_PREFIX}/classes/:classId/score-periods/current/summary`, ({ params }) =>
+      envelope(() => service.getCurrentScorePeriodSummary(param(params.classId))),
+    ),
+    http.get(`${API_PREFIX}/classes/:classId/score-periods/summary`, ({ params, request }) => {
+      const url = new URL(request.url)
+      return envelope(() => service.getScorePeriodSummary(param(params.classId), {
+        from: url.searchParams.get("from") ?? undefined,
+        to: url.searchParams.get("to") ?? undefined,
+      }))
+    }),
+    http.get(`${API_PREFIX}/classes/:classId/committee`, ({ params }) =>
+      envelope(() => service.listCommittee(param(params.classId))),
+    ),
+    http.put(`${API_PREFIX}/classes/:classId/committee`, async ({ params, request }) =>
+      envelope(async () => service.updateCommittee(param(params.classId), await body<UpdateCommitteeInput>(request))),
+    ),
+    http.post(`${API_PREFIX}/classes/:classId/score-periods/settle`, async ({ params, request }) => {
+      const input = await optionalBody<{ periodId?: string }>(request)
+      return envelope(() => service.settleScorePeriods(param(params.classId), input?.periodId))
+    }),
     http.post(`${API_PREFIX}/classes/:classId/scores/:recordId/revert`, ({ params }) =>
       envelope(() => service.revertScore(param(params.classId), param(params.recordId))),
     ),

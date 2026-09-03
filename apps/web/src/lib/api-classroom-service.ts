@@ -15,6 +15,7 @@ import type {
   CreateBindingCodeResult,
   CreateClassroomBindingCodeResult,
   CreateCustomScoreInput,
+  CreateScoreEventInput,
   CreateRuleScoreInput,
   CreateScoreRuleInput,
   CreateStudentInput,
@@ -37,6 +38,10 @@ import type {
   SaveSeatLayoutInput,
   SaveClassScheduleInput,
   ScoreRecord,
+  ScoreEventResult,
+  ScorePeriodSummary,
+  CommitteeAssignment,
+  UpdateCommitteeInput,
   ScoreRecordListQuery,
   ScoreRule,
   SeatLayout,
@@ -53,6 +58,7 @@ import type {
   UpdateStudentInput,
   UpdateTeacherInput,
   WeeklyRanking,
+  IsoDateTime,
 } from "./domain"
 import {
   getDisplaySession,
@@ -317,6 +323,39 @@ export class ApiClassroomService implements ClassroomService {
   async revertScore(classId: string, recordId: string): Promise<ScoreRecord> {
     return this.request<ScoreRecord>(`/classes/${encodeURIComponent(classId)}/scores/${encodeURIComponent(recordId)}/revert`, {
       method: "POST",
+    })
+  }
+
+  async createScoreEvent(classId: string, input: CreateScoreEventInput): Promise<ScoreEventResult> {
+    return this.request<ScoreEventResult>(`/classes/${encodeURIComponent(classId)}/score-events`, {
+      method: "POST",
+      body: jsonBody(input),
+    })
+  }
+
+  async getCurrentScorePeriodSummary(classId: string): Promise<ScorePeriodSummary> {
+    return this.request<ScorePeriodSummary>(`/classes/${encodeURIComponent(classId)}/score-periods/current/summary`)
+  }
+
+  async getScorePeriodSummary(classId: string, query: { from?: IsoDateTime; to?: IsoDateTime } = {}): Promise<ScorePeriodSummary> {
+    return this.request<ScorePeriodSummary>(`/classes/${encodeURIComponent(classId)}/score-periods/summary${queryString(query)}`)
+  }
+
+  async listCommittee(classId: string): Promise<CommitteeAssignment[]> {
+    return this.request<CommitteeAssignment[]>(`/classes/${encodeURIComponent(classId)}/committee`)
+  }
+
+  async updateCommittee(classId: string, input: UpdateCommitteeInput): Promise<CommitteeAssignment[]> {
+    return this.request<CommitteeAssignment[]>(`/classes/${encodeURIComponent(classId)}/committee`, {
+      method: "PUT",
+      body: jsonBody(input),
+    })
+  }
+
+  async settleScorePeriods(classId: string, periodId?: string): Promise<{ settled: true }> {
+    return this.request<{ settled: true }>(`/classes/${encodeURIComponent(classId)}/score-periods/settle`, {
+      method: "POST",
+      body: jsonBody(periodId ? { periodId } : {}),
     })
   }
 

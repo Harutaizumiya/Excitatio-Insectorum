@@ -61,6 +61,15 @@ export class MockClassroomRepository {
         })),
         scheduleTemplates: parsed.scheduleTemplates ?? initialState.scheduleTemplates,
         scheduleEntries: parsed.scheduleEntries ?? initialState.scheduleEntries,
+        scoreRules: parsed.scoreRules ?? initialState.scoreRules,
+        scorePeriods: parsed.scorePeriods ?? initialState.scorePeriods,
+        scoreEvents: parsed.scoreEvents ?? initialState.scoreEvents,
+        committeeAssignments: parsed.committeeAssignments ?? initialState.committeeAssignments,
+        scoreRecords: parsed.scoreRecords ?? initialState.scoreRecords,
+        seatLayoutVersions: parsed.seatLayoutVersions ?? initialState.seatLayoutVersions,
+        displayDevices: parsed.displayDevices ?? initialState.displayDevices,
+        teachers: parsed.teachers ?? initialState.teachers,
+        students: parsed.students ?? initialState.students,
       }
     } catch {
       return initialState

@@ -73,8 +73,12 @@ function setSaveDefaults(mocks: SeatingMocks, classroom = {}) {
   });
 }
 
-function saveDto(seats: SaveSeatLayoutDto['seats'], baseVersion?: number): SaveSeatLayoutDto {
-  return { seats, ...(baseVersion === undefined ? {} : { baseVersion }) };
+function saveDto(
+  seats: SaveSeatLayoutDto['seats'],
+  baseVersion?: number,
+  grid?: Pick<SaveSeatLayoutDto, 'gridRows' | 'gridCols'>,
+): SaveSeatLayoutDto {
+  return { seats, ...grid, ...(baseVersion === undefined ? {} : { baseVersion }) };
 }
 
 describe('SeatingService', () => {
@@ -125,6 +129,25 @@ describe('SeatingService', () => {
         saveDto([{ row: 2, col: 0, studentId: null }]),
       ),
     ).rejects.toMatchObject({ code: 'SEAT_LAYOUT_COORDINATE_OUT_OF_BOUNDS' });
+  });
+
+  it('accepts seats in an expanded grid and persists the new dimensions', async () => {
+    const mocks = createMocks();
+    setSaveDefaults(mocks);
+    const service = new SeatingService(mocks.prisma, mocks.publisher);
+
+    await expect(
+      service.saveLayout(
+        'class-1',
+        'teacher-1',
+        saveDto([{ row: 2, col: 0, studentId: null }], undefined, { gridRows: 3, gridCols: 2 }),
+      ),
+    ).resolves.toEqual({ versionId: 'version-1', version: 1 });
+
+    expect(mocks.tx.classroom.updateMany).toHaveBeenCalledWith({
+      where: { id: 'class-1', currentLayoutVersionId: null },
+      data: { currentLayoutVersionId: 'version-1', gridRows: 3, gridCols: 2 },
+    });
   });
 
   it('rejects inactive or cross-class students', async () => {

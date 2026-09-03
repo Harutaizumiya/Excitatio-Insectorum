@@ -221,6 +221,8 @@ export interface SeatDraft {
 
 export interface SaveSeatLayoutInput {
   seats: SeatDraft[]
+  gridRows?: number
+  gridCols?: number
   baseVersion?: number
 }
 
@@ -235,6 +237,7 @@ export interface ScoreRule {
   classId: string
   name: string
   group?: string
+  systemPolicyKey?: string | null
   delta: number
   description: string | null
   enabled: boolean
@@ -248,6 +251,7 @@ export interface CreateScoreRuleInput {
   delta: number
   group?: string
   description?: string | null
+  systemPolicyKey?: string | null
 }
 
 export interface UpdateScoreRuleInput {
@@ -256,6 +260,103 @@ export interface UpdateScoreRuleInput {
   group?: string
   description?: string | null
   enabled?: boolean
+  systemPolicyKey?: string | null
+}
+
+export type ScoreEventType =
+  | "LATE"
+  | "SCHOOL_UNIFORM"
+  | "EVENING_SELF_STUDY_CALLOUT"
+  | "NO_VIOLATION_REWARD"
+  | "NOISIEST_CLASS_TOP3"
+  | "HOMEWORK_MISSING"
+  | "HOMEWORK_PRAISE"
+  | "EXAM_GRADE_TOP10"
+  | "SUBJECT_TOP3"
+  | "BREAKTHROUGH"
+  | "PROGRESS"
+  | "DUTY_HYGIENE"
+  | "DORM_HYGIENE"
+  | "COMMITTEE_TASK_COMPLETED"
+  | "COMMITTEE_REWARD"
+  | "BLACKBOARD"
+  | "INDIVIDUAL_ACTIVITY"
+  | "GROUP_ACTIVITY"
+  | "SPORTS_FINAL_TOP8"
+  | "ACTIVITY_NEGATIVE"
+  | "MANUAL"
+
+export interface CreateScoreEventInput {
+  type: ScoreEventType
+  studentIds: string[]
+  occurredAt?: IsoDateTime
+  minutesLate?: number
+  rank?: number
+  manualDelta?: number
+  isOrganizer?: boolean
+  specialContribution?: boolean
+  subject?: string
+  reason?: string
+  businessKey?: string
+}
+
+export interface ScoreEventResult {
+  id: string
+  type: ScoreEventType
+  periodId: string
+  occurredAt: IsoDateTime
+  studentIds: string[]
+  records: Array<{ studentId: string; delta: number }>
+}
+
+export interface ScorePeriod {
+  id: string
+  startAt: IsoDateTime
+  endAt: IsoDateTime
+  initialScore: number
+  status: "OPEN" | "SETTLED"
+  settledAt: IsoDateTime | null
+}
+
+export interface PeriodScoreStudent {
+  studentId: string
+  name: string
+  score: number
+  rank: number
+}
+
+export interface ScorePeriodSummary {
+  period: ScorePeriod | null
+  periods: ScorePeriod[]
+  range: { startAt: IsoDateTime; endAt: IsoDateTime }
+  students: PeriodScoreStudent[]
+  top3: PeriodScoreStudent[]
+  recommendedSeatOrder: PeriodScoreStudent[]
+}
+
+export interface CommitteeAssignment {
+  id: string
+  studentId: string
+  studentName: string
+  role: string
+  subject: string | null
+  termStartAt: IsoDateTime
+  termEndAt: IsoDateTime | null
+  trialEndsAt: IsoDateTime | null
+  status: "ACTIVE" | "REVOKED"
+}
+
+export interface CommitteeAssignmentInput {
+  studentId: string
+  role: string
+  subject?: string | null
+  termStartAt: IsoDateTime
+  termEndAt?: IsoDateTime | null
+  trialEndsAt?: IsoDateTime | null
+}
+
+export interface UpdateCommitteeInput {
+  assignments: CommitteeAssignmentInput[]
 }
 
 export interface ScoreRecord {
@@ -268,6 +369,10 @@ export interface ScoreRecord {
   reason: string | null
   recordType: ScoreRecordType
   reverted: boolean
+  periodId: string | null
+  eventId: string | null
+  violation: boolean
+  occurredAt: IsoDateTime
   createdAt: IsoDateTime
 }
 

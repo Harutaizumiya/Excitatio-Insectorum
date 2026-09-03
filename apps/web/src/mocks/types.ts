@@ -1,9 +1,12 @@
 import type {
   Classroom,
   ClassTeacher,
+  CommitteeAssignment,
   DeviceStatus,
   DisplayDevice,
   IsoDateTime,
+  ScoreEventType,
+  ScorePeriod,
   ScoreRecordType,
   ScoreRule,
   SchedulePeriod,
@@ -23,8 +26,25 @@ export interface MockScoreRecord {
   recordType: ScoreRecordType
   reverted: boolean
   revertedRecordId: string | null
+  periodId?: string | null
+  eventId?: string | null
+  violation?: boolean
+  occurredAt?: IsoDateTime
   createdAt: IsoDateTime
 }
+
+export interface MockScoreEvent {
+  id: string
+  classId: string
+  periodId: string
+  type: ScoreEventType
+  operatorId: string
+  occurredAt: IsoDateTime
+  studentIds: string[]
+  businessKey: string | null
+}
+
+export type MockCommitteeAssignment = CommitteeAssignment
 
 export interface MockTeacherInvitation {
   token: string
@@ -70,6 +90,9 @@ export interface MockDatabaseState {
   scheduleTemplates: MockScheduleTemplate[]
   scheduleEntries: MockScheduleEntry[]
   scoreRules: ScoreRule[]
+  scorePeriods: ScorePeriod[]
+  scoreEvents: MockScoreEvent[]
+  committeeAssignments: MockCommitteeAssignment[]
   scoreRecords: MockScoreRecord[]
   seatLayoutVersions: SeatLayoutVersion[]
   displayDevices: MockDisplayDevice[]

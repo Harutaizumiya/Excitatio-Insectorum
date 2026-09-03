@@ -33,6 +33,7 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   Col,
   Descriptions,
   Divider,
@@ -76,12 +77,16 @@ import {
 } from "./admin-data";
 import {
   useAdminDisplayDevices,
+  useAdminCommittee,
   useAdminScoreRecords,
+  useAdminScorePeriodSummary,
   useAdminScoreRules,
   useAdminSeating,
   useAdminStudents,
   useAdminTeachers,
 } from "./admin-queries";
+import type { CreateScoreEventInput } from "@/lib";
+import type { CommitteeAssignment, CommitteeAssignmentInput, UpdateCommitteeInput } from "@/lib";
 
 const cardStyle: CSSProperties = {
   border: "1px solid #e5ebf4",
@@ -112,6 +117,8 @@ export function AdminPage({ route }: AdminPageProps) {
       return <ScoreRulesPage />;
     case "score-records":
       return <ScoreRecordsPage />;
+    case "score-ranking":
+      return <ScoreRankingPage />;
     case "display-devices":
       return <DisplayDevicesPage />;
     case "overview":
@@ -450,13 +457,16 @@ function StudentsPage() {
     deactivateStudent,
     batchImportStudents,
   } = useAdminStudents();
+  const { createScoreEvent, isScoring } = useAdminScoreRecords();
   const [keyword, setKeyword] = useState("");
   const [status, setStatus] = useState<"ALL" | StudentStatus>("ALL");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [historyStudent, setHistoryStudent] = useState<Student | null>(null);
+  const [scoringStudent, setScoringStudent] = useState<Student | null>(null);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [form] = Form.useForm<StudentFormValues>();
+  const [scoreForm] = Form.useForm<ScoreFormValues>();
 
   const existingStudentNos = useMemo(
     () => new Set(students.map((s) => s.studentNo).filter(Boolean)),
@@ -507,13 +517,45 @@ function StudentsPage() {
     });
   };
 
+  const openScore = (student: Student) => {
+    setScoringStudent(student);
+    scoreForm.resetFields();
+    scoreForm.setFieldsValue({ eventType: "LATE", studentIds: [student.id] });
+  };
+
+  const closeScore = () => {
+    setScoringStudent(null);
+    scoreForm.resetFields();
+  };
+
+  const saveScore = async (values: ScoreFormValues) => {
+    if (!scoringStudent) return;
+    const input: CreateScoreEventInput = {
+      type: values.eventType,
+      studentIds: values.studentIds,
+      minutesLate: values.minutesLate,
+      rank: values.rank,
+      manualDelta: values.manualDelta,
+      isOrganizer: values.isOrganizer,
+      specialContribution: values.specialContribution,
+      reason: values.reason?.trim() || undefined,
+    };
+    try {
+      await createScoreEvent(input);
+      notification.success({ title: "积分已记录" });
+      closeScore();
+    } catch (error) {
+      notification.error({ title: error instanceof Error ? error.message : "提交失败" });
+    }
+  };
+
   const columns: ColumnsType<Student> = [
     { title: "学生", dataIndex: "name", width: 170, render: (name: string) => <Space><Avatar size={30} style={{ background: "#e9f1ff", color: "#0a59f7" }}>{name.slice(0, 1)}</Avatar><Typography.Text strong>{name}</Typography.Text></Space> },
     { title: "学号", dataIndex: "studentNo", width: 120, render: (value: string) => <Typography.Text code>{value}</Typography.Text> },
     { title: "状态", dataIndex: "status", width: 120, render: (value: StudentStatus) => <StatusTag status={value} /> },
     { title: "当前座位", dataIndex: "seat", width: 130, render: (value: string | null) => value ? <Tag color="blue" style={{ borderRadius: 999 }}>{value}</Tag> : <Typography.Text type="secondary">未安排</Typography.Text> },
     { title: "最后更新", dataIndex: "updatedAt", width: 170, render: (value: string) => <Typography.Text type="secondary">{formatDateTime(value)}</Typography.Text> },
-    { title: "操作", key: "actions", fixed: "right", width: 225, render: (_, student) => <Space size={4}><Button type="link" icon={<EditOutlined />} onClick={() => openEdit(student)}>编辑</Button><Button type="link" icon={<EyeOutlined />} onClick={() => setHistoryStudent(student)}>历史</Button>{student.status === "ACTIVE" && <Popconfirm title="停用这名学生？" description="停用后会从当前座位和排行榜中移除，历史积分继续保留。" okText="确认停用" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => deactivate(student)}><Button danger type="link" icon={<StopOutlined />}>停用</Button></Popconfirm>}</Space> },
+    { title: "操作", key: "actions", fixed: "right", width: 285, render: (_, student) => <Space size={4}><Button type="link" icon={<PlusOutlined />} onClick={() => openScore(student)} disabled={student.status !== "ACTIVE"}>积分</Button><Button type="link" icon={<EditOutlined />} onClick={() => openEdit(student)}>编辑</Button><Button type="link" icon={<EyeOutlined />} onClick={() => setHistoryStudent(student)}>历史</Button>{student.status === "ACTIVE" && <Popconfirm title="停用这名学生？" description="停用后会从当前座位和排行榜中移除，历史积分继续保留。" okText="确认停用" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => deactivate(student)}><Button danger type="link" icon={<StopOutlined />}>停用</Button></Popconfirm>}</Space> },
   ];
 
   return (
@@ -556,6 +598,44 @@ function StudentsPage() {
         {historyStudent ? <><div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: 22 }}><Avatar size={48} style={{ background: "#e9f1ff", color: "#0a59f7" }}>{historyStudent.name.slice(0, 1)}</Avatar><div><Typography.Title level={4} style={{ margin: 0 }}>{historyStudent.name}</Typography.Title><Typography.Text type="secondary">学号 {historyStudent.studentNo}</Typography.Text></div></div><Descriptions column={1} bordered size="small"><Descriptions.Item label="状态"><StatusTag status={historyStudent.status} /></Descriptions.Item><Descriptions.Item label="当前座位">{historyStudent.seat ?? "未安排"}</Descriptions.Item><Descriptions.Item label="加入班级">{historyStudent.createdAt}</Descriptions.Item><Descriptions.Item label="最后更新">{historyStudent.updatedAt}</Descriptions.Item></Descriptions><Divider /><Typography.Text strong>历史记录</Typography.Text><Space orientation="vertical" size={12} style={{ display: "flex", marginTop: 14 }}><HistoryEvent title="学生资料建立" time={`${historyStudent.createdAt} 09:00`} /><HistoryEvent title={historyStudent.status === "INACTIVE" ? "学生已停用" : "资料最后更新"} time={historyStudent.updatedAt} /></Space></> : null}
       </Drawer>
 
+      <Modal
+        title={scoringStudent ? `为 ${scoringStudent.name} 记分` : "记分"}
+        open={scoringStudent !== null}
+        onCancel={closeScore}
+        onOk={() => void scoreForm.submit()}
+        okText="确认记分"
+        cancelText="取消"
+        confirmLoading={isScoring}
+        destroyOnHidden
+      >
+          <Form
+            form={scoreForm}
+            layout="vertical"
+          initialValues={{ eventType: "LATE", studentIds: scoringStudent ? [scoringStudent.id] : [] }}
+            onFinish={saveScore}
+            requiredMark="optional"
+          >
+          <Form.Item name="studentIds" label="学生" rules={[{ required: true, type: "array", min: 1, message: "请选择学生" }]}>
+            <Select mode="multiple" options={students.filter((student) => student.status === "ACTIVE").map((student) => ({ value: student.id, label: student.name }))} />
+          </Form.Item>
+          <Form.Item name="eventType" label="事件" rules={[{ required: true, message: "请选择事件" }]}>
+            <Select options={ADMIN_SCORE_EVENT_OPTIONS} />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(previous, current) => previous.eventType !== current.eventType}>
+            {({ getFieldValue }) => {
+              const eventType = getFieldValue("eventType") as CreateScoreEventInput["type"];
+              return <>
+                {eventType === "LATE" && <Form.Item name="minutesLate" label="迟到分钟" rules={[{ required: true, type: "number", min: 1, message: "请输入迟到分钟" }]}><InputNumber precision={0} style={{ width: "100%" }} /></Form.Item>}
+                {ADMIN_RANK_EVENTS.has(eventType) && <Form.Item name="rank" label="名次" rules={[{ required: true, type: "number", min: 1, message: "请输入名次" }]}><InputNumber precision={0} min={1} max={eventType === "EXAM_GRADE_TOP10" ? 10 : eventType === "SPORTS_FINAL_TOP8" ? 8 : 3} style={{ width: "100%" }} /></Form.Item>}
+                {ADMIN_MANUAL_EVENTS.has(eventType) && <Form.Item name="manualDelta" label="最终分值" rules={[{ required: true, type: "number", min: -10000, max: 10000, validator: (_, value) => Number.isInteger(value) && value !== 0 ? Promise.resolve() : Promise.reject(new Error("请输入非 0 整数")) }]}><InputNumber precision={0} style={{ width: "100%" }} /></Form.Item>}
+                {eventType === "GROUP_ACTIVITY" && <Space><Form.Item name="isOrganizer" valuePropName="checked" noStyle><Checkbox>组织者</Checkbox></Form.Item><Form.Item name="specialContribution" valuePropName="checked" noStyle><Checkbox>特殊贡献</Checkbox></Form.Item></Space>}
+                <Form.Item name="reason" label="原因" rules={ADMIN_MANUAL_EVENTS.has(eventType) ? [{ required: true, message: "请输入原因" }] : undefined}><Input.TextArea rows={2} maxLength={200} /></Form.Item>
+              </>;
+            }}
+          </Form.Item>
+          </Form>
+      </Modal>
+
       <StudentImportModal
         open={importOpen}
         onClose={() => setImportOpen(false)}
@@ -567,6 +647,22 @@ function StudentsPage() {
 }
 
 interface StudentFormValues { name: string; studentNo: string }
+interface ScoreFormValues {
+  eventType: CreateScoreEventInput["type"];
+  studentIds: string[];
+  minutesLate?: number;
+  rank?: number;
+  manualDelta?: number;
+  isOrganizer?: boolean;
+  specialContribution?: boolean;
+  reason?: string;
+}
+
+const ADMIN_SCORE_EVENT_OPTIONS: Array<{ value: CreateScoreEventInput["type"]; label: string }> = [
+  { value: "LATE", label: "迟到" }, { value: "SCHOOL_UNIFORM", label: "校服" }, { value: "EVENING_SELF_STUDY_CALLOUT", label: "晚自习点名" }, { value: "NOISIEST_CLASS_TOP3", label: "班级噪音前三" }, { value: "HOMEWORK_MISSING", label: "作业未交" }, { value: "HOMEWORK_PRAISE", label: "作业表扬" }, { value: "EXAM_GRADE_TOP10", label: "年级考试前十" }, { value: "SUBJECT_TOP3", label: "单科前三" }, { value: "BREAKTHROUGH", label: "突破性成绩" }, { value: "PROGRESS", label: "进步名次" }, { value: "DUTY_HYGIENE", label: "卫生事件" }, { value: "DORM_HYGIENE", label: "寝室卫生" }, { value: "COMMITTEE_TASK_COMPLETED", label: "班委任务完成" }, { value: "BLACKBOARD", label: "黑板报" }, { value: "INDIVIDUAL_ACTIVITY", label: "个人活动" }, { value: "GROUP_ACTIVITY", label: "团体活动" }, { value: "SPORTS_FINAL_TOP8", label: "运动会决赛" }, { value: "ACTIVITY_NEGATIVE", label: "活动违规" }, { value: "MANUAL", label: "自定义事件" },
+];
+const ADMIN_RANK_EVENTS = new Set<CreateScoreEventInput["type"]>(["NOISIEST_CLASS_TOP3", "EXAM_GRADE_TOP10", "SUBJECT_TOP3", "BLACKBOARD", "INDIVIDUAL_ACTIVITY", "SPORTS_FINAL_TOP8", "GROUP_ACTIVITY"]);
+const ADMIN_MANUAL_EVENTS = new Set<CreateScoreEventInput["type"]>(["HOMEWORK_MISSING", "HOMEWORK_PRAISE", "BREAKTHROUGH", "PROGRESS", "DUTY_HYGIENE", "DORM_HYGIENE", "MANUAL"]);
 
 function HistoryEvent({ title, time }: { title: string; time: string }) {
   return <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}><div style={{ width: 8, height: 8, marginTop: 5, borderRadius: "50%", background: "#8bb2ff" }} /><div><Typography.Text style={{ display: "block", color: "#314562" }}>{title}</Typography.Text><Typography.Text type="secondary" style={{ fontSize: 12 }}>{time}</Typography.Text></div></div>;
@@ -574,17 +670,56 @@ function HistoryEvent({ title, time }: { title: string; time: string }) {
 
 function TeachersPage() {
   const { notification } = AntApp.useApp();
+  const { students } = useAdminStudents();
+  const {
+    assignments,
+    updateCommittee,
+    isLoading: committeeLoading,
+    isSaving: committeeSaving,
+  } = useAdminCommittee();
   const {
     teachers,
     createTeacher: persistTeacher,
     generateInvitation: persistInvitation,
     setTeacherStatus: persistStatus,
-    deleteTeacher: persistDelete,
   } = useAdminTeachers();
   const [createOpen, setCreateOpen] = useState(false);
   const [invite, setInvite] = useState<{ teacher: Teacher; url: string } | null>(null);
   const [detail, setDetail] = useState<Teacher | null>(null);
   const [form] = Form.useForm<TeacherFormValues>();
+  const [committeeOpen, setCommitteeOpen] = useState(false);
+  const [committeeForm] = Form.useForm<CommitteeFormValues>();
+
+  const openCommittee = () => {
+    committeeForm.setFieldsValue({
+      assignments: assignments.map((assignment) => ({
+        key: assignment.id,
+        studentId: assignment.studentId,
+        role: assignment.role,
+        subject: assignment.subject,
+        termStartAt: assignment.termStartAt,
+        termEndAt: assignment.termEndAt,
+        trialEndsAt: assignment.trialEndsAt,
+      })),
+    });
+    setCommitteeOpen(true);
+  };
+
+  const saveCommittee = async (values: CommitteeFormValues) => {
+    const input: UpdateCommitteeInput = {
+      assignments: values.assignments.map((assignment) => ({
+        studentId: assignment.studentId,
+        role: assignment.role,
+        subject: assignment.subject?.trim() || null,
+        termStartAt: assignment.termStartAt ?? new Date().toISOString(),
+        termEndAt: assignment.termEndAt ?? null,
+        trialEndsAt: assignment.trialEndsAt ?? null,
+      })),
+    };
+    await updateCommittee(input);
+    setCommitteeOpen(false);
+    notification.success({ title: "班委已更新" });
+  };
 
   const generateInvitation = async (teacherId: string) => {
     const result = await persistInvitation(teacherId);
@@ -615,12 +750,6 @@ function TeachersPage() {
     } else {
       notification.success({ title: "教师已启用", description: `${teacher.name} 已恢复班级访问权限。` });
     }
-  };
-
-  const handleDeleteTeacher = async (teacher: Teacher) => {
-    await persistDelete(teacher.id);
-    setDetail(null);
-    notification.success({ title: "教师已删除", description: `已移除 ${teacher.name} 的教师档案。` });
   };
 
   const copyInvite = async (url: string) => {
@@ -730,6 +859,14 @@ function TeachersPage() {
     },
   ];
 
+  const committeeColumns: ColumnsType<CommitteeAssignment> = [
+    { title: "学生", dataIndex: "studentName" },
+    { title: "班委角色", dataIndex: "role" },
+    { title: "科目", dataIndex: "subject", render: (value: string | null) => value ?? "—" },
+    { title: "试用截止", dataIndex: "trialEndsAt", render: (value: string | null) => value ? formatDateTime(value) : "—" },
+    { title: "状态", dataIndex: "status", render: (value: CommitteeAssignment["status"]) => <Tag color={value === "ACTIVE" ? "success" : "default"}>{value === "ACTIVE" ? "有效" : "已撤销"}</Tag> },
+  ];
+
   return (
     <div>
       <PageHeader
@@ -756,6 +893,22 @@ function TeachersPage() {
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有任课教师" /> }}
         />
       </Card>
+      <Card
+        title="班委"
+        style={{ ...cardStyle, marginTop: 16 }}
+        extra={<Button onClick={openCommittee}>编辑</Button>}
+        styles={{ body: { padding: 0 } }}
+      >
+        <Table
+          rowKey="id"
+          columns={committeeColumns}
+          dataSource={assignments}
+          loading={committeeLoading}
+          pagination={false}
+          scroll={{ x: 720 }}
+          locale={{ emptyText: "暂无班委" }}
+        />
+      </Card>
       <Modal
         title="创建任课教师"
         open={createOpen}
@@ -771,6 +924,50 @@ function TeachersPage() {
           <Form.Item name="subject" label="任教科目" rules={[{ required: true, message: "请输入任教科目" }]}>
             <Input placeholder="例如：英語" />
           </Form.Item>
+        </Form>
+      </Modal>
+      <Modal
+        title="班委"
+        open={committeeOpen}
+        onCancel={() => setCommitteeOpen(false)}
+        onOk={() => void committeeForm.submit()}
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={committeeSaving}
+        destroyOnHidden
+      >
+        <Form
+          form={committeeForm}
+          layout="vertical"
+          onFinish={saveCommittee}
+          initialValues={{ assignments: [] }}
+        >
+          <Form.List name="assignments">
+            {(fields, { add, remove }) => (
+              <Space orientation="vertical" size={12} style={{ display: "flex" }}>
+                {fields.map((field) => (
+                  <Space key={field.key} align="start" style={{ display: "flex" }}>
+                    <Form.Item name={[field.name, "studentId"]} rules={[{ required: true, message: "请选择学生" }]}>
+                      <Select placeholder="学生" style={{ width: 140 }} options={students.filter((student) => student.status === "ACTIVE").map((student) => ({ value: student.id, label: student.name }))} />
+                    </Form.Item>
+                    <Form.Item name={[field.name, "role"]} rules={[{ required: true, message: "请选择角色" }]}>
+                      <Select placeholder="角色" style={{ width: 130 }} options={COMMITTEE_ROLE_OPTIONS} />
+                    </Form.Item>
+                    <Form.Item name={[field.name, "subject"]}>
+                      <Input placeholder="科目" style={{ width: 100 }} />
+                    </Form.Item>
+                    <Button type="link" danger onClick={() => remove(field.name)}>删除</Button>
+                    <Form.Item name={[field.name, "termStartAt"]} hidden><Input /></Form.Item>
+                    <Form.Item name={[field.name, "termEndAt"]} hidden><Input /></Form.Item>
+                    <Form.Item name={[field.name, "trialEndsAt"]} hidden><Input /></Form.Item>
+                  </Space>
+                ))}
+                <Button type="dashed" onClick={() => add({ termStartAt: new Date().toISOString() })} block>
+                  添加班委
+                </Button>
+              </Space>
+            )}
+          </Form.List>
         </Form>
       </Modal>
       <Modal title="邀请链接已生成" open={invite !== null} onCancel={() => setInvite(null)} footer={null}>
@@ -861,18 +1058,6 @@ function TeachersPage() {
                   启用教师
                 </Button>
               )}
-              <Popconfirm
-                title="确认删除该教师？"
-                description="删除后将从班级中永久移除该教师档案。"
-                okText="确认删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true }}
-                onConfirm={() => void handleDeleteTeacher(detail)}
-              >
-                <Button danger icon={<DeleteOutlined />}>
-                  删除教师
-                </Button>
-              </Popconfirm>
             </Space>
           </>
         )}
@@ -883,11 +1068,26 @@ function TeachersPage() {
 
 interface TeacherFormValues { name: string; subject: string }
 
+interface CommitteeFormValues {
+  assignments: Array<CommitteeAssignmentInput & { key?: string }>;
+}
+
+const COMMITTEE_ROLE_OPTIONS = [
+  "班长",
+  "团支书",
+  "劳动委员",
+  "纪律委员",
+  "学习委员",
+  "课代表",
+  "网管",
+  "寝室长",
+  "其他班委",
+].map((role) => ({ value: role, label: role }));
+
 interface ScoreRuleFormValues {
   name: string;
   group: string;
   delta?: number;
-  description?: string;
 }
 
 function ScoreRulesPage() {
@@ -913,8 +1113,7 @@ function ScoreRulesPage() {
     return rules.filter((rule) => {
       const matchKeyword =
         !searchKeyword ||
-        rule.name.includes(searchKeyword.trim()) ||
-        rule.description?.includes(searchKeyword.trim());
+        rule.name.includes(searchKeyword.trim());
       const matchGroup = selectedGroup === "ALL" || rule.group === selectedGroup;
       const matchStatus =
         statusFilter === "ALL" || (statusFilter === "ENABLED" ? rule.enabled : !rule.enabled);
@@ -929,7 +1128,6 @@ function ScoreRulesPage() {
         name: rule.name,
         group: rule.group || "课堂表现",
         delta: rule.delta,
-        description: rule.description,
       });
     } else {
       form.resetFields();
@@ -965,13 +1163,10 @@ function ScoreRulesPage() {
       title: "规则名称",
       dataIndex: "name",
       width: 200,
-      render: (value: string, rule) => (
+      render: (value: string) => (
         <span>
           <Typography.Text strong style={{ display: "block" }}>
             {value}
-          </Typography.Text>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {rule.description || "未填写说明"}
           </Typography.Text>
         </span>
       ),
@@ -1021,7 +1216,6 @@ function ScoreRulesPage() {
           {rule.enabled ? (
             <Popconfirm
               title="停用这条规则？"
-              description="任课教师将无法继续使用它快速记分。"
               okText="确认停用"
               cancelText="取消"
               onConfirm={() => toggleRule(rule)}
@@ -1037,7 +1231,6 @@ function ScoreRulesPage() {
           )}
           <Popconfirm
             title="删除这条规则？"
-            description="删除后无法恢复，但历史积分流水会保留。"
             okText="确认删除"
             cancelText="取消"
             okButtonProps={{ danger: true }}
@@ -1056,55 +1249,19 @@ function ScoreRulesPage() {
     <div>
       <PageHeader
         title="积分规则"
-        description="维护班级共享的快捷积分规则与规则大类。分值必须是非零整数，历史流水不会因规则变更而改变。"
         action={
           <Button type="primary" icon={<PlusOutlined />} style={primaryButtonStyle} onClick={() => openRule()}>
             新增规则
           </Button>
         }
       />
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={8}>
-          <Card style={cardStyle} styles={{ body: { padding: 18 } }}>
-            <Typography.Text type="secondary">当前规则</Typography.Text>
-            <Typography.Title level={3} style={{ margin: "7px 0 0" }}>
-              {rules.length}{" "}
-              <Typography.Text type="secondary" style={{ fontSize: 14, fontWeight: 400 }}>
-                条
-              </Typography.Text>
-            </Typography.Title>
-          </Card>
-        </Col>
-        <Col xs={24} md={8}>
-          <Card style={cardStyle} styles={{ body: { padding: 18 } }}>
-            <Typography.Text type="secondary">规则组数</Typography.Text>
-            <Typography.Title level={3} style={{ margin: "7px 0 0", color: "#0a59f7" }}>
-              {allGroups.length}{" "}
-              <Typography.Text type="secondary" style={{ fontSize: 14, fontWeight: 400 }}>
-                组
-              </Typography.Text>
-            </Typography.Title>
-          </Card>
-        </Col>
-        <Col xs={24} md={8}>
-          <Card style={cardStyle} styles={{ body: { padding: 18 } }}>
-            <Typography.Text type="secondary">启用中</Typography.Text>
-            <Typography.Title level={3} style={{ margin: "7px 0 0", color: "#12a46b" }}>
-              {rules.filter((rule) => rule.enabled).length}{" "}
-              <Typography.Text type="secondary" style={{ fontSize: 14, fontWeight: 400 }}>
-                条
-              </Typography.Text>
-            </Typography.Title>
-          </Card>
-        </Col>
-      </Row>
       <Card style={cardStyle} styles={{ body: { padding: 0 } }}>
         <div style={{ padding: 18, borderBottom: "1px solid #eef2f7" }}>
           <Space wrap size={10}>
             <Input
               allowClear
               prefix={<SearchOutlined />}
-              placeholder="按规则名称或说明搜索"
+              placeholder="按规则名称搜索"
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
               style={{ width: 210 }}
@@ -1213,18 +1370,47 @@ function ScoreRulesPage() {
           >
             <InputNumber style={{ width: "100%" }} precision={0} placeholder="例如：2 或 -2" />
           </Form.Item>
-          <Form.Item name="description" label="规则说明">
-            <Input.TextArea rows={4} maxLength={200} showCount placeholder="补充教师使用时的判断标准（可选）" />
-          </Form.Item>
         </Form>
       </Modal>
     </div>
   );
 }
 
+function ScoreRankingPage() {
+  const { summary, refetch } = useAdminScorePeriodSummary();
+  const columns: ColumnsType<NonNullable<typeof summary>["recommendedSeatOrder"][number]> = [
+    { title: "顺序", key: "order", width: 80, render: (_value, _record, index) => index + 1 },
+    { title: "学生", dataIndex: "name" },
+    { title: "积分", dataIndex: "score", width: 100 },
+  ];
+
+  return (
+    <div>
+      <PageHeader
+        title="积分排序"
+        action={
+          <Button icon={<ReloadOutlined />} onClick={() => void refetch()}>
+            刷新
+          </Button>
+        }
+      />
+      <Card style={cardStyle}>
+        <Table
+          rowKey="studentId"
+          columns={columns}
+          dataSource={summary?.recommendedSeatOrder ?? []}
+          loading={!summary}
+          pagination={false}
+          locale={{ emptyText: "暂无积分" }}
+        />
+      </Card>
+    </div>
+  );
+}
+
 function ScoreRecordsPage() {
   const { notification } = AntApp.useApp();
-  const { records, revertRecord: persistRevert } = useAdminScoreRecords();
+  const { records, refetch: refetchRecords, revertRecord: persistRevert } = useAdminScoreRecords();
   const [studentKeyword, setStudentKeyword] = useState("");
   const [operatorId, setOperatorId] = useState("ALL");
   const [subject, setSubject] = useState("ALL");
@@ -1241,7 +1427,7 @@ function ScoreRecordsPage() {
 
   const revertRecord = async (record: ScoreRecord) => {
     await persistRevert(record);
-    notification.success({ title: "积分记录已撤销", description: `已创建 ${record.delta > 0 ? -record.delta : -record.delta} 分的反向流水。` });
+    notification.success({ title: "积分记录已撤销" });
     if (detail?.id === record.id) setDetail({ ...record, reverted: true });
   };
 
@@ -1251,12 +1437,67 @@ function ScoreRecordsPage() {
     { title: "时间", dataIndex: "createdAt", width: 175, render: (value: string) => <Typography.Text type="secondary">{formatDateTime(value)}</Typography.Text> },
     { title: "学生", dataIndex: "studentName", width: 150, render: (value: string) => <Typography.Text strong>{value}</Typography.Text> },
     { title: "教师 / 科目", key: "operator", width: 175, render: (_, record) => <span><Typography.Text style={{ display: "block" }}>{record.operatorName}</Typography.Text><Typography.Text type="secondary" style={{ fontSize: 12 }}>{record.subject}</Typography.Text></span> },
-    { title: "类型", dataIndex: "recordType", width: 130, render: (value: "NORMAL" | "REVERT", record) => <Space size={5}><Tag color={value === "REVERT" ? "orange" : "blue"} style={{ borderRadius: 999 }}>{value === "REVERT" ? "撤销流水" : record.ruleName ? "规则积分" : "自定义积分"}</Tag>{record.reverted && value === "NORMAL" && <Tag color="default" style={{ borderRadius: 999 }}>已撤销</Tag>}</Space> },
+    { title: "类型", dataIndex: "recordType", width: 130, render: (value: "NORMAL" | "REVERT", record) => <Space size={5}><Tag color={value === "REVERT" ? "orange" : "blue"} style={{ borderRadius: 999 }}>{value === "REVERT" ? "撤销流水" : record.eventId ? "事件积分" : record.ruleName ? "规则积分" : "自定义积分"}</Tag>{record.reverted && value === "NORMAL" && <Tag color="default" style={{ borderRadius: 999 }}>已撤销</Tag>}</Space> },
     { title: "变化", dataIndex: "delta", width: 90, render: (value: number) => <ChangeTag delta={value} /> },
-    { title: "操作", key: "actions", fixed: "right", width: 190, render: (_, record) => <Space size={3}><Button type="link" icon={<EyeOutlined />} onClick={() => setDetail(record)}>详情</Button>{record.recordType === "NORMAL" && <Popconfirm title="撤销这笔积分？" description="系统会创建一笔相反分值的反向流水，原记录仍会保留。" okText="确认撤销" cancelText="取消" okButtonProps={{ danger: true }} disabled={record.reverted} onConfirm={() => void revertRecord(record)}><Button danger type="link" icon={<UndoOutlined />} disabled={record.reverted}>{record.reverted ? "已撤销" : "撤销"}</Button></Popconfirm>}</Space> },
+    { title: "操作", key: "actions", fixed: "right", width: 190, render: (_, record) => <Space size={3}><Button type="link" icon={<EyeOutlined />} onClick={() => setDetail(record)}>详情</Button>{record.recordType === "NORMAL" && <Popconfirm title="撤销这笔积分？" okText="确认撤销" cancelText="取消" okButtonProps={{ danger: true }} disabled={record.reverted} onConfirm={() => void revertRecord(record)}><Button danger type="link" icon={<UndoOutlined />} disabled={record.reverted}>{record.reverted ? "已撤销" : "撤销"}</Button></Popconfirm>}</Space> },
   ];
 
-  return <div><PageHeader title="积分记录" description="查看班级所有积分变动信息。" action={<Button icon={<ReloadOutlined />} onClick={() => notification.info({ title: "流水已刷新", description: "数据已是最新状态。" })}>刷新</Button>} /><Card style={cardStyle} styles={{ body: { padding: 0 } }}><div style={{ padding: 18, borderBottom: "1px solid #eef2f7" }}><Space wrap size={10}><Input allowClear prefix={<SearchOutlined />} placeholder="按学生搜索" value={studentKeyword} onChange={(event) => setStudentKeyword(event.target.value)} style={{ width: 190 }} /><Select value={operatorId} onChange={setOperatorId} style={{ width: 150 }} options={[{ value: "ALL", label: "全部教师" }, ...operators.map(([value, label]) => ({ value, label }))]} /><Select value={subject} onChange={setSubject} style={{ width: 130 }} options={[{ value: "ALL", label: "全部科目" }, ...subjects.map((value) => ({ value, label: value }))]} /><Select value={recordType} onChange={setRecordType} style={{ width: 130 }} options={[{ value: "ALL", label: "全部类型" }, { value: "NORMAL", label: "一般流水" }, { value: "REVERT", label: "撤销流水" }]} /><Typography.Text type="secondary" style={{ fontSize: 12 }}>共 {filteredRecords.length} 笔</Typography.Text></Space></div><Table rowKey="id" columns={columns} dataSource={filteredRecords} scroll={{ x: 980 }} pagination={{ pageSize: 8, showSizeChanger: false }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无积分流水" /> }} /></Card><Drawer title="积分记录详情" open={detail !== null} onClose={() => setDetail(null)} size={430}>{detail && <><div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}><div><Typography.Title level={4} style={{ margin: 0 }}>{detail.studentName}</Typography.Title><Typography.Text type="secondary">{detail.createdAt}</Typography.Text></div><ChangeTag delta={detail.delta} /></div><Descriptions column={1} bordered size="small"><Descriptions.Item label="记录类型">{detail.recordType === "REVERT" ? "撤销流水" : detail.ruleName ? "规则积分" : "自定义积分"}</Descriptions.Item><Descriptions.Item label="教师">{detail.operatorName}</Descriptions.Item><Descriptions.Item label="科目">{detail.subject}</Descriptions.Item><Descriptions.Item label="规则">{detail.ruleName ?? "自定义积分"}</Descriptions.Item><Descriptions.Item label="状态">{detail.reverted ? <Tag color="default">已撤销</Tag> : <Tag color="success">有效</Tag>}</Descriptions.Item><Descriptions.Item label="原因">{detail.reason ?? "未填写"}</Descriptions.Item></Descriptions>{detail.recordType === "NORMAL" && <Popconfirm title="撤销这笔积分？" description="会创建相反分值的反向流水。" okText="确认撤销" cancelText="取消" okButtonProps={{ danger: true }} disabled={detail.reverted} onConfirm={() => void revertRecord(detail)}><Button danger block style={{ marginTop: 22 }} icon={<UndoOutlined />} disabled={detail.reverted}>{detail.reverted ? "这笔记录已撤销" : "撤销此记录"}</Button></Popconfirm>}</>}</Drawer></div>;
+  return (
+    <div>
+      <PageHeader
+        title="积分记录"
+        action={
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => {
+              void refetchRecords();
+            }}
+          >
+            刷新
+          </Button>
+        }
+      />
+      <Card style={cardStyle} styles={{ body: { padding: 0 } }}>
+        <div style={{ padding: 18, borderBottom: "1px solid #eef2f7" }}>
+          <Space wrap size={10}>
+            <Input allowClear prefix={<SearchOutlined />} placeholder="按学生搜索" value={studentKeyword} onChange={(event) => setStudentKeyword(event.target.value)} style={{ width: 190 }} />
+            <Select value={operatorId} onChange={setOperatorId} style={{ width: 150 }} options={[{ value: "ALL", label: "全部教师" }, ...operators.map(([value, label]) => ({ value, label }))]} />
+            <Select value={subject} onChange={setSubject} style={{ width: 130 }} options={[{ value: "ALL", label: "全部科目" }, ...subjects.map((value) => ({ value, label: value }))]} />
+            <Select value={recordType} onChange={setRecordType} style={{ width: 130 }} options={[{ value: "ALL", label: "全部类型" }, { value: "NORMAL", label: "一般流水" }, { value: "REVERT", label: "撤销流水" }]} />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>共 {filteredRecords.length} 笔</Typography.Text>
+          </Space>
+        </div>
+        <Table rowKey="id" columns={columns} dataSource={filteredRecords} scroll={{ x: 980 }} pagination={{ pageSize: 8, showSizeChanger: false }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无积分流水" /> }} />
+      </Card>
+      <Drawer title="积分记录详情" open={detail !== null} onClose={() => setDetail(null)} size={430}>
+        {detail && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+              <div>
+                <Typography.Title level={4} style={{ margin: 0 }}>{detail.studentName}</Typography.Title>
+                <Typography.Text type="secondary">{detail.createdAt}</Typography.Text>
+              </div>
+              <ChangeTag delta={detail.delta} />
+            </div>
+            <Descriptions column={1} bordered size="small">
+              <Descriptions.Item label="记录类型">{detail.recordType === "REVERT" ? "撤销流水" : detail.eventId ? "事件积分" : detail.ruleName ? "规则积分" : "自定义积分"}</Descriptions.Item>
+              <Descriptions.Item label="教师">{detail.operatorName}</Descriptions.Item>
+              <Descriptions.Item label="科目">{detail.subject}</Descriptions.Item>
+              <Descriptions.Item label="规则">{detail.ruleName ?? "自定义积分"}</Descriptions.Item>
+              <Descriptions.Item label="周期">{detail.periodId ?? "未关联"}</Descriptions.Item>
+              <Descriptions.Item label="状态">{detail.reverted ? <Tag color="default">已撤销</Tag> : <Tag color="success">有效</Tag>}</Descriptions.Item>
+              <Descriptions.Item label="原因">{detail.reason ?? "未填写"}</Descriptions.Item>
+            </Descriptions>
+            {detail.recordType === "NORMAL" && (
+              <Popconfirm title="撤销这笔积分？" okText="确认撤销" cancelText="取消" okButtonProps={{ danger: true }} disabled={detail.reverted} onConfirm={() => void revertRecord(detail)}>
+                <Button danger block style={{ marginTop: 22 }} icon={<UndoOutlined />} disabled={detail.reverted}>{detail.reverted ? "这笔记录已撤销" : "撤销此记录"}</Button>
+              </Popconfirm>
+            )}
+          </>
+        )}
+      </Drawer>
+    </div>
+  );
 }
 
 function DisplayDevicesPage() {
@@ -1656,6 +1897,7 @@ function iconForRoute(route: AdminRoute): ReactNode {
     case "teachers": return <ReadIcon />;
     case "score-rules": return <BookIcon />;
     case "score-records": return <FileIcon />;
+    case "score-ranking": return <ArrowUpOutlined />;
     case "display-devices": return <DesktopIcon />;
     case "overview": return <TeamOutlined />;
   }

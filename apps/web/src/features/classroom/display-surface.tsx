@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { App as AntApp } from "antd";
-import { ArrowUpOutlined, CrownOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, UserOutlined } from "@ant-design/icons";
+import { ArrowUpOutlined, CrownOutlined, MinusOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Button } from "@/components/motion/button";
 import { useClassroomService, useRealtimeClient } from "@/components/providers/classroom-system-provider";
 import { ClassroomServiceError } from "@/lib/classroom-service";
@@ -15,6 +15,7 @@ import { SeatCell } from "@/features/admin/seating/seat-cell";
 
 type Highlight = { studentId: string; name: string } | null;
 type SeatKind = "seat" | "podium" | "corridor";
+type DisplayGridCell = { row: number; col: number; rowSpan: number };
 
 const SEAT_UPDATE_NOTIFICATION_KEY = "display-seat-update";
 const SEAT_UPDATE_DURATION = 1800;
@@ -117,12 +118,12 @@ function FlipFlapLabel({
 function CourseTimeline({ schedule }: { schedule: DisplayBootstrap["schedule"] }): React.ReactElement | null {
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 30_000)
+    const timer = window.setInterval(() => setNow(new Date()), 1_000)
     return () => window.clearInterval(timer)
   }, [])
 
   const weekday = now.getDay() === 0 ? 7 : now.getDay()
-  const minutes = now.getHours() * 60 + now.getMinutes()
+  const currentMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60
   const periods = new Map(schedule.periods.map((period) => [period.periodNo, period]))
   const courses = schedule.entries
     .filter((entry) => entry.weekday === weekday)
@@ -133,13 +134,18 @@ function CourseTimeline({ schedule }: { schedule: DisplayBootstrap["schedule"] }
         const [hour, minute] = value.split(":").map(Number)
         return hour * 60 + minute
       }
-      const active = period ? minutes >= toMinutes(period.startTime) && minutes < toMinutes(period.endTime) : false
-      const completed = period ? minutes >= toMinutes(period.endTime) : false
-      return { ...entry, active, completed }
+      const startMinutes = period ? toMinutes(period.startTime) : 0
+      const endMinutes = period ? toMinutes(period.endTime) : 0
+      const active = period ? currentMinutes >= startMinutes && currentMinutes < endMinutes : false
+      const completed = period ? currentMinutes >= endMinutes : false
+      const progress = active && endMinutes > startMinutes
+        ? Math.min(100, Math.max(0, ((currentMinutes - startMinutes) / (endMinutes - startMinutes)) * 100))
+        : 0
+      return { ...entry, active, completed, progress }
     })
   if (courses.length === 0) return null
   return (
-    <div className="flex h-[26px] w-[380px] max-w-full items-center gap-[6px]">
+    <div className="display-surface__course-timeline flex h-[26px] w-max min-w-0 shrink-0 items-center gap-[6px] overflow-x-auto whitespace-nowrap">
       <span className="shrink-0 text-[11px] leading-4 text-[#8c8c8c]">今日课程：</span>
       {courses.map((course) => {
         const active = course.active
@@ -147,15 +153,30 @@ function CourseTimeline({ schedule }: { schedule: DisplayBootstrap["schedule"] }
         return (
           <div
             key={`${course.weekday}-${course.periodNo}`}
+            role={active ? "progressbar" : undefined}
+            aria-label={active ? `${course.courseName}进行中` : undefined}
+            aria-valuemin={active ? 0 : undefined}
+            aria-valuemax={active ? 100 : undefined}
+            aria-valuenow={active ? Math.round(course.progress) : undefined}
+            title={active ? `已进行 ${Math.round(course.progress)}%` : undefined}
             className={
               active
-                ? "flex h-[26px] min-w-[95px] items-center justify-center rounded-[6px] border-[1.5px] border-[#1677ff] bg-[#e6f4ff] px-[10px] text-[12px] font-bold text-[#0958d9] shadow-[0_1px_4px_rgba(22,119,255,0.15)]"
+                ? "relative flex h-[26px] min-w-[95px] shrink-0 items-center justify-center overflow-hidden rounded-[6px] border-[1.5px] border-[#1677ff] bg-[#e6f4ff] px-[10px] text-[12px] font-bold text-[#0958d9] shadow-[0_1px_4px_rgba(22,119,255,0.15)]"
                 : completed
                   ? "flex size-[26px] shrink-0 items-center justify-center rounded-[6px] border border-[#e4e7ec] bg-[#f0f2f5] text-[11px] text-[#a0a6b2]"
                   : "flex size-[26px] shrink-0 items-center justify-center rounded-[6px] border border-[#d9dce3] bg-white text-[11px] font-bold text-[#595959]"
             }
           >
-            {active ? `${course.courseName} (进行中)` : course.courseName.slice(0, 1)}
+            {active ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-y-0 left-0 bg-[#bae0ff] transition-[width] duration-1000 ease-linear"
+                  style={{ width: `${course.progress}%` }}
+                />
+                <span className="relative z-[1]">{course.courseName} (进行中)</span>
+              </>
+            ) : course.courseName.slice(0, 1)}
           </div>
         );
       })}
@@ -173,6 +194,7 @@ function DisplaySeat({
   nameAnimationDelay,
   scrambleChars,
   nameAnimationTarget,
+  rowSpan,
 }: {
   row: number;
   col: number;
@@ -183,8 +205,11 @@ function DisplaySeat({
   nameAnimationDelay: number;
   scrambleChars: string[];
   nameAnimationTarget?: string;
+  rowSpan: number;
 }): React.ReactElement {
   const label = getSeatLabel(row, col, seat, kind);
+  const isCorridor = kind === "corridor";
+  const isMergedCorridor = kind === "corridor" && rowSpan > 1;
   const adminSeat = seat
     ? {
         id: `display-${row}-${col}`,
@@ -205,7 +230,13 @@ function DisplaySeat({
       initial={false}
       animate={highlighted ? { scale: [1, 1.04, 1], boxShadow: ["0 0 0 0 rgba(22,119,255,0)", "0 0 0 6px rgba(22,119,255,0.16)", "0 0 0 0 rgba(22,119,255,0)"] } : { scale: 1 }}
       transition={highlighted ? { duration: 1.2, ease: "easeInOut" } : { duration: 0.2 }}
-      className="relative h-20 w-24 shrink-0 text-center"
+      className={`relative ${isMergedCorridor ? "h-full" : "h-20"} ${isCorridor ? "w-16" : "w-24"} shrink-0 text-center`}
+      style={{
+        gridColumn: col + 1,
+        gridRow: `${row + 1} / span ${rowSpan}`,
+        justifySelf: isCorridor ? "center" : "stretch",
+        marginInline: isCorridor ? 4 : 0,
+      }}
     >
       <SeatCell
         row={row}
@@ -215,6 +246,7 @@ function DisplaySeat({
         isLayoutStage={false}
         readOnly
         emphasized={false}
+        height={isMergedCorridor ? "100%" : undefined}
         studentContent={
           <FlipFlapLabel
             value={label}
@@ -274,14 +306,38 @@ function SeatMatrix({
     () => new Map(data.layout.seats.map((seat) => [String(seat.row) + "-" + String(seat.col), seat])),
     [data.layout.seats]
   );
-  const cells = useMemo(
-    () =>
-      Array.from({ length: data.classroom.gridRows * data.classroom.gridCols }, (_, index) => ({
-        row: Math.floor(index / data.classroom.gridCols),
-        col: index % data.classroom.gridCols,
-      })),
-    [data.classroom.gridCols, data.classroom.gridRows]
-  );
+  const cells = useMemo<DisplayGridCell[]>(() => {
+    const rows = data.classroom.gridRows;
+    const cols = data.classroom.gridCols;
+    const mergedCorridorCells = new Set<string>();
+    const nextCells: DisplayGridCell[] = [];
+
+    const kindAt = (row: number, col: number) => {
+      const seat = seatLookup.get(`${row}-${col}`);
+      return getSeatKind(row, col, rows, cols, seat?.cellType);
+    };
+
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const key = `${row}-${col}`;
+        if (mergedCorridorCells.has(key)) continue;
+
+        if (kindAt(row, col) !== "corridor") {
+          nextCells.push({ row, col, rowSpan: 1 });
+          continue;
+        }
+
+        let rowSpan = 1;
+        while (row + rowSpan < rows && kindAt(row + rowSpan, col) === "corridor") {
+          mergedCorridorCells.add(`${row + rowSpan}-${col}`);
+          rowSpan += 1;
+        }
+        nextCells.push({ row, col, rowSpan });
+      }
+    }
+
+    return nextCells;
+  }, [data.classroom.gridCols, data.classroom.gridRows, seatLookup]);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 && e.pointerType === "mouse") return;
@@ -417,6 +473,7 @@ function SeatMatrix({
                 nameAnimationDelay={cell.row * 120}
                 scrambleChars={scrambleChars}
                 nameAnimationTarget={nameAnimationTargets.get(`${cell.row}-${cell.col}`)}
+                rowSpan={cell.rowSpan}
               />
             );
           })}
@@ -484,17 +541,26 @@ function ZoomController({
 function Avatar({ rank }: { rank: 1 | 2 | 3 }): React.ReactElement {
   const first = rank === 1;
   const third = rank === 3;
+  const imageSize = first ? 64 : 54;
+  const imageSource = first ? "/top1.png" : third ? "/top3.png" : "/top2.png";
   return (
     <div
       className={
         first
-          ? "flex size-[64px] items-center justify-center rounded-full border-[3px] border-[#faad14] bg-[#fffbe6] text-[#d48806] shadow-[0_4px_12px_rgba(250,173,20,0.4)]"
+          ? "flex size-[64px] items-center justify-center overflow-hidden rounded-full border-[3px] border-[#faad14] bg-[#fffbe6] text-[#d48806] shadow-[0_4px_12px_rgba(250,173,20,0.4)]"
           : third
-            ? "flex size-[54px] items-center justify-center rounded-full border-[2.5px] border-[#ffbb96] bg-[#fff2e8] text-[#d4380d] shadow-[0_3px_8px_rgba(212,56,13,0.15)]"
-            : "flex size-[54px] items-center justify-center rounded-full border-[2.5px] border-[#adc6ff] bg-[#f5f7fa] text-[#597ef7] shadow-[0_3px_8px_rgba(22,119,255,0.18)]"
+            ? "flex size-[54px] items-center justify-center overflow-hidden rounded-full border-[2.5px] border-[#ffbb96] bg-[#fff2e8] text-[#d4380d] shadow-[0_3px_8px_rgba(212,56,13,0.15)]"
+            : "flex size-[54px] items-center justify-center overflow-hidden rounded-full border-[2.5px] border-[#adc6ff] bg-[#f5f7fa] text-[#597ef7] shadow-[0_3px_8px_rgba(22,119,255,0.18)]"
       }
     >
-      <UserOutlined className={first ? "text-[32px]" : "text-[26px]"} aria-hidden="true" />
+      <Image
+        src={imageSource}
+        alt=""
+        width={imageSize}
+        height={imageSize}
+        className="size-full rounded-full object-cover"
+        priority={first}
+      />
     </div>
   );
 }
@@ -684,7 +750,7 @@ export function DisplaySurface(): React.ReactElement {
 
   return (
     <main
-      className="relative h-screen w-screen overflow-hidden bg-[#f4f5f8] text-[#1f1f1f] select-none"
+      className="relative h-screen w-full overflow-hidden bg-[#f4f5f8] text-[#1f1f1f] select-none"
       style={{
         fontFamily: '"Noto Sans SC", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
       }}
@@ -704,7 +770,7 @@ export function DisplaySurface(): React.ReactElement {
       />
 
       {/* 2. Floating Centered Top Header Bar */}
-      <header className="pointer-events-auto absolute top-5 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3.5 rounded-2xl border border-[#e2e4ea] bg-white/95 px-5 py-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.06)] backdrop-blur-md">
+      <header className="display-surface__header pointer-events-auto absolute top-5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3.5 rounded-2xl border border-[#e2e4ea] bg-white/95 px-5 py-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.06)] backdrop-blur-md">
         <Image
           src="/logo.png"
           alt="课序 Logo"
@@ -713,8 +779,8 @@ export function DisplaySurface(): React.ReactElement {
           className="size-7 rounded-lg shadow-sm"
           priority
         />
-        <h1 className="text-[18px] font-bold leading-none text-[#1f1f1f]">{data.classroom.name}</h1>
-        <div className="h-4 w-px bg-[#e5e8ee]" />
+        <h1 className="display-surface__classroom-name shrink-0 text-[18px] font-bold leading-none text-[#1f1f1f]">{data.classroom.name}</h1>
+        <div className="display-surface__header-divider h-4 w-px shrink-0 bg-[#e5e8ee]" />
         <CourseTimeline schedule={data.schedule} />
       </header>
 

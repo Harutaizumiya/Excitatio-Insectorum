@@ -105,17 +105,23 @@ export function evaluateRows(rawRows: Record<string, string>[], mapping: ImportM
   });
 }
 
-export async function parseFileContent(file: File): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
+export interface ParsedFileContent {
+  columns: string[];
+  rows: Record<string, string>[];
+  grid: string[][];
+}
+
+export async function parseFileContent(file: File): Promise<ParsedFileContent> {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: "array", raw: false });
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) {
-    return { columns: [], rows: [] };
+    return { columns: [], rows: [], grid: [] };
   }
 
   const worksheet = workbook.Sheets[sheetName];
   if (!worksheet) {
-    return { columns: [], rows: [] };
+    return { columns: [], rows: [], grid: [] };
   }
 
   const rawGrid = XLSX.utils.sheet_to_json<string[]>(worksheet, {
@@ -125,20 +131,24 @@ export async function parseFileContent(file: File): Promise<{ columns: string[];
   });
 
   if (!rawGrid || rawGrid.length === 0) {
-    return { columns: [], rows: [] };
+    return { columns: [], rows: [], grid: [] };
   }
+
+  const normalizedGrid = rawGrid.map((row) =>
+    (row as unknown[]).map((cell) => String(cell ?? "").trim()),
+  );
 
   // Locate the header row (first non-empty row)
   let headerRowIndex = 0;
   while (
     headerRowIndex < rawGrid.length &&
-    (!rawGrid[headerRowIndex] || (rawGrid[headerRowIndex] as unknown[]).every((cell) => !String(cell ?? "").trim()))
+    (!normalizedGrid[headerRowIndex] || normalizedGrid[headerRowIndex].every((cell) => !cell))
   ) {
     headerRowIndex++;
   }
 
   if (headerRowIndex >= rawGrid.length) {
-    return { columns: [], rows: [] };
+    return { columns: [], rows: [], grid: [] };
   }
 
   const rawHeaders = (rawGrid[headerRowIndex] as unknown[]).map((cell, idx) => {
@@ -150,18 +160,18 @@ export async function parseFileContent(file: File): Promise<{ columns: string[];
   const rows: Record<string, string>[] = [];
 
   for (let r = headerRowIndex + 1; r < rawGrid.length; r++) {
-    const rowValues = (rawGrid[r] as unknown[]) || [];
-    const isRowEmpty = rowValues.every((cell) => !String(cell ?? "").trim());
+    const rowValues = normalizedGrid[r] || [];
+    const isRowEmpty = rowValues.every((cell) => !cell);
     if (isRowEmpty) continue;
 
     const rowObj: Record<string, string> = {};
     columns.forEach((col, idx) => {
-      rowObj[col] = String(rowValues[idx] ?? "").trim();
+      rowObj[col] = rowValues[idx] ?? "";
     });
     rows.push(rowObj);
   }
 
-  return { columns, rows };
+  return { columns, rows, grid: normalizedGrid.slice(headerRowIndex) };
 }
 
 export async function parseStudentImportApi(file: File): Promise<ParseResult> {

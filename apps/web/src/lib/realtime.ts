@@ -12,7 +12,7 @@ export interface RealtimeEventPayloads {
     recordId: string
   }
   RANKING_CHANGED: {
-    period: "WEEK"
+    period: "WEEK" | "MONTH"
   }
   SEAT_LAYOUT_CHANGED: {
     version: number

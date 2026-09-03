@@ -9,6 +9,7 @@ import {
   type ConsumeInvitationInput,
   type CreateBindingCodeResult,
   type CreateCustomScoreInput,
+  type CreateScoreEventInput,
   type CreateRuleScoreInput,
   type CreateScoreRuleInput,
   type CreateStudentInput,
@@ -31,6 +32,12 @@ import {
   type SaveClassScheduleInput,
   type SaveSeatLayoutInput,
   type ScoreRecord,
+  type ScoreEventResult,
+  type ScoreEventType,
+  type ScorePeriod,
+  type ScorePeriodSummary,
+  type CommitteeAssignment,
+  type UpdateCommitteeInput,
   type ScoreRecordListQuery,
   type ScoreRule,
   type Seat,
@@ -63,7 +70,7 @@ import {
   MOCK_HEAD_TEACHER_ID,
 } from "./data"
 import { MockClassroomRepository } from "./repository"
-import type { MockDatabaseState, MockScheduleEntry, MockScheduleTemplate, MockScoreRecord } from "./types"
+import type { MockDatabaseState, MockScheduleEntry, MockScheduleTemplate, MockScoreEvent, MockScoreRecord } from "./types"
 
 const DEFAULT_PAGE_SIZE = 20
 
@@ -517,6 +524,7 @@ export class MockClassroomService implements ClassroomService {
   }
 
   async createRuleScore(classId: string, input: CreateRuleScoreInput): Promise<ScoreRecord> {
+    this.repository.transact((state) => this.ensureCurrentPeriod(state, classId))
     const identity = this.repository.issueIdentity("score")
     const record = this.repository.transact((state) => {
       const student = this.requireActiveStudent(state, classId, input.studentId)
@@ -535,6 +543,10 @@ export class MockClassroomService implements ClassroomService {
         recordType: "NORMAL",
         reverted: false,
         revertedRecordId: null,
+        periodId: this.getMockPeriodId(state, identity.occurredAt, classId),
+        eventId: null,
+        violation: rule.delta < 0,
+        occurredAt: identity.occurredAt,
         createdAt: identity.occurredAt,
       }
       state.scoreRecords.push(created)
@@ -550,6 +562,7 @@ export class MockClassroomService implements ClassroomService {
     if (reason.length < 10) {
       throw new ClassroomServiceError("VALIDATION_FAILED", "自定义积分原因至少需要 10 个字符", 400)
     }
+    this.repository.transact((state) => this.ensureCurrentPeriod(state, classId))
     const identity = this.repository.issueIdentity("score")
     const record = this.repository.transact((state) => {
       const student = this.requireActiveStudent(state, classId, input.studentId)
@@ -566,6 +579,10 @@ export class MockClassroomService implements ClassroomService {
         recordType: "NORMAL",
         reverted: false,
         revertedRecordId: null,
+        periodId: this.getMockPeriodId(state, identity.occurredAt, classId),
+        eventId: null,
+        violation: input.delta < 0,
+        occurredAt: identity.occurredAt,
         createdAt: identity.occurredAt,
       }
       state.scoreRecords.push(created)
@@ -604,6 +621,10 @@ export class MockClassroomService implements ClassroomService {
         recordType: "REVERT",
         reverted: false,
         revertedRecordId: original.id,
+        periodId: original.periodId ?? this.getMockPeriodId(state, identity.occurredAt, classId),
+        eventId: original.eventId ?? null,
+        violation: false,
+        occurredAt: identity.occurredAt,
         createdAt: identity.occurredAt,
       }
       state.scoreRecords.push(reverted)
@@ -612,6 +633,142 @@ export class MockClassroomService implements ClassroomService {
     this.emit(classId, "SCORE_REVERTED", { studentId: result.studentId, recordId })
     this.emit(classId, "RANKING_CHANGED", { period: "WEEK" })
     return result.record
+  }
+
+  async createScoreEvent(classId: string, input: CreateScoreEventInput): Promise<ScoreEventResult> {
+    const identity = this.repository.issueIdentity("score-event")
+    const occurredAt = input.occurredAt ?? identity.occurredAt
+    const result = this.repository.transact((state) => {
+      this.ensureCurrentPeriod(state, classId)
+      const existing = input.businessKey
+        ? state.scoreEvents.find((event) => event.businessKey === input.businessKey)
+        : undefined
+      if (existing) return this.toScoreEventResult(state, existing)
+      const period = this.periodForDate(state, classId, occurredAt)
+      if (!period) throw new ClassroomServiceError("SCORE_PERIOD_NOT_FOUND", "积分周期不存在", 404)
+      const studentIds = [...new Set(input.studentIds)]
+      if (studentIds.length === 0 || studentIds.some((studentId) => {
+        const student = state.students.find((item) => item.id === studentId && item.classId === classId)
+        return !student || student.status !== "ACTIVE"
+      })) {
+        throw new ClassroomServiceError("STUDENT_NOT_FOUND", "事件学生必须是本班在班学生", 404)
+      }
+      const deltas = this.calculateMockEventDeltas(state, classId, period.id, occurredAt, input)
+      const event: MockScoreEvent = {
+        id: identity.id,
+        classId,
+        periodId: period.id,
+        type: input.type,
+        operatorId: MOCK_HEAD_TEACHER_ID,
+        occurredAt,
+        studentIds,
+        businessKey: input.businessKey ?? null,
+      }
+      state.scoreEvents.push(event)
+      studentIds.forEach((studentId, index) => {
+        const delta = deltas[index]
+        if (delta === 0) return
+        state.scoreRecords.push({
+          id: `${identity.id}-record-${index + 1}`,
+          classId,
+          studentId,
+          operatorId: MOCK_HEAD_TEACHER_ID,
+          subject: input.subject ?? "语文",
+          ruleId: null,
+          delta,
+          reason: input.reason?.trim() || null,
+          recordType: "NORMAL",
+          reverted: false,
+          revertedRecordId: null,
+          periodId: period.id,
+          eventId: event.id,
+          violation: this.mockEventIsViolation(input.type, delta),
+          occurredAt,
+          createdAt: identity.occurredAt,
+        })
+      })
+      return this.toScoreEventResult(state, event)
+    })
+    if (result.records.length > 0) {
+      result.records.forEach((record) => this.emit(classId, "SCORE_CHANGED", {
+        studentId: record.studentId,
+        direction: record.delta > 0 ? "INCREASE" : "DECREASE",
+      }))
+      this.emit(classId, "RANKING_CHANGED", { period: "MONTH" })
+    }
+    return result
+  }
+
+  async getCurrentScorePeriodSummary(classId: string): Promise<ScorePeriodSummary> {
+    this.repository.transact((state) => this.ensureCurrentPeriod(state, classId))
+    return this.repository.read((state) => {
+      const period = this.periodForDate(state, classId, "2026-08-26T02:30:00.000Z")
+      return this.buildMockPeriodSummary(state, classId, period ? [period] : [], period ?? null)
+    })
+  }
+
+  async getScorePeriodSummary(classId: string, query: { from?: string; to?: string } = {}): Promise<ScorePeriodSummary> {
+    this.repository.transact((state) => this.ensureCurrentPeriod(state, classId))
+    return this.repository.read((state) => {
+      if (!query.from && !query.to) {
+        const period = this.periodForDate(state, classId, "2026-08-26T02:30:00.000Z")
+        return this.buildMockPeriodSummary(state, classId, period ? [period] : [], period ?? null)
+      }
+      const from = query.from ? Date.parse(query.from) : Date.parse("1970-01-01T00:00:00.000Z")
+      const to = query.to ? Date.parse(query.to) : Date.parse("2999-12-31T23:59:59.999Z")
+      if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to) {
+        throw new ClassroomServiceError("INVALID_SCORE_PERIOD_RANGE", "积分周期范围无效", 400)
+      }
+      const periods = state.scorePeriods.filter((period) => Date.parse(period.startAt) < to && Date.parse(period.endAt) > from)
+      return this.buildMockPeriodSummary(state, classId, periods, periods.length === 1 ? periods[0] : null, {
+        startAt: new Date(from).toISOString(),
+        endAt: new Date(to).toISOString(),
+      })
+    })
+  }
+
+  async listCommittee(classId: string): Promise<CommitteeAssignment[]> {
+    return this.repository.read((state) => {
+      this.requireClassroom(state, classId)
+      return state.committeeAssignments.filter((item) => item.status === "ACTIVE")
+    })
+  }
+
+  async updateCommittee(classId: string, input: UpdateCommitteeInput): Promise<CommitteeAssignment[]> {
+    const identity = this.repository.issueIdentity("committee")
+    const assignments = this.repository.transact((state) => {
+      this.requireClassroom(state, classId)
+      const ids = new Set(input.assignments.map((item) => item.studentId))
+      if (ids.size !== input.assignments.length || [...ids].some((studentId) => !state.students.some((student) => student.id === studentId && student.classId === classId && student.status === "ACTIVE"))) {
+        throw new ClassroomServiceError("STUDENT_NOT_FOUND", "班委必须是本班在班学生", 404)
+      }
+      state.committeeAssignments = input.assignments.map((item, index) => ({
+        id: `${identity.id}-${index + 1}`,
+        studentId: item.studentId,
+        studentName: state.students.find((student) => student.id === item.studentId)!.name,
+        role: item.role.trim(),
+        subject: item.subject?.trim() || null,
+        termStartAt: item.termStartAt,
+        termEndAt: item.termEndAt ?? null,
+        trialEndsAt: item.trialEndsAt ?? new Date(Date.parse(item.termStartAt) + 31 * 24 * 60 * 60 * 1000).toISOString(),
+        status: "ACTIVE",
+      }))
+      return state.committeeAssignments
+    })
+    return assignments
+  }
+
+  async settleScorePeriods(classId: string, periodId?: string): Promise<{ settled: true }> {
+    const result = this.repository.transact((state) => {
+      this.ensureCurrentPeriod(state, classId)
+      const current = this.periodForDate(state, classId, "2026-08-26T02:30:00.000Z")
+      const periods = periodId
+        ? state.scorePeriods.filter((period) => period.id === periodId)
+        : state.scorePeriods.filter((period) => current && period.endAt <= current.startAt && period.status === "OPEN")
+      periods.forEach((period) => this.settleMockPeriod(state, classId, period))
+      return { settled: true as const }
+    })
+    return result
   }
 
   async getSeatLayout(classId: string): Promise<SeatLayout> {
@@ -672,13 +829,16 @@ export class MockClassroomService implements ClassroomService {
       if (input.baseVersion !== undefined && input.baseVersion !== (current?.version ?? 0)) {
         throw new ClassroomServiceError("SEAT_LAYOUT_VERSION_CONFLICT", "座位布局已发生变化，请重新加载", 409)
       }
-      this.validateSeatDrafts(state, classroom, input.seats)
+      const rows = input.gridRows ?? classroom.gridRows
+      const cols = input.gridCols ?? classroom.gridCols
+      this.validateGridDimensions(rows, cols)
+      this.validateSeatDrafts(state, classroom, input.seats, rows, cols)
       const version = this.nextLayoutVersion(state, classId)
       const layout: SeatLayoutVersion = {
         versionId: identity.id,
         version,
-        rows: classroom.gridRows,
-        cols: classroom.gridCols,
+        rows,
+        cols,
         classId,
         sourceVersionId: null,
         createdBy: MOCK_HEAD_TEACHER_ID,
@@ -699,6 +859,8 @@ export class MockClassroomService implements ClassroomService {
       }
       state.seatLayoutVersions.push(layout)
       classroom.currentLayoutVersionId = identity.id
+      classroom.gridRows = rows
+      classroom.gridCols = cols
       classroom.updatedAt = identity.occurredAt
       return { versionId: identity.id, version }
     })
@@ -946,13 +1108,18 @@ export class MockClassroomService implements ClassroomService {
   }
 
   async login(input: LoginInput): Promise<LoginResult> {
-    if (input.account !== "lin.laoshi" || input.password !== "classroom123") {
+    const isCurrentDemoAccount = input.account === "zhangsha" && input.password === "admin123"
+    const isLegacyDemoAccount = (
+      (input.account === "head.teacher" && input.password === "classroom-demo") ||
+      (input.account === "lin.laoshi" && input.password === "classroom123")
+    )
+    if (!isCurrentDemoAccount && !isLegacyDemoAccount) {
       throw new ClassroomServiceError("INVALID_CREDENTIALS", "账号或密码错误", 401)
     }
     return {
-      accessToken: "mock-user-access-lin",
-      refreshToken: "mock-user-refresh-lin",
-      user: { id: MOCK_HEAD_TEACHER_ID, name: "林雅雯" },
+      accessToken: "mock-user-access-zhangsha",
+      refreshToken: "mock-user-refresh-zhangsha",
+      user: { id: MOCK_HEAD_TEACHER_ID, name: "张沙" },
     }
   }
 
@@ -1112,6 +1279,8 @@ export class MockClassroomService implements ClassroomService {
     state: MockDatabaseState,
     classroom: Classroom,
     seats: SaveSeatLayoutInput["seats"],
+    rows = classroom.gridRows,
+    cols = classroom.gridCols,
   ): void {
     const coordinates = new Set<string>()
     const studentIds = new Set<string>()
@@ -1121,8 +1290,8 @@ export class MockClassroomService implements ClassroomService {
         !Number.isInteger(seat.col) ||
         seat.row < 0 ||
         seat.col < 0 ||
-        seat.row >= classroom.gridRows ||
-        seat.col >= classroom.gridCols
+        seat.row >= rows ||
+        seat.col >= cols
       ) {
         throw new ClassroomServiceError("SEAT_OUT_OF_BOUNDS", "座位坐标超出教室网格", 400)
       }
@@ -1144,6 +1313,12 @@ export class MockClassroomService implements ClassroomService {
     }
   }
 
+  private validateGridDimensions(rows: number, cols: number): void {
+    if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows < 1 || cols < 1 || rows > 20 || cols > 20) {
+      throw new ClassroomServiceError("VALIDATION_FAILED", "教室网格必须在 1 到 20 行列之间", 400)
+    }
+  }
+
   private toScoreRecord(state: Readonly<MockDatabaseState>, record: MockScoreRecord): ScoreRecord {
     const student = state.students.find((candidate) => candidate.id === record.studentId)
     const operator = state.teachers.find((candidate) => candidate.teacherId === record.operatorId)
@@ -1160,8 +1335,203 @@ export class MockClassroomService implements ClassroomService {
       reason: record.reason,
       recordType: record.recordType,
       reverted: record.reverted,
+      periodId: record.periodId ?? null,
+      eventId: record.eventId ?? null,
+      violation: record.violation ?? false,
+      occurredAt: record.occurredAt ?? record.createdAt,
       createdAt: record.createdAt,
     }
+  }
+
+  private ensureCurrentPeriod(state: MockDatabaseState, classId: string): ScorePeriod {
+    this.requireClassroom(state, classId)
+    this.backfillMockRecords(state, classId)
+    const current = this.periodForDate(state, classId, "2026-08-26T02:30:00.000Z") ?? this.createMockPeriod(state, classId, "2026-08-26T02:30:00.000Z")
+    state.scorePeriods
+      .filter((period) => period.status === "OPEN" && period.endAt <= current.startAt)
+      .forEach((period) => this.settleMockPeriod(state, classId, period))
+    return current
+  }
+
+  private createMockPeriod(state: MockDatabaseState, classId: string, value: string): ScorePeriod {
+    const { startAt, endAt } = this.mockMonthBoundary(value)
+    const period: ScorePeriod = {
+      id: `period-${startAt.slice(0, 7)}`,
+      startAt,
+      endAt,
+      initialScore: 100,
+      status: "OPEN",
+      settledAt: null,
+    }
+    state.scorePeriods.push(period)
+    return period
+  }
+
+  private periodForDate(state: Readonly<MockDatabaseState>, classId: string, value: string): ScorePeriod | undefined {
+    const boundary = this.mockMonthBoundary(value)
+    return state.scorePeriods.find((period) => period.startAt === boundary.startAt && period.endAt === boundary.endAt)
+  }
+
+  private getMockPeriodId(state: Readonly<MockDatabaseState>, value: string, classId: string): string | null {
+    return this.periodForDate(state, classId, value)?.id ?? null
+  }
+
+  private backfillMockRecords(state: MockDatabaseState, classId: string): void {
+    for (const record of state.scoreRecords.filter((item) => item.classId === classId && !item.periodId)) {
+      const value = record.occurredAt ?? record.createdAt
+      const period = this.periodForDate(state, classId, value) ?? this.createMockPeriod(state, classId, value)
+      record.periodId = period.id
+      record.occurredAt ??= value
+    }
+  }
+
+  private mockMonthBoundary(value: string): { startAt: string; endAt: string } {
+    const timestamp = Date.parse(value)
+    if (!Number.isFinite(timestamp)) throw new ClassroomServiceError("INVALID_SCORE_EVENT_DATE", "事件发生时间无效", 400)
+    const shifted = new Date(timestamp + 8 * 60 * 60 * 1000)
+    const year = shifted.getUTCFullYear()
+    const month = shifted.getUTCMonth()
+    return {
+      startAt: new Date(Date.UTC(year, month, 1) - 8 * 60 * 60 * 1000).toISOString(),
+      endAt: new Date(Date.UTC(year, month + 1, 1) - 8 * 60 * 60 * 1000).toISOString(),
+    }
+  }
+
+  private calculateMockEventDeltas(
+    state: Readonly<MockDatabaseState>,
+    classId: string,
+    periodId: string,
+    occurredAt: string,
+    input: CreateScoreEventInput,
+  ): number[] {
+    if (["NO_VIOLATION_REWARD", "COMMITTEE_REWARD"].includes(input.type)) {
+      throw new ClassroomServiceError("SCORE_EVENT_SYSTEM_ONLY", "该事件由周期结算生成", 400)
+    }
+    if (input.type === "LATE" && (!Number.isInteger(input.minutesLate) || input.minutesLate! < 1)) {
+      throw new ClassroomServiceError("INVALID_SCORE_EVENT_VALUE", "迟到分钟数必须为正整数", 400)
+    }
+    const ranks: Partial<Record<ScoreEventType, number>> = {
+      NOISIEST_CLASS_TOP3: 3,
+      EXAM_GRADE_TOP10: 10,
+      SUBJECT_TOP3: 3,
+      BLACKBOARD: 3,
+      INDIVIDUAL_ACTIVITY: 3,
+      GROUP_ACTIVITY: 3,
+      SPORTS_FINAL_TOP8: 8,
+    }
+    const maxRank = ranks[input.type]
+    if (maxRank !== undefined && (!Number.isInteger(input.rank) || input.rank! < 1 || input.rank! > maxRank)) {
+      throw new ClassroomServiceError("INVALID_SCORE_EVENT_RANK", "名次范围无效", 400)
+    }
+    const manualTypes: ScoreEventType[] = ["HOMEWORK_MISSING", "HOMEWORK_PRAISE", "BREAKTHROUGH", "PROGRESS", "DUTY_HYGIENE", "DORM_HYGIENE", "MANUAL"]
+    if (manualTypes.includes(input.type) && (!Number.isInteger(input.manualDelta) || input.manualDelta === 0)) {
+      throw new ClassroomServiceError("INVALID_SCORE_EVENT_VALUE", "教师最终分值必须为非 0 整数", 400)
+    }
+    if (manualTypes.includes(input.type) && !input.reason?.trim()) {
+      throw new ClassroomServiceError("INVALID_SCORE_EVENT_REASON", "人工登记事件需要填写原因", 400)
+    }
+    switch (input.type) {
+      case "LATE": return input.studentIds.map(() => -input.minutesLate!)
+      case "SCHOOL_UNIFORM": return input.studentIds.map(() => -1)
+      case "EVENING_SELF_STUDY_CALLOUT": return input.studentIds.map((studentId) => {
+        const count = state.scoreEvents.filter((event) => event.classId === classId && event.periodId === periodId && event.type === input.type && event.studentIds.includes(studentId) && this.mockDayKey(event.occurredAt) === this.mockDayKey(occurredAt)).length + 1
+        return -(2 ** count)
+      })
+      case "NOISIEST_CLASS_TOP3": return input.studentIds.map(() => input.rank === 1 ? -10 : input.rank === 2 ? -8 : -6)
+      case "EXAM_GRADE_TOP10": return input.studentIds.map(() => 11 - input.rank!)
+      case "SUBJECT_TOP3": return input.studentIds.map(() => 4 - input.rank!)
+      case "BLACKBOARD":
+      case "INDIVIDUAL_ACTIVITY": return input.studentIds.map(() => input.rank === 1 ? 10 : input.rank === 2 ? 6 : 0)
+      case "SPORTS_FINAL_TOP8": return input.studentIds.map(() => 11 - input.rank!)
+      case "GROUP_ACTIVITY": return input.studentIds.map(() => (input.rank === 1 ? 10 : input.rank === 2 ? 6 : 0) + (input.isOrganizer ? 4 : 0) + (input.specialContribution ? 3 : 0))
+      case "ACTIVITY_NEGATIVE": return input.studentIds.map(() => -10)
+      case "COMMITTEE_TASK_COMPLETED": return input.studentIds.map(() => 0)
+      default: return input.studentIds.map(() => input.manualDelta!)
+    }
+  }
+
+  private mockEventIsViolation(type: ScoreEventType, delta: number): boolean {
+    if (["LATE", "SCHOOL_UNIFORM", "EVENING_SELF_STUDY_CALLOUT", "NOISIEST_CLASS_TOP3", "ACTIVITY_NEGATIVE"].includes(type)) return true
+    return ["HOMEWORK_MISSING", "DUTY_HYGIENE", "DORM_HYGIENE"].includes(type) && delta < 0
+  }
+
+  private toScoreEventResult(state: Readonly<MockDatabaseState>, event: MockScoreEvent): ScoreEventResult {
+    return {
+      id: event.id,
+      type: event.type,
+      periodId: event.periodId,
+      occurredAt: event.occurredAt,
+      studentIds: [...event.studentIds],
+      records: state.scoreRecords.filter((record) => record.eventId === event.id).map((record) => ({ studentId: record.studentId, delta: record.delta })),
+    }
+  }
+
+  private buildMockPeriodSummary(
+    state: Readonly<MockDatabaseState>,
+    classId: string,
+    periods: ScorePeriod[],
+    currentPeriod: ScorePeriod | null,
+    range?: { startAt: string; endAt: string },
+  ): ScorePeriodSummary {
+    const active = state.students.filter((student) => student.classId === classId && student.status === "ACTIVE")
+    const ids = new Set(periods.map((period) => period.id))
+    const deltas = new Map<string, number>()
+    state.scoreRecords.filter((record) => record.classId === classId && record.periodId && ids.has(record.periodId)).forEach((record) => {
+      deltas.set(record.studentId, (deltas.get(record.studentId) ?? 0) + record.delta)
+    })
+    const base = periods.reduce((sum, period) => sum + period.initialScore, 0)
+    const sorted = active.map((student) => ({ studentId: student.id, name: student.name, score: base + (deltas.get(student.id) ?? 0), rank: 0 }))
+      .sort((left, right) => right.score - left.score || left.studentId.localeCompare(right.studentId))
+    let previousScore: number | null = null
+    let previousRank = 0
+    sorted.forEach((student, index) => {
+      student.rank = previousScore === student.score ? previousRank : index + 1
+      previousScore = student.score
+      previousRank = student.rank
+    })
+    return {
+      period: currentPeriod,
+      periods,
+      range: range ?? { startAt: periods[0]?.startAt ?? "2026-08-01T00:00:00.000Z", endAt: periods.at(-1)?.endAt ?? "2026-09-01T00:00:00.000Z" },
+      students: sorted,
+      top3: sorted.slice(0, 3),
+      recommendedSeatOrder: sorted,
+    }
+  }
+
+  private settleMockPeriod(state: MockDatabaseState, classId: string, period: ScorePeriod): void {
+    if (period.status === "SETTLED") return
+    const activeIds = state.students.filter((student) => student.classId === classId && student.status === "ACTIVE").map((student) => student.id)
+    const noViolationIds = activeIds.filter((studentId) => !state.scoreRecords.some((record) => record.periodId === period.id && record.studentId === studentId && record.violation && record.recordType === "NORMAL" && !record.reverted))
+    const eventAt = new Date(Date.parse(period.endAt) - 1).toISOString()
+    const noViolationKey = `score-period:${period.id}:no-violation`
+    if (!state.scoreEvents.some((event) => event.businessKey === noViolationKey)) {
+      const event: MockScoreEvent = { id: `event-${noViolationKey}`, classId, periodId: period.id, type: "NO_VIOLATION_REWARD", operatorId: MOCK_HEAD_TEACHER_ID, occurredAt: eventAt, studentIds: noViolationIds, businessKey: noViolationKey }
+      state.scoreEvents.push(event)
+      noViolationIds.forEach((studentId, index) => state.scoreRecords.push({ id: `${event.id}-${index}`, classId, studentId, operatorId: MOCK_HEAD_TEACHER_ID, subject: "语文", ruleId: null, delta: 10, reason: "周期无违规奖励", recordType: "NORMAL", reverted: false, revertedRecordId: null, periodId: period.id, eventId: event.id, violation: false, occurredAt: eventAt, createdAt: eventAt }))
+    }
+    const taskStudents = new Set(state.scoreEvents.filter((event) => event.periodId === period.id && event.type === "COMMITTEE_TASK_COMPLETED").flatMap((event) => event.studentIds))
+    const rewards = state.committeeAssignments.filter((assignment) => assignment.status === "ACTIVE" && Date.parse(assignment.termStartAt) < Date.parse(period.endAt) && (assignment.termEndAt === null || Date.parse(assignment.termEndAt) > Date.parse(period.startAt)) && (assignment.trialEndsAt === null || Date.parse(assignment.trialEndsAt) <= Date.parse(period.endAt))).map((assignment) => ({ assignment, delta: assignment.role === "团支书" && !taskStudents.has(assignment.studentId) ? 0 : this.mockRoleBonus(assignment.role) })).filter((item) => item.delta !== 0)
+    const committeeKey = `score-period:${period.id}:committee`
+    if (!state.scoreEvents.some((event) => event.businessKey === committeeKey)) {
+      const event: MockScoreEvent = { id: `event-${committeeKey}`, classId, periodId: period.id, type: "COMMITTEE_REWARD", operatorId: MOCK_HEAD_TEACHER_ID, occurredAt: eventAt, studentIds: rewards.map((item) => item.assignment.studentId), businessKey: committeeKey }
+      state.scoreEvents.push(event)
+      rewards.forEach((item, index) => state.scoreRecords.push({ id: `${event.id}-${index}`, classId, studentId: item.assignment.studentId, operatorId: MOCK_HEAD_TEACHER_ID, subject: null, ruleId: null, delta: item.delta, reason: `班委周期奖励：${item.assignment.role}`, recordType: "NORMAL", reverted: false, revertedRecordId: null, periodId: period.id, eventId: event.id, violation: false, occurredAt: eventAt, createdAt: eventAt }))
+    }
+    period.status = "SETTLED"
+    period.settledAt = new Date().toISOString()
+  }
+
+  private mockRoleBonus(role: string): number {
+    if (["班长", "团支书", "劳动委员", "纪律委员"].includes(role)) return 10
+    if (["学习委员", "课代表", "网管"].includes(role)) return 4
+    if (role === "寝室长") return 3
+    return 5
+  }
+
+  private mockDayKey(value: string): string {
+    const date = new Date(Date.parse(value) + 8 * 60 * 60 * 1000)
+    return `${date.getUTCFullYear()}-${date.getUTCMonth()}-${date.getUTCDate()}`
   }
 
   private buildWeeklyRanking(state: Readonly<MockDatabaseState>, classId: string): WeeklyRanking {

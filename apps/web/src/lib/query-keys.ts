@@ -17,6 +17,10 @@ export const classroomQueryKeys = {
   scoreRecords: (classId: string, query: ScoreRecordListQuery = {}) =>
     ["classrooms", classId, "score-records", query] as const,
   ranking: (classId: string) => ["classrooms", classId, "ranking"] as const,
+  scorePeriodCurrent: (classId: string) => ["classrooms", classId, "score-periods", "current"] as const,
+  scorePeriodSummary: (classId: string, query: object = {}) =>
+    ["classrooms", classId, "score-periods", "summary", query] as const,
+  committee: (classId: string) => ["classrooms", classId, "committee"] as const,
   displayDevices: (classId: string) => ["classrooms", classId, "display-devices"] as const,
   displayBootstrap: (deviceId: string) => ["display", deviceId, "bootstrap"] as const,
   bindingSession: (bindingSessionId: string) =>

@@ -23,16 +23,17 @@ const students = [
 ] as const;
 
 async function main(): Promise<void> {
-  const passwordHash = await hash('classroom-demo', 12);
+  const headTeacherPasswordHash = await hash('admin123', 12);
+  const subjectTeacherPasswordHash = await hash('classroom-demo', 12);
   await prisma.user.upsert({
     where: { id: headTeacherId },
-    update: { name: '林怡君', account: 'head.teacher', passwordHash, status: UserStatus.ACTIVE },
-    create: { id: headTeacherId, name: '林怡君', account: 'head.teacher', passwordHash },
+    update: { name: '张沙', account: 'zhangsha', passwordHash: headTeacherPasswordHash, status: UserStatus.ACTIVE },
+    create: { id: headTeacherId, name: '张沙', account: 'zhangsha', passwordHash: headTeacherPasswordHash },
   });
   await prisma.user.upsert({
     where: { id: subjectTeacherId },
-    update: { name: '王老师', account: 'math.teacher', passwordHash, status: UserStatus.ACTIVE },
-    create: { id: subjectTeacherId, name: '王老师', account: 'math.teacher', passwordHash },
+    update: { name: '王老师', account: 'math.teacher', passwordHash: subjectTeacherPasswordHash, status: UserStatus.ACTIVE },
+    create: { id: subjectTeacherId, name: '王老师', account: 'math.teacher', passwordHash: subjectTeacherPasswordHash },
   });
 
   await prisma.classroom.upsert({

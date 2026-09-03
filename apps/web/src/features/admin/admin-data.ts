@@ -18,6 +18,7 @@ export type AdminRoute =
   | "teachers"
   | "score-rules"
   | "score-records"
+  | "score-ranking"
   | "display-devices";
 
 export type StudentStatus = "ACTIVE" | "INACTIVE";
@@ -61,6 +62,10 @@ export interface ScoreRecord extends Omit<ApiScoreRecord, "student" | "operator"
   reason: string | null;
   recordType: ScoreRecordType;
   reverted: boolean;
+  periodId: string | null;
+  eventId: string | null;
+  violation: boolean;
+  occurredAt: string;
   createdAt: string;
 }
 
@@ -114,7 +119,7 @@ export const classroom: Pick<ApiClassroomSummary, "id" | "name" | "grade" | "gri
   name: "高一（10）班",
   grade: "2026 学年 · 高一年级",
   school: "南昌市第二中学",
-  teacherName: "林怡君",
+  teacherName: "张沙",
   gridRows: 7,
   gridCols: 11,
 };
@@ -132,6 +137,7 @@ export const navItems: Array<{
   { key: "teachers", label: "任课教师", href: "/admin/teachers", description: "管理教师关系与邀请" },
   { key: "score-rules", label: "积分规则", href: "/admin/score-rules", description: "配置快捷积分规则" },
   { key: "score-records", label: "积分记录", href: "/admin/score-records", description: "查看与撤销积分记录" },
+  { key: "score-ranking", label: "积分排序", href: "/admin/score-ranking", description: "查看月度积分排序" },
   {
     key: "display-devices",
     label: "大屏设备",
@@ -345,6 +351,10 @@ export const initialRecords: ScoreRecord[] = [
     reason: "解題步驟完整，主動補充另一種解法。",
     recordType: "NORMAL",
     reverted: false,
+    periodId: null,
+    eventId: null,
+    violation: false,
+    occurredAt: "2026-08-26 10:09",
     createdAt: "2026-08-26 10:09",
   },
   {
@@ -359,6 +369,10 @@ export const initialRecords: ScoreRecord[] = [
     reason: "帶領小組完成口說練習並協助同學。",
     recordType: "NORMAL",
     reverted: true,
+    periodId: null,
+    eventId: null,
+    violation: false,
+    occurredAt: "2026-08-26 09:46",
     createdAt: "2026-08-26 09:46",
   },
   {
@@ -373,6 +387,10 @@ export const initialRecords: ScoreRecord[] = [
     reason: "主動整理黑板與共用學習材料，讓課堂順利進行。",
     recordType: "NORMAL",
     reverted: false,
+    periodId: null,
+    eventId: null,
+    violation: false,
+    occurredAt: "2026-08-25 14:21",
     createdAt: "2026-08-25 14:21",
   },
   {
@@ -387,6 +405,10 @@ export const initialRecords: ScoreRecord[] = [
     reason: "第二次忘記帶英文課本，已提醒下次準備。",
     recordType: "NORMAL",
     reverted: false,
+    periodId: null,
+    eventId: null,
+    violation: true,
+    occurredAt: "2026-08-25 10:32",
     createdAt: "2026-08-25 10:32",
   },
   {
@@ -401,6 +423,10 @@ export const initialRecords: ScoreRecord[] = [
     reason: "撤銷先前重複登錄的積分流水。",
     recordType: "REVERT",
     reverted: false,
+    periodId: null,
+    eventId: null,
+    violation: false,
+    occurredAt: "2026-08-26 09:55",
     createdAt: "2026-08-26 09:55",
   },
 ];
@@ -437,7 +463,7 @@ export const initialVersions: SeatLayoutVersion[] = [
     id: "layout-v5",
     version: 5,
     createdAt: "2026-08-26 08:24",
-    createdBy: "林怡君",
+    createdBy: "张沙",
     gridRows: classroom.gridRows,
     gridCols: classroom.gridCols,
     seats: initialSeats,
@@ -447,7 +473,7 @@ export const initialVersions: SeatLayoutVersion[] = [
     id: "layout-v4",
     version: 4,
     createdAt: "2026-08-25 16:52",
-    createdBy: "林怡君",
+    createdBy: "张沙",
     gridRows: classroom.gridRows,
     gridCols: classroom.gridCols,
     seats: initialSeats.map((seat) =>
@@ -459,7 +485,7 @@ export const initialVersions: SeatLayoutVersion[] = [
     id: "layout-v3",
     version: 3,
     createdAt: "2026-08-22 10:11",
-    createdBy: "林怡君",
+    createdBy: "张沙",
     gridRows: 3,
     gridCols: classroom.gridCols,
     seats: initialSeats.filter((seat) => seat.row <= 2),
@@ -488,7 +514,7 @@ export const initialActivities: ActivityItem[] = [
   {
     id: "activity-002",
     title: "座位布局已更新",
-    description: "版本 5 · 林怡君",
+    description: "版本 5 · 张沙",
     time: "今天 08:24",
     tone: "green",
   },

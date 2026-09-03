@@ -1,6 +1,12 @@
 'use client';
 
-import { DeleteOutlined, EditOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined,
+  EditOutlined,
+  PlusOutlined,
+  SaveOutlined,
+  UploadOutlined,
+} from '@ant-design/icons';
 import {
   App as AntApp,
   Button,
@@ -16,11 +22,13 @@ import {
   Table,
   Tag,
   Typography,
+  Upload,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useMemo, useState } from 'react';
 
 import { useAdminSchedule, useAdminTeachers, type ScheduleDraft } from '../admin-queries';
+import { parseScheduleFile } from './schedule-import-api';
 import type { SchedulePeriod, Weekday } from '@/lib';
 
 const WEEKDAYS: Array<{ value: Weekday; label: string }> = [
@@ -52,6 +60,40 @@ function shiftTime(value: string, minutes: number): string {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
+function extendPeriods(periods: SchedulePeriod[], periodCount: number): SchedulePeriod[] {
+  const nextPeriods = periods.map((period) => ({ ...period }));
+  while (nextPeriods.length < periodCount) {
+    const last = nextPeriods.at(-1);
+    const startTime = last ? shiftTime(last.endTime, 10) : '08:00';
+    const endTime = shiftTime(startTime, 40);
+    nextPeriods.push({
+      periodNo: nextPeriods.length + 1,
+      startTime,
+      endTime,
+    });
+  }
+  return nextPeriods;
+}
+
+function templatesForImport(
+  templates: ScheduleDraft['templates'],
+  periodCount: number,
+): ScheduleDraft['templates'] {
+  if (templates.length === 0) {
+    return [
+      {
+        clientKey: 'import-' + Date.now(),
+        name: '标准作息',
+        periods: extendPeriods(DEFAULT_PERIODS, periodCount),
+      },
+    ];
+  }
+  return templates.map((template) => ({
+    ...template,
+    periods: extendPeriods(template.periods, periodCount),
+  }));
+}
+
 export function SchedulePage() {
   const { message } = AntApp.useApp();
   const {
@@ -69,6 +111,8 @@ export function SchedulePage() {
     null,
   );
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [selectedTemplateKey, setSelectedTemplateKey] = useState(activeTemplateKey);
   const [cellForm] = Form.useForm<{ courseName: string; classTeacherId?: string }>();
 
@@ -93,6 +137,30 @@ export function SchedulePage() {
 
   const update = (next: Partial<ScheduleDraft>) => {
     updateDraft({ activeTemplateKey, templates, entries, ...next });
+  };
+
+  const handleScheduleImport = async (file: File) => {
+    setIsImporting(true);
+    try {
+      const result = await parseScheduleFile(file);
+      const nextTemplates = templatesForImport(templates, result.maxPeriodNo);
+      const nextActiveTemplateKey = activeTemplateKey || nextTemplates[0].clientKey;
+      update({
+        activeTemplateKey: nextActiveTemplateKey,
+        templates: nextTemplates,
+        entries: result.entries.map((entry) => ({
+          ...entry,
+          classTeacherId: entry.classTeacherId ?? null,
+          teacher: null,
+        })),
+      });
+      setImportModalOpen(false);
+      message.success('已导入 ' + result.entries.length + ' 个课程');
+    } catch (error: unknown) {
+      message.error(error instanceof Error ? error.message : '课表导入失败');
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const openCell = (weekday: Weekday, periodNo: number) => {
@@ -279,6 +347,9 @@ export function SchedulePage() {
             onChange={(value) => update({ activeTemplateKey: value })}
             style={{ width: 150 }}
           />
+          <Button icon={<UploadOutlined />} onClick={() => setImportModalOpen(true)}>
+            导入课表
+          </Button>
           <Button icon={<EditOutlined />} onClick={openTemplateModal}>
             作息模板
           </Button>
@@ -311,6 +382,32 @@ export function SchedulePage() {
           </Empty>
         )}
       </Card>
+
+      <Modal
+        title="导入课表"
+        open={importModalOpen}
+        onCancel={() => {
+          if (!isImporting) setImportModalOpen(false);
+        }}
+        footer={null}
+        destroyOnHidden
+      >
+        <Upload.Dragger
+          accept=".xlsx,.xls,.csv"
+          multiple={false}
+          maxCount={1}
+          showUploadList={false}
+          disabled={isImporting}
+          beforeUpload={(file) => {
+            void handleScheduleImport(file);
+            return false;
+          }}
+        >
+          <Button icon={<UploadOutlined />} loading={isImporting}>
+            选择课表文件
+          </Button>
+        </Upload.Dragger>
+      </Modal>
 
       <Modal
         title="编辑课程"

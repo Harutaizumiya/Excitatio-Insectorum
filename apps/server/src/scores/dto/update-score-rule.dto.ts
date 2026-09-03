@@ -35,6 +35,12 @@ export class UpdateScoreRuleDto {
   @IsString()
   description?: string | null;
 
+  @ApiPropertyOptional({ example: 'CLASSROOM_PARTICIPATION', maxLength: 100, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  systemPolicyKey?: string | null;
+
   @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()

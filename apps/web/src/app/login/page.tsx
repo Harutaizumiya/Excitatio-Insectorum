@@ -35,7 +35,7 @@ const roleCopy: Record<
 > = {
   HEAD_TEACHER: {
     label: "班主任",
-    account: "head.teacher",
+    account: "zhangsha",
     destination: "/admin",
   },
   SUBJECT_TEACHER: {
@@ -43,6 +43,11 @@ const roleCopy: Record<
     account: "math.teacher",
     destination: "/teacher",
   },
+};
+
+const demoPasswords: Record<LoginRole, string> = {
+  HEAD_TEACHER: "admin123",
+  SUBJECT_TEACHER: "classroom-demo",
 };
 
 export default function LoginPage() {
@@ -61,7 +66,7 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
     defaultValues: {
       account: roleCopy.HEAD_TEACHER.account,
-      password: "classroom-demo",
+      password: demoPasswords.HEAD_TEACHER,
     },
   });
 
@@ -69,7 +74,7 @@ export default function LoginPage() {
     setRole(nextRole);
     reset({
       account: roleCopy[nextRole].account,
-      password: "classroom-demo",
+      password: demoPasswords[nextRole],
     });
   };
 

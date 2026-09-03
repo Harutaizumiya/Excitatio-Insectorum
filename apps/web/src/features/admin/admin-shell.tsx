@@ -2,6 +2,7 @@
 
 import {
   AppstoreOutlined,
+  ArrowUpOutlined,
   BellOutlined,
   CalendarOutlined,
   BookOutlined,
@@ -37,6 +38,7 @@ const iconByRoute: Record<AdminRoute, ReactNode> = {
   teachers: <ReadOutlined />,
   "score-rules": <BookOutlined />,
   "score-records": <FileTextOutlined />,
+  "score-ranking": <ArrowUpOutlined />,
   "display-devices": <DesktopOutlined />,
 };
 
@@ -48,6 +50,7 @@ const pageTitleByPath: Record<string, string> = {
   "/admin/teachers": "任课教师",
   "/admin/score-rules": "积分规则",
   "/admin/score-records": "积分流水",
+  "/admin/score-ranking": "积分排序",
   "/admin/display-devices": "大屏设备",
 };
 

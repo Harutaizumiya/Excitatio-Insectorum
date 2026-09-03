@@ -7,6 +7,7 @@ import {
   type BindDisplayInput,
   type ConsumeInvitationInput,
   type CreateCustomScoreInput,
+  type CreateScoreEventInput,
   type CreateRuleScoreInput,
   type CreateScoreRuleInput,
   type CreateStudentInput,
@@ -22,6 +23,7 @@ import {
   type UpdateScoreRuleInput,
   type UpdateStudentInput,
   type UpdateTeacherInput,
+  type UpdateCommitteeInput,
 } from "@/lib"
 
 import { useClassroomService } from "./classroom-system-provider"
@@ -284,6 +286,56 @@ export function useRevertScore(classId: string, operatorId?: string) {
       void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.scoreRecords(classId) })
       void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.ranking(classId) })
     },
+  })
+}
+
+export function useCreateScoreEvent(classId: string) {
+  const service = useClassroomService()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateScoreEventInput) => service.createScoreEvent(classId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["classrooms", classId, "score-records"] })
+      void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.ranking(classId) })
+      void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.scorePeriodCurrent(classId) })
+      void queryClient.invalidateQueries({ queryKey: ["classrooms", classId, "score-periods", "summary"] })
+    },
+  })
+}
+
+export function useCurrentScorePeriodSummary(classId: string) {
+  const service = useClassroomService()
+  return useQuery({
+    queryKey: classroomQueryKeys.scorePeriodCurrent(classId),
+    queryFn: () => service.getCurrentScorePeriodSummary(classId),
+    enabled: classId.length > 0,
+  })
+}
+
+export function useScorePeriodSummary(classId: string, query: { from?: string; to?: string } = {}) {
+  const service = useClassroomService()
+  return useQuery({
+    queryKey: classroomQueryKeys.scorePeriodSummary(classId, query),
+    queryFn: () => service.getScorePeriodSummary(classId, query),
+    enabled: classId.length > 0,
+  })
+}
+
+export function useCommittee(classId: string) {
+  const service = useClassroomService()
+  return useQuery({
+    queryKey: classroomQueryKeys.committee(classId),
+    queryFn: () => service.listCommittee(classId),
+    enabled: classId.length > 0,
+  })
+}
+
+export function useUpdateCommittee(classId: string) {
+  const service = useClassroomService()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: UpdateCommitteeInput) => service.updateCommittee(classId, input),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: classroomQueryKeys.committee(classId) }),
   })
 }
 

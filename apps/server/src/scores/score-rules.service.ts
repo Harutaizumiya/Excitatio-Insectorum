@@ -32,6 +32,7 @@ export class ScoreRulesService {
           group,
           delta: dto.delta,
           description: dto.description ?? null,
+          systemPolicyKey: dto.systemPolicyKey?.trim() || null,
           createdBy: operatorId,
         },
       });
@@ -60,6 +61,7 @@ export class ScoreRulesService {
           group,
           delta: dto.delta,
           description: dto.description,
+          systemPolicyKey: dto.systemPolicyKey === undefined ? undefined : dto.systemPolicyKey?.trim() || null,
           enabled: dto.enabled,
         },
       });

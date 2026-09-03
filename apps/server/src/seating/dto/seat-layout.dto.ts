@@ -7,6 +7,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -38,6 +39,20 @@ export class SeatLayoutSeatDto {
 }
 
 export class SaveSeatLayoutDto {
+  @ApiPropertyOptional({ minimum: 1, maximum: 20, description: 'Grid row count' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  gridRows?: number;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 20, description: 'Grid column count' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  gridCols?: number;
+
   @ApiProperty({ type: [SeatLayoutSeatDto], description: 'Complete seat snapshot' })
   @IsArray()
   @ValidateNested({ each: true })

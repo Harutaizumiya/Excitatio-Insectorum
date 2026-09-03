@@ -24,4 +24,10 @@ export class CreateScoreRuleDto {
   @IsOptional()
   @IsString()
   description?: string | null;
+
+  @ApiPropertyOptional({ example: 'CLASSROOM_PARTICIPATION', maxLength: 100, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  systemPolicyKey?: string | null;
 }

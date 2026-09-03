@@ -10,6 +10,7 @@ import type {
   CreateBindingCodeResult,
   CreateClassroomBindingCodeResult,
   CreateCustomScoreInput,
+  CreateScoreEventInput,
   CreateRuleScoreInput,
   CreateScoreRuleInput,
   CreateStudentInput,
@@ -33,6 +34,10 @@ import type {
   SaveSeatLayoutInput,
   SaveClassScheduleInput,
   ScoreRecord,
+  ScoreEventResult,
+  ScorePeriodSummary,
+  CommitteeAssignment,
+  UpdateCommitteeInput,
   ScoreRecordListQuery,
   ScoreRule,
   SeatLayout,
@@ -48,6 +53,7 @@ import type {
   UpdateStudentInput,
   UpdateTeacherInput,
   WeeklyRanking,
+  IsoDateTime,
 } from "./domain"
 
 export class ClassroomServiceError extends Error {
@@ -94,6 +100,12 @@ export interface ClassroomService {
   createRuleScore(classId: string, input: CreateRuleScoreInput): Promise<ScoreRecord>
   createCustomScore(classId: string, input: CreateCustomScoreInput): Promise<ScoreRecord>
   revertScore(classId: string, recordId: string, operatorId?: string): Promise<ScoreRecord>
+  createScoreEvent(classId: string, input: CreateScoreEventInput): Promise<ScoreEventResult>
+  getCurrentScorePeriodSummary(classId: string): Promise<ScorePeriodSummary>
+  getScorePeriodSummary(classId: string, query?: { from?: IsoDateTime; to?: IsoDateTime }): Promise<ScorePeriodSummary>
+  listCommittee(classId: string): Promise<CommitteeAssignment[]>
+  updateCommittee(classId: string, input: UpdateCommitteeInput): Promise<CommitteeAssignment[]>
+  settleScorePeriods(classId: string, periodId?: string): Promise<{ settled: true }>
 
   getSeatLayout(classId: string): Promise<SeatLayout>
   listSeatLayoutVersions(
