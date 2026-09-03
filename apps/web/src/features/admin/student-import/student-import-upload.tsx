@@ -34,12 +34,12 @@ export function StudentImportUpload({
         <Alert
           type="error"
           showIcon
-          message={error}
+          title={error}
           style={{ marginBottom: 16, borderRadius: 8 }}
         />
       )}
 
-      <Spin spinning={loading} indicator={<LoadingOutlined style={{ fontSize: 28 }} spin />} tip="正在解析名单…">
+      <Spin spinning={loading} indicator={<LoadingOutlined style={{ fontSize: 28 }} spin />} description="正在解析名单…">
         <Upload.Dragger
           {...uploadProps}
           style={{

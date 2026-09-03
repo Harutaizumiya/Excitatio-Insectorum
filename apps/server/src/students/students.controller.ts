@@ -127,4 +127,26 @@ export class StudentsController {
   ) {
     return { data: await this.students.deactivate(request.user!.sub, classId, studentId) };
   }
+
+  @Post(':studentId/restore')
+  @RequireRoles(TeacherRole.HEAD_TEACHER)
+  @ApiOperation({ summary: '恢复学生' })
+  async restore(
+    @Req() request: RequestContext,
+    @Param('classId') classId: string,
+    @Param('studentId') studentId: string,
+  ) {
+    return { data: await this.students.restore(request.user!.sub, classId, studentId) };
+  }
+
+  @Post(':studentId/delete')
+  @RequireRoles(TeacherRole.HEAD_TEACHER)
+  @ApiOperation({ summary: '软删除学生并从当前布局解除' })
+  async delete(
+    @Req() request: RequestContext,
+    @Param('classId') classId: string,
+    @Param('studentId') studentId: string,
+  ) {
+    return { data: await this.students.delete(request.user!.sub, classId, studentId) };
+  }
 }

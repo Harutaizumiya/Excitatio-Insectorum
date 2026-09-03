@@ -1,6 +1,7 @@
 import type { IsoDateTime } from "./domain"
 import { io, type Socket } from "socket.io-client"
 import { getActiveClassId, getDisplaySession, getUserSession } from "./session"
+import { reportBackendUnavailable } from "./api-error"
 
 export interface RealtimeEventPayloads {
   SCORE_CHANGED: {
@@ -148,7 +149,10 @@ export class SocketIoRealtimeClient implements ClassRealtimeClient {
     this.socket = socket
     socket.on("connect", () => this.setStatus("CONNECTED"))
     socket.on("disconnect", () => this.setStatus("DISCONNECTED"))
-    socket.on("connect_error", () => this.setStatus("DISCONNECTED"))
+    socket.on("connect_error", () => {
+      this.setStatus("DISCONNECTED")
+      reportBackendUnavailable("无法连接到后端实时服务，请确认后端服务已启动。")
+    })
     socket.onAny((eventName: string, payload: unknown) => {
       if (!isClassEventType(eventName) || !isRealtimeEvent(payload)) return
       for (const listener of this.eventListeners) listener(payload)

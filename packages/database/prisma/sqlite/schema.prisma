@@ -220,6 +220,7 @@ model Student {
   studentNo String?
   gender    StudentGender @default(UNKNOWN)
   status    StudentStatus @default(ACTIVE)
+  deletedAt DateTime?
   classroom Classroom     @relation(fields: [classId], references: [id], onDelete: Restrict)
   seats     Seat[]
   scores    ScoreRecord[]
@@ -230,6 +231,7 @@ model Student {
 
   @@unique([classId, studentNo])
   @@index([classId, status])
+  @@index([classId, deletedAt, status])
 }
 
 model SeatLayoutVersion {

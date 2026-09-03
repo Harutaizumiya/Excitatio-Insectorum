@@ -112,6 +112,7 @@
 | POST  | `/classes/:classId/teachers`                             | HEAD | `CreateTeacherRequest` | 创建任课教师             |
 | PATCH | `/classes/:classId/teachers/:classTeacherId`             | HEAD | `UpdateTeacherRequest` | 更新教师姓名或科目       |
 | POST  | `/classes/:classId/teachers/:classTeacherId/revoke`      | HEAD | 无                     | 撤销教师关系、邀请和会话 |
+| DELETE | `/classes/:classId/teachers/:classTeacherId`             | HEAD | 无                     | 删除教师关系、邀请和课表关联 |
 | POST  | `/classes/:classId/teachers/:classTeacherId/invitations` | HEAD | 无                     | 创建一次性邀请           |
 
 ### 4.4 Students
@@ -122,6 +123,8 @@
 | POST  | `/classes/:classId/students`                       | HEAD           | `CreateStudentRequest`  | 新增学生                  |
 | PATCH | `/classes/:classId/students/:studentId`            | HEAD           | `UpdateStudentRequest`  | 更新学生                  |
 | POST  | `/classes/:classId/students/:studentId/deactivate` | HEAD           | 无                      | 停用学生并从当前布局解除  |
+| POST  | `/classes/:classId/students/:studentId/restore`    | HEAD           | 无                      | 恢复学生                 |
+| POST  | `/classes/:classId/students/:studentId/delete`     | HEAD           | 无                      | 软删除学生并保留积分记录 |
 | POST  | `/classes/:classId/students/import/parse`          | HEAD           | multipart `file`        | 解析 Excel/CSV 并返回预览 |
 | POST  | `/classes/:classId/students/import`                | HEAD           | `ImportStudentsRequest` | 批量创建学生              |
 
@@ -138,6 +141,7 @@
 | 参数       | 类型               | 默认值 | 说明           |
 | ---------- | ------------------ | ------ | -------------- |
 | `status`   | `ACTIVE\|INACTIVE` | 无     | 状态过滤       |
+| `includeDeleted` | boolean | false | 仅 HEAD 可用；是否包含软删除学生 |
 | `keyword`  | string，最长 100   | 无     | 姓名或学号搜索 |
 | `page`     | integer >= 1       | 1      | 页码           |
 | `pageSize` | integer 1..100     | 20     | 每页数量       |
@@ -386,6 +390,7 @@ interface Student {
   name: string;
   studentNo: string | null;
   status: 'ACTIVE' | 'INACTIVE';
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,4 +1,4 @@
-import { StudentStatus } from '@prisma/client';
+import { StudentStatus, TeacherRole } from '@prisma/client';
 import { ClassEventType } from '../common';
 import { ClassroomsService } from '../classrooms';
 import { PrismaService } from '../prisma';
@@ -73,5 +73,108 @@ describe('StudentsService deactivate', () => {
         payload: { version: 2 },
       }),
     );
+  });
+});
+
+describe('StudentsService student lifecycle', () => {
+  it('does not expose soft-deleted students to subject teachers', async () => {
+    const prisma = {
+      student: {
+        findMany: jest.fn(async () => []),
+        count: jest.fn(async () => 0),
+      },
+      $transaction: jest.fn(async (operations: Promise<unknown>[]) => Promise.all(operations)),
+    } as unknown as PrismaService;
+    const classrooms = {
+      assertAccess: jest.fn(async () => ({ role: TeacherRole.SUBJECT_TEACHER })),
+    } as unknown as ClassroomsService;
+    const realtime = { publishClassEvent: jest.fn() } as unknown as RealtimeService;
+    const service = new StudentsService(prisma, classrooms, realtime);
+
+    await service.list('teacher-1', 'class-1', { includeDeleted: true, page: 1, pageSize: 20 });
+
+    expect(prisma.student.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { classId: 'class-1', deletedAt: null, status: undefined } }),
+    );
+  });
+
+  it('soft deletes an inactive student without touching score records', async () => {
+    const student = {
+      id: 'student-1',
+      classId: 'class-1',
+      status: StudentStatus.INACTIVE,
+      deletedAt: null,
+    };
+    const transaction = {
+      student: {
+        findFirst: jest.fn(async () => student),
+        update: jest.fn(async () => ({
+          ...student,
+          status: StudentStatus.INACTIVE,
+          deletedAt: new Date('2026-09-03T00:00:00.000Z'),
+        })),
+      },
+      classroom: {
+        findUnique: jest.fn(async () => ({ currentLayoutVersionId: null })),
+      },
+      classCommitteeAssignment: {
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (callback: (tx: typeof transaction) => Promise<unknown>) =>
+        callback(transaction),
+      ),
+    } as unknown as PrismaService;
+    const classrooms = {
+      assertAccess: jest.fn(async () => ({ role: 'HEAD_TEACHER' })),
+    } as unknown as ClassroomsService;
+    const realtime = { publishClassEvent: jest.fn() } as unknown as RealtimeService;
+    const service = new StudentsService(prisma, classrooms, realtime);
+
+    await expect(service.delete('head-1', 'class-1', 'student-1')).resolves.toMatchObject({
+      status: StudentStatus.INACTIVE,
+      deletedAt: expect.any(Date),
+    });
+    expect(transaction.classCommitteeAssignment.updateMany).toHaveBeenCalledWith({
+      where: { classId: 'class-1', studentId: 'student-1', status: 'ACTIVE' },
+      data: { status: 'REVOKED' },
+    });
+    expect(realtime.publishClassEvent).toHaveBeenCalledWith(
+      'class-1',
+      expect.objectContaining({
+        type: ClassEventType.STUDENT_CHANGED,
+        payload: { studentId: 'student-1', action: 'DELETED' },
+      }),
+    );
+  });
+
+  it('restores an inactive student and clears the soft-delete timestamp', async () => {
+    const current = {
+      id: 'student-1',
+      classId: 'class-1',
+      status: StudentStatus.INACTIVE,
+      deletedAt: new Date('2026-09-03T00:00:00.000Z'),
+    };
+    const prisma = {
+      student: {
+        findFirst: jest.fn(async () => current),
+        update: jest.fn(async () => ({ ...current, status: StudentStatus.ACTIVE, deletedAt: null })),
+      },
+    } as unknown as PrismaService;
+    const classrooms = {
+      assertAccess: jest.fn(async () => ({ role: 'HEAD_TEACHER' })),
+    } as unknown as ClassroomsService;
+    const realtime = { publishClassEvent: jest.fn() } as unknown as RealtimeService;
+    const service = new StudentsService(prisma, classrooms, realtime);
+
+    await expect(service.restore('head-1', 'class-1', 'student-1')).resolves.toMatchObject({
+      status: StudentStatus.ACTIVE,
+      deletedAt: null,
+    });
+    expect(prisma.student.update).toHaveBeenCalledWith({
+      where: { id: 'student-1' },
+      data: { status: StudentStatus.ACTIVE, deletedAt: null },
+    });
   });
 });

@@ -24,7 +24,7 @@ export default function ErrorPage({
         </span>
         <h1 className="mt-6 text-2xl font-semibold tracking-tight">页面暂时没有加载成功</h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          Mock 数据仍保留在当前标签页中，可以立即重试。如果问题持续，请刷新页面恢复默认演示数据。
+          请检查后端服务是否正常运行，然后重试。
         </p>
         <Button type="button" onClick={reset} className="mt-7 rounded-full px-5">
           <RotateCcw className="size-4" aria-hidden="true" />

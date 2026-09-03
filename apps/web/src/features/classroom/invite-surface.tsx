@@ -1,22 +1,64 @@
 "use client"
 
+import { Alert, Spin } from "antd"
 import Link from "next/link"
 import { useState } from "react"
-import { ArrowRight, CheckCircle2, CircleAlert, GraduationCap, Link2, ShieldCheck } from "lucide-react"
+import { ArrowRight, CheckCircle2, GraduationCap, Link2, ShieldCheck } from "lucide-react"
+
+import { useConsumeInvitation } from "@/components/providers/query-hooks"
 
 export function InviteSurface({ token }: { token: string }): React.ReactElement {
-  const [activated, setActivated] = useState(false)
-  const isInvalid = token === "invalid" || token === "expired" || token.length < 5
+  const consumeInvitation = useConsumeInvitation(token)
+  const [result, setResult] = useState<Awaited<ReturnType<typeof consumeInvitation.mutateAsync>> | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  if (isInvalid) {
-    const expired = token === "expired"
-    return <main className="flex min-h-screen items-center justify-center bg-[#eef5ff] px-4 py-8"><section className="w-full max-w-[430px] rounded-[30px] border border-[#dce8f7] bg-white p-6 text-center shadow-[0_18px_45px_rgba(42,82,141,0.09)]"><div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-[#fff4f0] text-[#d35b4e]"><CircleAlert className="size-8" aria-hidden="true" /></div><p className="mt-6 text-xs font-medium tracking-[0.2em] text-[#6d83a5]">INVITATION STATUS</p><h1 className="mt-2 text-2xl font-semibold tracking-tight text-[#102344]">邀请链接{expired ? "已过期" : "无效"}</h1><p className="mx-auto mt-3 max-w-[300px] text-sm leading-6 text-[#71829d]">{expired ? "这条邀请已超过有效期，请联系班主任重新生成邀请链接。" : "请确认你使用的是完整邀请链接，或联系班主任获取新的邀请。"}</p><div className="mt-7 space-y-2"><Link href="/" className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#0a59f7] px-4 text-sm font-semibold text-white hover:bg-[#084bd4]"><Link2 className="size-4" aria-hidden="true" />返回首页</Link><Link href="/teacher" className="flex min-h-12 w-full items-center justify-center rounded-full border border-[#d5e1f1] px-4 text-sm font-medium text-[#526887] hover:border-[#0a59f7] hover:text-[#0a59f7]">打开教师端</Link></div></section></main>
+  const handleActivate = async () => {
+    setError(null)
+    try {
+      const next = await consumeInvitation.mutateAsync({ deviceName: "教师端" })
+      setResult(next)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "邀请链接无法使用，请联系班主任重新生成。")
+    }
   }
 
-  if (activated) {
-    return <main className="flex min-h-screen items-center justify-center bg-[#eef5ff] px-4 py-8"><section className="w-full max-w-[430px] rounded-[30px] border border-[#dce8f7] bg-white p-6 text-center shadow-[0_18px_45px_rgba(42,82,141,0.09)]"><div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-[#eaf8f1] text-[#1d9a63]"><CheckCircle2 className="size-8" aria-hidden="true" /></div><p className="mt-6 text-xs font-medium tracking-[0.2em] text-[#6d83a5]">WELCOME ABOARD</p><h1 className="mt-2 text-2xl font-semibold tracking-tight text-[#102344]">已成功加入班级</h1><p className="mt-3 text-sm leading-6 text-[#71829d]">教师身份已激活，接下来可以直接进入课堂快捷操作。</p><div className="mt-7 rounded-2xl bg-[#f5f8fc] px-4 py-3 text-left"><p className="text-sm font-semibold text-[#263d61]">高一（3）班</p><p className="mt-1 text-xs text-[#8190a8]">数学 · 王老师</p></div><Link href="/teacher" className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#0a59f7] px-4 text-sm font-semibold text-white hover:bg-[#084bd4]">进入教师端<ArrowRight className="size-4" aria-hidden="true" /></Link></section></main>
+  if (result) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#eef5ff] px-4 py-8">
+        <section className="w-full max-w-[430px] rounded-[30px] border border-[#dce8f7] bg-white p-6 text-center shadow-[0_18px_45px_rgba(42,82,141,0.09)]">
+          <div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-[#eaf8f1] text-[#1d9a63]"><CheckCircle2 className="size-8" aria-hidden="true" /></div>
+          <p className="mt-6 text-xs font-medium tracking-[0.2em] text-[#6d83a5]">WELCOME ABOARD</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-[#102344]">已成功加入班级</h1>
+          <p className="mt-3 text-sm leading-6 text-[#71829d]">教师身份已激活，可以进入课堂快捷操作。</p>
+          <div className="mt-7 rounded-2xl bg-[#f5f8fc] px-4 py-3 text-left">
+            <p className="text-sm font-semibold text-[#263d61]">{result.classroom.name}</p>
+            <p className="mt-1 text-xs text-[#8190a8]">{result.teacher.subject ?? "任课教师"} · {result.teacher.name}</p>
+          </div>
+          <Link href="/teacher" className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#0a59f7] px-4 text-sm font-semibold text-white hover:bg-[#084bd4]">进入教师端<ArrowRight className="size-4" aria-hidden="true" /></Link>
+        </section>
+      </main>
+    )
   }
 
-  return <main className="flex min-h-screen items-center justify-center bg-[#eef5ff] px-4 py-8"><section className="w-full max-w-[430px] rounded-[30px] border border-[#dce8f7] bg-white p-6 shadow-[0_18px_45px_rgba(42,82,141,0.09)]"><div className="flex items-center gap-3"><div className="flex size-12 items-center justify-center rounded-2xl bg-[#eaf2ff] text-[#0a59f7]"><GraduationCap className="size-6" aria-hidden="true" /></div><div><p className="text-xs font-medium tracking-[0.18em] text-[#6d83a5]">CLASSROOM SYSTEM</p><h1 className="mt-1 text-xl font-semibold tracking-tight text-[#102344]">加入班级</h1></div></div><div className="mt-7 rounded-3xl bg-[#edf4ff] p-5"><p className="text-xs font-medium text-[#6981a7]">班级</p><p className="mt-1 text-2xl font-semibold text-[#102344]">高一（3）班</p><div className="mt-5 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-white/80 p-3"><p className="text-xs text-[#8495b0]">任课教师</p><p className="mt-1 text-sm font-semibold text-[#314a70]">王老师</p></div><div className="rounded-2xl bg-white/80 p-3"><p className="text-xs text-[#8495b0]">科目</p><p className="mt-1 text-sm font-semibold text-[#314a70]">数学</p></div></div></div><div className="mt-6 flex gap-3 rounded-2xl border border-[#e0eaf6] px-4 py-3"><ShieldCheck className="mt-0.5 size-5 shrink-0 text-[#0a59f7]" aria-hidden="true" /><p className="text-sm leading-6 text-[#5e7190]">班主任已邀请你使用课堂快捷操作。确认后会激活你的教师身份。</p></div><button type="button" onClick={() => setActivated(true)} className="mt-6 flex min-h-13 w-full items-center justify-center gap-2 rounded-full bg-[#0a59f7] px-4 text-sm font-semibold text-white shadow-lg shadow-[#0a59f7]/20 hover:bg-[#084bd4]">确认并激活<ArrowRight className="size-4" aria-hidden="true" /></button><p className="mt-4 text-center text-xs text-[#8b9ab0]">邀请链接有效期内可使用一次 · Token {token.slice(0, 6)}…</p></section></main>
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#eef5ff] px-4 py-8">
+      <section className="w-full max-w-[430px] rounded-[30px] border border-[#dce8f7] bg-white p-6 shadow-[0_18px_45px_rgba(42,82,141,0.09)]">
+        <div className="flex items-center gap-3">
+          <div className="flex size-12 items-center justify-center rounded-2xl bg-[#eaf2ff] text-[#0a59f7]"><GraduationCap className="size-6" aria-hidden="true" /></div>
+          <div><p className="text-xs font-medium tracking-[0.18em] text-[#6d83a5]">CLASSROOM SYSTEM</p><h1 className="mt-1 text-xl font-semibold tracking-tight text-[#102344]">加入班级</h1></div>
+        </div>
+        <div className="mt-7 rounded-3xl bg-[#edf4ff] p-5">
+          <p className="text-xs font-medium text-[#6981a7]">邀请链接</p>
+          <p className="mt-1 text-lg font-semibold text-[#102344]">确认后查看班级信息</p>
+          <p className="mt-2 break-all text-xs text-[#8190a8]">Token {token.slice(0, 6)}…</p>
+        </div>
+        <div className="mt-6 flex gap-3 rounded-2xl border border-[#e0eaf6] px-4 py-3"><ShieldCheck className="mt-0.5 size-5 shrink-0 text-[#0a59f7]" aria-hidden="true" /><p className="text-sm leading-6 text-[#5e7190]">确认后将通过后端验证邀请并激活教师身份。</p></div>
+        {error ? <Alert className="mt-5" type="error" showIcon title="邀请无法使用" description={error} /> : null}
+        <button type="button" disabled={consumeInvitation.isPending} onClick={() => void handleActivate()} className="mt-6 flex min-h-13 w-full items-center justify-center gap-2 rounded-full bg-[#0a59f7] px-4 text-sm font-semibold text-white shadow-lg shadow-[#0a59f7]/20 hover:bg-[#084bd4] disabled:cursor-not-allowed disabled:opacity-60">
+          {consumeInvitation.isPending ? <Spin size="small" /> : <><span>确认并激活</span><ArrowRight className="size-4" aria-hidden="true" /></>}
+        </button>
+        <Link href="/" className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-[#d5e1f1] px-4 text-sm font-medium text-[#526887] hover:border-[#0a59f7] hover:text-[#0a59f7]"><Link2 className="size-4" aria-hidden="true" />返回首页</Link>
+      </section>
+    </main>
+  )
 }
-

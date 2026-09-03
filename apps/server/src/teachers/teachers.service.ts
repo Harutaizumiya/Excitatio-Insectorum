@@ -119,6 +119,53 @@ export class TeachersService {
     this.realtime?.disconnectUser(relation.teacherId);
   }
 
+  async remove(userId: string, classId: string, classTeacherId: string): Promise<void> {
+    await this.classrooms.assertAccess(userId, classId, [TeacherRole.HEAD_TEACHER]);
+    const teacherId = await this.prisma.$transaction(async (transaction) => {
+      const relation = await transaction.classTeacher.findFirst({
+        where: {
+          id: classTeacherId,
+          classId,
+          role: TeacherRole.SUBJECT_TEACHER,
+        },
+        select: { teacherId: true },
+      });
+      if (!relation) {
+        throw new BusinessException(
+          'CLASS_TEACHER_NOT_FOUND',
+          '任课教师关系不存在',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      await transaction.teacherInvitation.deleteMany({ where: { classTeacherId } });
+      await transaction.scheduleEntry.updateMany({
+        where: { classTeacherId },
+        data: { classTeacherId: null },
+      });
+      await transaction.session.updateMany({
+        where: { userId: relation.teacherId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      const deleted = await transaction.classTeacher.deleteMany({
+        where: {
+          id: classTeacherId,
+          classId,
+          role: TeacherRole.SUBJECT_TEACHER,
+        },
+      });
+      if (deleted.count !== 1) {
+        throw new BusinessException(
+          'CLASS_TEACHER_NOT_FOUND',
+          '任课教师关系不存在',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      return relation.teacherId;
+    });
+    this.realtime?.disconnectUser(teacherId);
+  }
+
   async restore(userId: string, classId: string, classTeacherId: string): Promise<void> {
     await this.classrooms.assertAccess(userId, classId, [TeacherRole.HEAD_TEACHER]);
     const relation = await this.prisma.classTeacher.findFirst({

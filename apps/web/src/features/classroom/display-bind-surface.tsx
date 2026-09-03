@@ -5,7 +5,6 @@ import {
   CheckCircleOutlined,
   DeleteOutlined,
   DesktopOutlined,
-  KeyOutlined,
   LoadingOutlined,
   RollbackOutlined,
 } from "@ant-design/icons";
@@ -23,7 +22,6 @@ import { useRouter } from "next/navigation";
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 import { useClassroomService } from "@/components/providers/classroom-system-provider";
-import { displayBindingMock } from "./display-binding-adapter";
 
 type BindingStatus = "INPUT" | "SUBMITTING" | "READY";
 
@@ -66,14 +64,8 @@ function DisplayBindContent(): ReactElement {
     setStatus("SUBMITTING");
 
     try {
-      if (service.bindDisplayByCode) {
-        const result = await service.bindDisplayByCode(inputCode);
-        setClassroomName(result.classroom.name);
-      } else {
-        const result = displayBindingMock.submitDisplayCode(inputCode);
-        if (!result.success) throw new Error(result.error);
-        setClassroomName(result.classroomName);
-      }
+      const result = await service.bindDisplayByCode(inputCode);
+      setClassroomName(result.classroom.name);
       setStatus("READY");
       setRedirectSeconds(3);
     } catch (error) {
@@ -124,15 +116,6 @@ function DisplayBindContent(): ReactElement {
   useEffect(() => {
     if (status === "READY" && redirectSeconds === 0) router.push("/display");
   }, [redirectSeconds, router, status]);
-
-  // For testing convenience in development
-  const handleAutoFill = () => {
-    const active = displayBindingMock.getActiveSession();
-    if (active?.code) {
-      setCode(active.code);
-      void handleSubmit(active.code);
-    }
-  };
 
   return (
     <main
@@ -333,17 +316,6 @@ function DisplayBindContent(): ReactElement {
                 </Typography.Text>
               )}
 
-              {process.env.NEXT_PUBLIC_DATA_MODE === "mock" && displayBindingMock.getActiveSession() ? (
-                <Button
-                  type="link"
-                  size="small"
-                  icon={<KeyOutlined />}
-                  onClick={handleAutoFill}
-                  style={{ color: "#8c9ba5", fontSize: 12 }}
-                >
-                  填入管理端最新生成的绑定码 (演示快捷测试)
-                </Button>
-              ) : null}
             </Flex>
           </div>
         )}

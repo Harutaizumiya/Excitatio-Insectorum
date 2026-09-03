@@ -107,12 +107,14 @@ export interface Student {
   studentNo: string | null
   gender?: StudentGender
   status: StudentStatus
+  deletedAt: IsoDateTime | null
   createdAt: IsoDateTime
   updatedAt: IsoDateTime
 }
 
 export interface StudentListQuery {
   status?: StudentStatus
+  includeDeleted?: boolean
   keyword?: string
   page?: number
   pageSize?: number
@@ -513,6 +515,10 @@ export interface TokenPair {
 
 export interface LoginResult extends TokenPair {
   user: NamedEntity
+}
+
+export interface LogoutResult {
+  loggedOut: true
 }
 
 export interface ConsumeInvitationInput {

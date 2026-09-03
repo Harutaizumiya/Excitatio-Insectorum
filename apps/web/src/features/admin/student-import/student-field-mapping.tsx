@@ -68,7 +68,7 @@ export function StudentFieldMapping({
         <Alert
           type="warning"
           showIcon
-          message="未识别到姓名列"
+          title="未识别到姓名列"
           description="请在下方选择名单中对应“姓名”的字段。"
           style={{ marginBottom: 12, borderRadius: 6 }}
         />

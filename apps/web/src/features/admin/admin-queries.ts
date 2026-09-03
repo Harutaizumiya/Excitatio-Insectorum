@@ -1,10 +1,9 @@
 "use client"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useCallback, useState } from "react"
 
 import {
-  classroom,
-  initialNotifications,
   type AdminNotification,
   type DisplayDevice,
   type ScoreRecord,
@@ -33,10 +32,11 @@ import type {
 } from "@/lib"
 import { useClassroomService } from "@/components/providers/classroom-system-provider"
 import { getActiveClassId, getUserSession } from "@/lib/session"
-import { displayBindingMock, type AdminBindingSession } from "@/features/classroom/display-binding-adapter"
+import type { AdminBindingSession } from "./admin-data"
 
 export const adminQueryKeys = {
   all: ["admin"] as const,
+  classroom: () => ["admin", "classroom"] as const,
   students: () => ["admin", "students"] as const,
   teachers: () => ["admin", "teachers"] as const,
   scoreRules: () => ["admin", "score-rules"] as const,
@@ -49,7 +49,6 @@ export const adminQueryKeys = {
   notifications: () => ["admin", "notifications"] as const,
 }
 
-const FALLBACK_CLASS_ID = "class-1"
 const STALE_TIME = 10 * 60 * 1000
 
 export interface SeatingDraft {
@@ -69,7 +68,18 @@ export interface ScheduleDraft {
 type ScheduleQueryData = { draft: ScheduleDraft; saved: ScheduleDraft }
 
 function currentClassId(): string {
-  return getActiveClassId() ?? FALLBACK_CLASS_ID
+  return getActiveClassId() ?? ""
+}
+
+export function useAdminClassroom() {
+  const service = useClassroomService()
+  const classId = currentClassId()
+  return useQuery({
+    queryKey: adminQueryKeys.classroom(),
+    queryFn: () => service.getClassroom(classId),
+    enabled: classId.length > 0,
+    staleTime: STALE_TIME,
+  })
 }
 
 function displayDate(value: string | null | undefined): string {
@@ -82,6 +92,7 @@ function mapStudent(student: ApiStudent, seatByStudent = new Map<string, string>
     name: student.name,
     studentNo: student.studentNo ?? "",
     status: student.status,
+    deletedAt: student.deletedAt,
     seat: seatByStudent.get(student.id) ?? null,
     updatedAt: displayDate(student.updatedAt),
     createdAt: displayDate(student.createdAt).slice(0, 10),
@@ -182,11 +193,6 @@ function mapVersion(summary: SeatLayoutVersionSummary, layout: SeatLayout): Seat
   }
 }
 
-function initialSeating(): SeatingQueryData {
-  const draft: SeatingDraft = { gridRows: classroom.gridRows, gridCols: classroom.gridCols, seats: [] }
-  return { draft, saved: { ...draft, seats: [] }, versions: [] }
-}
-
 async function loadSeating(service: ReturnType<typeof useClassroomService>, classId: string): Promise<SeatingQueryData> {
   const [current, summaries] = await Promise.all([
     service.getSeatLayout(classId),
@@ -237,7 +243,7 @@ export function useAdminStudents() {
     queryKey: adminQueryKeys.students(),
     queryFn: async () => {
       const [result, layout] = await Promise.all([
-        service.listStudents(classId, { page: 1, pageSize: 100 }),
+        service.listStudents(classId, { page: 1, pageSize: 100, includeDeleted: true }),
         service.getSeatLayout(classId),
       ])
       return result.data.map((student) => mapStudent(student, seatMap(layout)))
@@ -254,24 +260,35 @@ export function useAdminStudents() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: adminQueryKeys.students() })
       void queryClient.invalidateQueries({ queryKey: adminQueryKeys.seating() })
+      void queryClient.invalidateQueries({ queryKey: ["classrooms", classId, "ranking"] })
+    },
+  })
+  const restoreMutation = useMutation({
+    mutationFn: (student: Student) => service.restoreStudent(classId, student.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminQueryKeys.students() })
+      void queryClient.invalidateQueries({ queryKey: adminQueryKeys.seating() })
+      void queryClient.invalidateQueries({ queryKey: ["classrooms", classId, "ranking"] })
+    },
+  })
+  const deleteMutation = useMutation({
+    mutationFn: (student: Student) => service.deleteStudent(classId, student.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminQueryKeys.students() })
+      void queryClient.invalidateQueries({ queryKey: adminQueryKeys.seating() })
+      void queryClient.invalidateQueries({ queryKey: ["classrooms", classId, "ranking"] })
     },
   })
   const batchImportMutation = useMutation({
-    mutationFn: async (students: ImportedStudentInput[]) => {
-      if (service.importStudents) return service.importStudents(classId, students)
-      let created = 0
-      for (const student of students) {
-        await service.createStudent(classId, { name: student.name, studentNo: student.studentNo ?? undefined })
-        created += 1
-      }
-      return { created, skipped: students.length - created, duplicates: [], errors: [] }
-    },
+    mutationFn: (students: ImportedStudentInput[]) => service.importStudents(classId, students),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: adminQueryKeys.students() }),
   })
   return {
     students: query.data ?? [],
     saveStudent: saveStudentMutation.mutateAsync,
     deactivateStudent: deactivateMutation.mutateAsync,
+    restoreStudent: restoreMutation.mutateAsync,
+    deleteStudent: deleteMutation.mutateAsync,
     batchImportStudents: batchImportMutation.mutateAsync,
     isLoading: query.isLoading,
   }
@@ -320,17 +337,26 @@ export function useAdminTeachers() {
   const setTeacherStatusMutation = useMutation({
     mutationFn: async ({ teacherId, status }: { teacherId: string; status: TeacherStatus }) => {
       if (status === "DISABLED") await service.revokeTeacher(classId, teacherId)
-      else if (service.restoreTeacher) await service.restoreTeacher(classId, teacherId)
+      else await service.restoreTeacher(classId, teacherId)
       const current = queryClient.getQueryData<Teacher[]>(adminQueryKeys.teachers()) ?? []
       return current.map((teacher) => teacher.id === teacherId ? { ...teacher, status } : teacher)
     },
     onSuccess: (updated) => queryClient.setQueryData(adminQueryKeys.teachers(), updated),
+  })
+  const deleteTeacherMutation = useMutation({
+    mutationFn: (teacherId: string) => service.deleteTeacher(classId, teacherId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminQueryKeys.teachers() })
+      void queryClient.invalidateQueries({ queryKey: adminQueryKeys.schedule() })
+      void queryClient.invalidateQueries({ queryKey: ["classrooms", classId, "schedule"] })
+    },
   })
   return {
     teachers: query.data ?? [],
     createTeacher: createTeacherMutation.mutateAsync,
     generateInvitation: generateInvitationMutation.mutateAsync,
     setTeacherStatus: setTeacherStatusMutation.mutateAsync,
+    deleteTeacher: deleteTeacherMutation.mutateAsync,
     isLoading: query.isLoading,
   }
 }
@@ -339,9 +365,9 @@ export function useAdminSchedule() {
   const service = useClassroomService()
   const classId = currentClassId()
   const queryClient = useQueryClient()
-  const fallback: ScheduleQueryData = { draft: { activeTemplateKey: "", templates: [], entries: [] }, saved: { activeTemplateKey: "", templates: [], entries: [] } }
+  const emptyState: ScheduleQueryData = { draft: { activeTemplateKey: "", templates: [], entries: [] }, saved: { activeTemplateKey: "", templates: [], entries: [] } }
   const query = useQuery({ queryKey: adminQueryKeys.schedule(), queryFn: () => loadSchedule(service, classId), staleTime: STALE_TIME })
-  const state = query.data ?? fallback
+  const state = query.data ?? emptyState
   const saveMutation = useMutation({
     mutationFn: async (draft: ScheduleDraft) => {
       const input: SaveClassScheduleInput = {
@@ -353,7 +379,7 @@ export function useAdminSchedule() {
     },
     onSuccess: (saved) => queryClient.setQueryData<ScheduleQueryData>(adminQueryKeys.schedule(), { draft: saved, saved }),
   })
-  const updateDraft = (draft: ScheduleDraft) => queryClient.setQueryData<ScheduleQueryData>(adminQueryKeys.schedule(), (old) => ({ ...(old ?? fallback), draft }))
+  const updateDraft = (draft: ScheduleDraft) => queryClient.setQueryData<ScheduleQueryData>(adminQueryKeys.schedule(), (old) => ({ ...(old ?? emptyState), draft }))
   return {
     ...state.draft,
     savedSchedule: state.saved,
@@ -485,16 +511,12 @@ export function useAdminDisplayDevices() {
   })
   const createBindingCodeMutation = useMutation({
     mutationFn: async (name: string): Promise<AdminBindingSession> => {
-      if (!service.createClassroomBindingCode) return displayBindingMock.createAdminBindingCode(name)
       const created = await service.createClassroomBindingCode(classId, name)
       return { sessionId: created.sessionId, code: created.code, deviceName: name.trim(), expiresAt: created.expiresAt, status: "PENDING" }
     },
   })
   const pollBindingSessionMutation = useMutation({
-    mutationFn: async (sessionId: string) => {
-      if (!service.getClassroomBindingSessionStatus) return displayBindingMock.pollAdminSession(sessionId)
-      return service.getClassroomBindingSessionStatus(classId, sessionId)
-    },
+    mutationFn: (sessionId: string) => service.getClassroomBindingSessionStatus(classId, sessionId),
     onSuccess: (result) => {
       if (result.status === "READY") void queryClient.invalidateQueries({ queryKey: adminQueryKeys.displayDevices() })
     },
@@ -510,9 +532,13 @@ export function useAdminSeating() {
   const service = useClassroomService()
   const classId = currentClassId()
   const queryClient = useQueryClient()
-  const query = useQuery({ queryKey: adminQueryKeys.seating(), queryFn: () => loadSeating(service, classId), initialData: undefined, staleTime: STALE_TIME })
-  const fallback = initialSeating()
-  const state = query.data ?? fallback
+  const query = useQuery({ queryKey: adminQueryKeys.seating(), queryFn: () => loadSeating(service, classId), staleTime: STALE_TIME })
+  const emptyState: SeatingQueryData = {
+    draft: { gridRows: 0, gridCols: 0, seats: [] },
+    saved: { gridRows: 0, gridCols: 0, seats: [] },
+    versions: [],
+  }
+  const state = query.data ?? emptyState
   const saveMutation = useMutation({
     mutationFn: async (draft: SeatingDraft) => {
       const result = await service.saveSeatLayout(classId, {
@@ -533,7 +559,7 @@ export function useAdminSeating() {
     },
     onSuccess: (next) => queryClient.setQueryData(adminQueryKeys.seating(), { draft: next.draft, saved: next.saved, versions: next.versions }),
   })
-  const updateDraft = (draft: SeatingDraft) => queryClient.setQueryData<SeatingQueryData>(adminQueryKeys.seating(), (old) => ({ ...(old ?? fallback), draft }))
+  const updateDraft = (draft: SeatingDraft) => queryClient.setQueryData<SeatingQueryData>(adminQueryKeys.seating(), (old) => ({ ...(old ?? emptyState), draft }))
   return {
     ...state.draft,
     savedLayout: state.saved,
@@ -548,24 +574,10 @@ export function useAdminSeating() {
 }
 
 export function useAdminNotifications() {
-  const queryClient = useQueryClient();
-  const query = useQuery({
-    queryKey: adminQueryKeys.notifications(),
-    queryFn: () => initialNotifications,
-    initialData: initialNotifications,
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-
-  const update = (
+  const [notifications, setNotifications] = useState<AdminNotification[]>([])
+  const update = useCallback((
     mutator: (items: AdminNotification[]) => AdminNotification[],
-  ) => {
-    queryClient.setQueryData<AdminNotification[]>(
-      adminQueryKeys.notifications(),
-      (old) => mutator(old ?? []),
-    );
-  };
-
-  const notifications = query.data ?? [];
+  ) => setNotifications((items) => mutator(items)), [])
   const unreadCount = notifications.filter((item) => !item.read).length;
 
   return {
@@ -582,6 +594,6 @@ export function useAdminNotifications() {
     clearReadNotifications: async () =>
       update((items) => items.filter((item) => !item.read)),
     clearAll: async () => update(() => []),
-    isLoading: query.isLoading,
+    isLoading: false,
   };
 }

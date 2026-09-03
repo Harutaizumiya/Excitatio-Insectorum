@@ -7,7 +7,6 @@ allowBuilds:
   '@prisma/engines': true
   '@scarf/scarf': true
   micromark: false
-  msw: true
   node-pty: false
   prisma: true
 
@@ -18,4 +17,3 @@ onlyBuiltDependencies:
   - '@scarf/scarf'
   - 'bcryptjs'
   - 'micromark'
-  - 'msw'

@@ -57,15 +57,14 @@ import {
 import { App as AntApp } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import type { AdminBindingSession } from "@/features/classroom/display-binding-adapter";
 import {
-  classroom,
   defaultRuleGroups,
   formatDateTime,
-  initialActivities,
   navItems,
+  type ActivityItem,
+  type AdminBindingSession,
   type AdminRoute,
   type DisplayDevice,
   type ScoreRecord,
@@ -77,6 +76,7 @@ import {
 } from "./admin-data";
 import {
   useAdminDisplayDevices,
+  useAdminClassroom,
   useAdminCommittee,
   useAdminScoreRecords,
   useAdminScorePeriodSummary,
@@ -87,6 +87,7 @@ import {
 } from "./admin-queries";
 import type { CreateScoreEventInput } from "@/lib";
 import type { CommitteeAssignment, CommitteeAssignmentInput, UpdateCommitteeInput } from "@/lib";
+import { getUserSession } from "@/lib/session";
 
 const cardStyle: CSSProperties = {
   border: "1px solid #e5ebf4",
@@ -117,8 +118,6 @@ export function AdminPage({ route }: AdminPageProps) {
       return <ScoreRulesPage />;
     case "score-records":
       return <ScoreRecordsPage />;
-    case "score-ranking":
-      return <ScoreRankingPage />;
     case "display-devices":
       return <DisplayDevicesPage />;
     case "overview":
@@ -182,7 +181,10 @@ function SectionTitle({ title, description, action }: { title: string; descripti
   );
 }
 
-function StatusTag({ status }: { status: StudentStatus | TeacherStatus }) {
+function StatusTag({ status, deletedAt }: { status: StudentStatus | TeacherStatus; deletedAt?: string | null }) {
+  if (deletedAt) {
+    return <Tag color="default" style={{ borderRadius: 999, paddingInline: 9 }}>已删除</Tag>;
+  }
   const content: Record<StudentStatus | TeacherStatus, { color: string; label: string }> = {
     ACTIVE: { color: "success", label: "启用中" },
     PENDING: { color: "processing", label: "待接受邀请" },
@@ -201,7 +203,43 @@ function ChangeTag({ delta }: { delta: number }) {
   );
 }
 
+function subscribeToAdminSession(onStoreChange: () => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  window.addEventListener("classroom-auth-changed", onStoreChange);
+  return () => window.removeEventListener("classroom-auth-changed", onStoreChange);
+}
+
+function getAdminTeacherNameSnapshot(): string {
+  return getUserSession()?.user.name ?? "班主任";
+}
+
+function getServerAdminTeacherNameSnapshot(): string {
+  return "班主任";
+}
+
+function getGreetingByHour(hour: number): string {
+  if (hour >= 5 && hour < 12) return "早上好";
+  if (hour < 14) return "中午好";
+  if (hour < 18) return "下午好";
+  return "晚上好";
+}
+
+function subscribeToAdminClock(onStoreChange: () => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  const timer = window.setInterval(onStoreChange, 60_000);
+  return () => window.clearInterval(timer);
+}
+
+function getAdminGreetingSnapshot(): string {
+  return getGreetingByHour(new Date().getHours());
+}
+
+function getServerAdminGreetingSnapshot(): string {
+  return "早上好";
+}
+
 function OverviewPage() {
+  const { data: classroom } = useAdminClassroom();
   const { students } = useAdminStudents();
   const { records } = useAdminScoreRecords();
   const { teachers } = useAdminTeachers();
@@ -214,15 +252,33 @@ function OverviewPage() {
   const onlineDevices = devices.filter((d) => d.status === "ONLINE");
   const totalScore = records.reduce((sum, r) => sum + (r.reverted ? 0 : r.delta), 0);
   const seatedCount = seats.filter((s) => s.studentId !== null).length;
-  const latestVersion = versions[0]?.version ?? 1;
+  const latestVersion = versions[0]?.version ?? "—";
+  const teacherName = useSyncExternalStore(
+    subscribeToAdminSession,
+    getAdminTeacherNameSnapshot,
+    getServerAdminTeacherNameSnapshot,
+  );
+  const greeting = useSyncExternalStore(
+    subscribeToAdminClock,
+    getAdminGreetingSnapshot,
+    getServerAdminGreetingSnapshot,
+  );
+  const classroomName = classroom?.name ?? "当前班级";
+  const recentActivities: ActivityItem[] = records.slice(0, 4).map((record) => ({
+    id: record.id,
+    title: `${record.operatorName}新增积分`,
+    description: `${record.studentName} · ${record.ruleName ?? "自定义积分"} · ${record.delta > 0 ? "+" : ""}${record.delta}`,
+    time: formatDateTime(record.occurredAt),
+    tone: record.delta > 0 ? "blue" : "orange",
+  }));
 
   const quickLinks = navItems.filter((item) => item.key !== "overview");
   return (
     <div>
       <PageHeader
         eyebrow="Classroom overview"
-        title={`早安，${classroom.teacherName}`}
-        description={`${classroom.school} · ${classroom.name} · 今天是 2026 年 8 月 26 日星期三`}
+        title={`${greeting}，${teacherName}`}
+        description={`${classroom?.grade ?? ""} · ${classroom?.schoolYear ?? ""} · ${classroomName}`}
         action={
           <Space>
             <Tag color="blue" style={{ borderRadius: 999, padding: "5px 12px" }}>
@@ -250,7 +306,7 @@ function OverviewPage() {
             title="本周积分记录"
             value={records.length}
             suffix="笔"
-            detail="今日新增 6 笔"
+            detail={records.length ? `共 ${records.length} 笔` : "暂无记录"}
             tone="#12a46b"
             icon={<ArrowUpOutlined />}
           />
@@ -270,8 +326,8 @@ function OverviewPage() {
           <MetricCard
             href="/admin/display-devices"
             title="大屏设备"
-            value={`${onlineDevices.length} / 2`}
-            detail={onlineDevices.length ? `${onlineDevices[0].name}在线` : "前方大屏在线"}
+            value={`${onlineDevices.length} / ${devices.length}`}
+            detail={onlineDevices.length ? `${onlineDevices[0].name}在线` : "暂无在线设备"}
             tone="#f08c2e"
             icon={<DesktopIcon />}
           />
@@ -355,7 +411,7 @@ function OverviewPage() {
       <Card style={{ ...cardStyle, marginTop: 16 }} styles={{ body: { padding: 22 } }}>
         <SectionTitle title="最近动态" description="班级内最近发生的管理活动" action={<Button type="link" href="/admin/score-records">查看全部流水</Button>} />
         <Space orientation="vertical" size={0} style={{ display: "flex" }}>
-          {initialActivities.map((activity, index) => (
+          {recentActivities.map((activity, index) => (
             <div
               key={activity.id}
               style={{
@@ -451,15 +507,18 @@ function StatusLine({ label, value, color }: { label: string; value: string; col
 
 function StudentsPage() {
   const { notification } = AntApp.useApp();
+  const { data: classroom } = useAdminClassroom();
   const {
     students,
     saveStudent: persistStudent,
     deactivateStudent,
+    restoreStudent,
+    deleteStudent: softDeleteStudent,
     batchImportStudents,
   } = useAdminStudents();
   const { createScoreEvent, isScoring } = useAdminScoreRecords();
   const [keyword, setKeyword] = useState("");
-  const [status, setStatus] = useState<"ALL" | StudentStatus>("ALL");
+  const [status, setStatus] = useState<"ALL" | "DELETED" | StudentStatus>("ALL");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [historyStudent, setHistoryStudent] = useState<Student | null>(null);
@@ -467,6 +526,7 @@ function StudentsPage() {
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [form] = Form.useForm<StudentFormValues>();
   const [scoreForm] = Form.useForm<ScoreFormValues>();
+  const classroomName = classroom?.name ?? "当前班级";
 
   const existingStudentNos = useMemo(
     () => new Set(students.map((s) => s.studentNo).filter(Boolean)),
@@ -476,7 +536,11 @@ function StudentsPage() {
   const filteredStudents = useMemo(
     () => students.filter((student) => {
       const matchesKeyword = !keyword || `${student.name}${student.studentNo}`.includes(keyword.trim());
-      const matchesStatus = status === "ALL" || student.status === status;
+      const matchesStatus = status === "ALL"
+        ? true
+        : status === "DELETED"
+          ? Boolean(student.deletedAt)
+          : !student.deletedAt && student.status === status;
       return matchesKeyword && matchesStatus;
     }),
     [keyword, status, students],
@@ -499,7 +563,7 @@ function StudentsPage() {
     if (editingStudent) {
       notification.success({ title: "学生资料已更新", description: `${values.name} 的资料已经保存。` });
     } else {
-      notification.success({ title: "学生已新增", description: `${values.name} 已加入 ${classroom.name}。` });
+      notification.success({ title: "学生已新增", description: `${values.name} 已加入 ${classroomName}。` });
     }
     setDrawerOpen(false);
   };
@@ -509,11 +573,21 @@ function StudentsPage() {
     notification.success({ title: "学生已停用", description: `${student.name} 已从当前座位和排行榜移除，历史资料仍保留。` });
   };
 
+  const restore = async (student: Student) => {
+    await restoreStudent(student);
+    notification.success({ title: "学生已恢复", description: `${student.name} 已恢复为启用状态，请按需重新安排座位。` });
+  };
+
+  const softDelete = async (student: Student) => {
+    await softDeleteStudent(student);
+    notification.success({ title: "学生已删除", description: `${student.name} 已软删除，历史积分记录继续保留。` });
+  };
+
   const handleBatchImport = async (importedStudents: ImportStudentPayload[]) => {
     await batchImportStudents(importedStudents);
     notification.success({
       title: "批量导入已完成",
-      description: `已成功将学生导入至 ${classroom.name}。`,
+      description: `已成功将学生导入至 ${classroomName}。`,
     });
   };
 
@@ -552,17 +626,87 @@ function StudentsPage() {
   const columns: ColumnsType<Student> = [
     { title: "学生", dataIndex: "name", width: 170, render: (name: string) => <Space><Avatar size={30} style={{ background: "#e9f1ff", color: "#0a59f7" }}>{name.slice(0, 1)}</Avatar><Typography.Text strong>{name}</Typography.Text></Space> },
     { title: "学号", dataIndex: "studentNo", width: 120, render: (value: string) => <Typography.Text code>{value}</Typography.Text> },
-    { title: "状态", dataIndex: "status", width: 120, render: (value: StudentStatus) => <StatusTag status={value} /> },
+    { title: "状态", dataIndex: "status", width: 120, render: (value: StudentStatus, student) => <StatusTag status={value} deletedAt={student.deletedAt} /> },
     { title: "当前座位", dataIndex: "seat", width: 130, render: (value: string | null) => value ? <Tag color="blue" style={{ borderRadius: 999 }}>{value}</Tag> : <Typography.Text type="secondary">未安排</Typography.Text> },
     { title: "最后更新", dataIndex: "updatedAt", width: 170, render: (value: string) => <Typography.Text type="secondary">{formatDateTime(value)}</Typography.Text> },
-    { title: "操作", key: "actions", fixed: "right", width: 285, render: (_, student) => <Space size={4}><Button type="link" icon={<PlusOutlined />} onClick={() => openScore(student)} disabled={student.status !== "ACTIVE"}>积分</Button><Button type="link" icon={<EditOutlined />} onClick={() => openEdit(student)}>编辑</Button><Button type="link" icon={<EyeOutlined />} onClick={() => setHistoryStudent(student)}>历史</Button>{student.status === "ACTIVE" && <Popconfirm title="停用这名学生？" description="停用后会从当前座位和排行榜中移除，历史积分继续保留。" okText="确认停用" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => deactivate(student)}><Button danger type="link" icon={<StopOutlined />}>停用</Button></Popconfirm>}</Space> },
+    {
+      title: "操作",
+      key: "actions",
+      fixed: "right",
+      width: 390,
+      render: (_, student) => (
+        <Space size={4} wrap>
+          <Button type="link" icon={<PlusOutlined />} onClick={() => openScore(student)} disabled={student.status !== "ACTIVE" || Boolean(student.deletedAt)}>
+            积分
+          </Button>
+          <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(student)} disabled={Boolean(student.deletedAt)}>
+            编辑
+          </Button>
+          <Button type="link" icon={<EyeOutlined />} onClick={() => setHistoryStudent(student)}>
+            历史
+          </Button>
+          {student.deletedAt ? (
+            <Popconfirm
+              title="恢复这名学生？"
+              description="恢复后学生会重新进入启用名单，座位需要重新安排。"
+              okText="确认恢复"
+              cancelText="取消"
+              onConfirm={() => restore(student)}
+            >
+              <Button type="link" icon={<ReloadOutlined />}>
+                恢复
+              </Button>
+            </Popconfirm>
+          ) : student.status === "ACTIVE" ? (
+            <Popconfirm
+              title="停用这名学生？"
+              description="停用后会从当前座位和排行榜中移除，历史积分继续保留。"
+              okText="确认停用"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => deactivate(student)}
+            >
+              <Button danger type="link" icon={<StopOutlined />}>
+                停用
+              </Button>
+            </Popconfirm>
+          ) : (
+            <Popconfirm
+              title="恢复这名学生？"
+              description="恢复后学生会重新进入启用名单，座位需要重新安排。"
+              okText="确认恢复"
+              cancelText="取消"
+              onConfirm={() => restore(student)}
+            >
+              <Button type="link" icon={<ReloadOutlined />}>
+                恢复
+              </Button>
+            </Popconfirm>
+          )}
+          {!student.deletedAt && (
+            <Popconfirm
+              title="删除这名学生？"
+              description="学生将被软删除并从当前管理列表隐藏，历史积分记录会继续保留。"
+              okText="确认删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => softDelete(student)}
+            >
+              <Button danger type="link" icon={<DeleteOutlined />}>
+                删除
+              </Button>
+            </Popconfirm>
+          )}
+        </Space>
+      ),
+    },
   ];
 
   return (
     <div>
       <PageHeader
         title="学生管理"
-        description={`管理 ${classroom.name} 的学生资料、状态与座位安排。共 ${students.length} 名学生。`}
+        description={`管理 ${classroomName} 的学生资料、状态与座位安排。共 ${students.length} 名学生。`}
         action={
           <Space>
             <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
@@ -578,24 +722,23 @@ function StudentsPage() {
         <div style={{ padding: 18, borderBottom: "1px solid #eef2f7" }}>
           <Space wrap size={10}>
             <Input allowClear prefix={<SearchOutlined />} placeholder="搜索姓名或学号" value={keyword} onChange={(event) => setKeyword(event.target.value)} style={{ width: 245 }} />
-            <Select value={status} onChange={setStatus} style={{ width: 150 }} options={[{ value: "ALL", label: "全部状态" }, { value: "ACTIVE", label: "启用中" }, { value: "INACTIVE", label: "已停用" }]} />
+            <Select value={status} onChange={setStatus} style={{ width: 150 }} options={[{ value: "ALL", label: "全部状态" }, { value: "ACTIVE", label: "启用中" }, { value: "INACTIVE", label: "已停用" }, { value: "DELETED", label: "已删除" }]} />
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>找到 {filteredStudents.length} 名学生</Typography.Text>
           </Space>
         </div>
-        <Table rowKey="id" columns={columns} dataSource={filteredStudents} scroll={{ x: 920 }} pagination={{ pageSize: 8, showSizeChanger: false, showTotal: (total) => `共 ${total} 名` }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有符合条件的学生" /> }} />
+      <Table rowKey="id" columns={columns} dataSource={filteredStudents} scroll={{ x: 1120 }} pagination={{ pageSize: 8, showSizeChanger: false, showTotal: (total) => `共 ${total} 名` }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有符合条件的学生" /> }} />
       </Card>
 
       <Drawer title={editingStudent ? "编辑学生资料" : "新增学生"} open={drawerOpen} onClose={() => setDrawerOpen(false)} size={430} destroyOnHidden footer={<Space style={{ display: "flex", justifyContent: "flex-end" }}><Button onClick={() => setDrawerOpen(false)}>取消</Button><Button type="primary" onClick={() => void form.submit()}>{editingStudent ? "保存修改" : "新增学生"}</Button></Space>}>
-        <Alert type="info" showIcon title={editingStudent ? "更新资料不会影响历史积分" : "新增学生后即可安排座位并参与课堂积分"} style={{ marginBottom: 22 }} />
         <Form form={form} layout="vertical" onFinish={saveStudent} requiredMark="optional">
-          <Form.Item name="name" label="姓名" rules={[{ required: true, message: "请输入学生姓名" }, { max: 100, message: "姓名不能超过 100 个字符" }]}><Input placeholder="例如：王品涵" /></Form.Item>
+          <Form.Item name="name" label="姓名" rules={[{ required: true, message: "请输入学生姓名" }, { max: 100, message: "姓名不能超过 100 个字符" }]}><Input placeholder="请输入学生姓名" /></Form.Item>
           <Form.Item name="studentNo" label="学号" rules={[{ required: true, message: "请输入学号" }, { max: 50, message: "学号不能超过 50 个字符" }]}><Input placeholder="例如：70213" /></Form.Item>
           {editingStudent && <Descriptions column={1} size="small" bordered style={{ marginTop: 24 }}><Descriptions.Item label="建立日期">{editingStudent.createdAt}</Descriptions.Item><Descriptions.Item label="当前状态"><StatusTag status={editingStudent.status} /></Descriptions.Item></Descriptions>}
         </Form>
       </Drawer>
 
       <Drawer title="学生历史详情" open={historyStudent !== null} onClose={() => setHistoryStudent(null)} size={430}>
-        {historyStudent ? <><div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: 22 }}><Avatar size={48} style={{ background: "#e9f1ff", color: "#0a59f7" }}>{historyStudent.name.slice(0, 1)}</Avatar><div><Typography.Title level={4} style={{ margin: 0 }}>{historyStudent.name}</Typography.Title><Typography.Text type="secondary">学号 {historyStudent.studentNo}</Typography.Text></div></div><Descriptions column={1} bordered size="small"><Descriptions.Item label="状态"><StatusTag status={historyStudent.status} /></Descriptions.Item><Descriptions.Item label="当前座位">{historyStudent.seat ?? "未安排"}</Descriptions.Item><Descriptions.Item label="加入班级">{historyStudent.createdAt}</Descriptions.Item><Descriptions.Item label="最后更新">{historyStudent.updatedAt}</Descriptions.Item></Descriptions><Divider /><Typography.Text strong>历史记录</Typography.Text><Space orientation="vertical" size={12} style={{ display: "flex", marginTop: 14 }}><HistoryEvent title="学生资料建立" time={`${historyStudent.createdAt} 09:00`} /><HistoryEvent title={historyStudent.status === "INACTIVE" ? "学生已停用" : "资料最后更新"} time={historyStudent.updatedAt} /></Space></> : null}
+        {historyStudent ? <><div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: 22 }}><Avatar size={48} style={{ background: "#e9f1ff", color: "#0a59f7" }}>{historyStudent.name.slice(0, 1)}</Avatar><div><Typography.Title level={4} style={{ margin: 0 }}>{historyStudent.name}</Typography.Title><Typography.Text type="secondary">学号 {historyStudent.studentNo}</Typography.Text></div></div><Descriptions column={1} bordered size="small"><Descriptions.Item label="状态"><StatusTag status={historyStudent.status} deletedAt={historyStudent.deletedAt} /></Descriptions.Item><Descriptions.Item label="当前座位">{historyStudent.seat ?? "未安排"}</Descriptions.Item><Descriptions.Item label="加入班级">{historyStudent.createdAt}</Descriptions.Item><Descriptions.Item label="最后更新">{historyStudent.updatedAt}</Descriptions.Item></Descriptions><Divider /><Typography.Text strong>历史记录</Typography.Text><Space orientation="vertical" size={12} style={{ display: "flex", marginTop: 14 }}><HistoryEvent title="学生资料建立" time={`${historyStudent.createdAt} 09:00`} /><HistoryEvent title={historyStudent.deletedAt ? "学生已删除" : historyStudent.status === "INACTIVE" ? "学生已停用" : "资料最后更新"} time={historyStudent.updatedAt} /></Space></> : null}
       </Drawer>
 
       <Modal
@@ -670,6 +813,7 @@ function HistoryEvent({ title, time }: { title: string; time: string }) {
 
 function TeachersPage() {
   const { notification } = AntApp.useApp();
+  const { data: classroom } = useAdminClassroom();
   const { students } = useAdminStudents();
   const {
     assignments,
@@ -682,6 +826,7 @@ function TeachersPage() {
     createTeacher: persistTeacher,
     generateInvitation: persistInvitation,
     setTeacherStatus: persistStatus,
+    deleteTeacher: persistDelete,
   } = useAdminTeachers();
   const [createOpen, setCreateOpen] = useState(false);
   const [invite, setInvite] = useState<{ teacher: Teacher; url: string } | null>(null);
@@ -689,8 +834,10 @@ function TeachersPage() {
   const [form] = Form.useForm<TeacherFormValues>();
   const [committeeOpen, setCommitteeOpen] = useState(false);
   const [committeeForm] = Form.useForm<CommitteeFormValues>();
+  const classroomName = classroom?.name ?? "当前班级";
 
-  const openCommittee = () => {
+  useEffect(() => {
+    if (!committeeOpen) return;
     committeeForm.setFieldsValue({
       assignments: assignments.map((assignment) => ({
         key: assignment.id,
@@ -702,6 +849,9 @@ function TeachersPage() {
         trialEndsAt: assignment.trialEndsAt,
       })),
     });
+  }, [assignments, committeeForm, committeeOpen]);
+
+  const openCommittee = () => {
     setCommitteeOpen(true);
   };
 
@@ -746,10 +896,16 @@ function TeachersPage() {
       });
     }
     if (nextStatus === "DISABLED") {
-      notification.success({ title: "教师已停用", description: `${teacher.name} 已无法访问 ${classroom.name}。` });
+      notification.success({ title: "教师已停用", description: `${teacher.name} 已无法访问 ${classroomName}。` });
     } else {
       notification.success({ title: "教师已启用", description: `${teacher.name} 已恢复班级访问权限。` });
     }
+  };
+
+  const handleDeleteTeacher = async (teacher: Teacher) => {
+    await persistDelete(teacher.id);
+    setDetail(null);
+    notification.success({ title: "教师已删除", description: "已移除 " + teacher.name + " 的教师关系，历史积分记录继续保留。" });
   };
 
   const copyInvite = async (url: string) => {
@@ -871,7 +1027,7 @@ function TeachersPage() {
     <div>
       <PageHeader
         title="任课教师"
-        description={`管理 ${classroom.name} 的教师关系、邀请链接和班级访问权限。`}
+        description={`管理 ${classroomName} 的教师关系、邀请链接和班级访问权限。`}
         action={
           <Button
             type="primary"
@@ -1018,7 +1174,7 @@ function TeachersPage() {
               <Descriptions.Item label="关系状态">
                 <StatusTag status={detail.status} />
               </Descriptions.Item>
-              <Descriptions.Item label="班级">{classroom.name}</Descriptions.Item>
+              <Descriptions.Item label="班级">{classroomName}</Descriptions.Item>
               <Descriptions.Item label="邀请状态">
                 {detail.invitationUrl
                   ? "待接受邀请"
@@ -1058,6 +1214,18 @@ function TeachersPage() {
                   启用教师
                 </Button>
               )}
+              <Popconfirm
+                title="确认删除该教师？"
+                description="删除教师关系后，该教师将无法访问班级；历史积分记录会保留。"
+                okText="确认删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => void handleDeleteTeacher(detail)}
+              >
+                <Button danger icon={<DeleteOutlined />}>
+                  删除教师
+                </Button>
+              </Popconfirm>
             </Space>
           </>
         )}
@@ -1376,41 +1544,10 @@ function ScoreRulesPage() {
   );
 }
 
-function ScoreRankingPage() {
-  const { summary, refetch } = useAdminScorePeriodSummary();
-  const columns: ColumnsType<NonNullable<typeof summary>["recommendedSeatOrder"][number]> = [
-    { title: "顺序", key: "order", width: 80, render: (_value, _record, index) => index + 1 },
-    { title: "学生", dataIndex: "name" },
-    { title: "积分", dataIndex: "score", width: 100 },
-  ];
-
-  return (
-    <div>
-      <PageHeader
-        title="积分排序"
-        action={
-          <Button icon={<ReloadOutlined />} onClick={() => void refetch()}>
-            刷新
-          </Button>
-        }
-      />
-      <Card style={cardStyle}>
-        <Table
-          rowKey="studentId"
-          columns={columns}
-          dataSource={summary?.recommendedSeatOrder ?? []}
-          loading={!summary}
-          pagination={false}
-          locale={{ emptyText: "暂无积分" }}
-        />
-      </Card>
-    </div>
-  );
-}
-
 function ScoreRecordsPage() {
   const { notification } = AntApp.useApp();
   const { records, refetch: refetchRecords, revertRecord: persistRevert } = useAdminScoreRecords();
+  const { summary, refetch: refetchSummary } = useAdminScorePeriodSummary();
   const [studentKeyword, setStudentKeyword] = useState("");
   const [operatorId, setOperatorId] = useState("ALL");
   const [subject, setSubject] = useState("ALL");
@@ -1442,6 +1579,12 @@ function ScoreRecordsPage() {
     { title: "操作", key: "actions", fixed: "right", width: 190, render: (_, record) => <Space size={3}><Button type="link" icon={<EyeOutlined />} onClick={() => setDetail(record)}>详情</Button>{record.recordType === "NORMAL" && <Popconfirm title="撤销这笔积分？" okText="确认撤销" cancelText="取消" okButtonProps={{ danger: true }} disabled={record.reverted} onConfirm={() => void revertRecord(record)}><Button danger type="link" icon={<UndoOutlined />} disabled={record.reverted}>{record.reverted ? "已撤销" : "撤销"}</Button></Popconfirm>}</Space> },
   ];
 
+  const scoreColumns: ColumnsType<NonNullable<typeof summary>["students"][number]> = [
+    { title: "名次", dataIndex: "rank", width: 80 },
+    { title: "学生", dataIndex: "name" },
+    { title: "积分", dataIndex: "score", width: 100 },
+  ];
+
   return (
     <div>
       <PageHeader
@@ -1451,12 +1594,24 @@ function ScoreRecordsPage() {
             icon={<ReloadOutlined />}
             onClick={() => {
               void refetchRecords();
+              void refetchSummary();
             }}
           >
             刷新
           </Button>
         }
       />
+      <Card title="本月积分" style={{ ...cardStyle, marginBottom: 16 }}>
+        <Table
+          rowKey="studentId"
+          columns={scoreColumns}
+          dataSource={summary?.students ?? []}
+          loading={!summary}
+          pagination={false}
+          size="small"
+          locale={{ emptyText: "暂无积分" }}
+        />
+      </Card>
       <Card style={cardStyle} styles={{ body: { padding: 0 } }}>
         <div style={{ padding: 18, borderBottom: "1px solid #eef2f7" }}>
           <Space wrap size={10}>
@@ -1502,6 +1657,7 @@ function ScoreRecordsPage() {
 
 function DisplayDevicesPage() {
   const { notification } = AntApp.useApp();
+  const { data: classroom } = useAdminClassroom();
   const {
     devices,
     createBindingCode,
@@ -1514,6 +1670,7 @@ function DisplayDevicesPage() {
     useState<AdminBindingSession | null>(null);
   const [sessionBound, setSessionBound] = useState(false);
   const [copied, setCopied] = useState(false);
+  const classroomName = classroom?.name ?? "当前班级";
 
   const handleClose = () => {
     setBindOpen(false);
@@ -1548,7 +1705,7 @@ function DisplayDevicesPage() {
           setSessionBound(true);
           notification.success({
             title: "大屏设备绑定成功",
-            description: `${createdSession.deviceName} 已成功连接到 ${classroom.name}。`,
+            description: `${createdSession.deviceName} 已成功连接到 ${classroomName}。`,
           });
         } else if (latest.status === "EXPIRED") {
           notification.error({
@@ -1572,7 +1729,7 @@ function DisplayDevicesPage() {
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [bindOpen, createdSession, sessionBound, pollBindingSession, notification]);
+  }, [bindOpen, classroomName, createdSession, sessionBound, pollBindingSession, notification]);
 
   const copyCode = () => {
     if (createdSession?.code) {
@@ -1897,7 +2054,6 @@ function iconForRoute(route: AdminRoute): ReactNode {
     case "teachers": return <ReadIcon />;
     case "score-rules": return <BookIcon />;
     case "score-records": return <FileIcon />;
-    case "score-ranking": return <ArrowUpOutlined />;
     case "display-devices": return <DesktopIcon />;
     case "overview": return <TeamOutlined />;
   }

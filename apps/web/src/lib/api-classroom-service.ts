@@ -29,6 +29,7 @@ import type {
   InvitationConsumeResult,
   LoginInput,
   LoginResult,
+  LogoutResult,
   PaginatedEnvelope,
   PollBindingSessionInput,
   PollBindingSessionResult,
@@ -61,12 +62,14 @@ import type {
   IsoDateTime,
 } from "./domain"
 import {
+  clearUserSession,
   getDisplaySession,
   getUserSession,
   setActiveClassId,
   setDisplaySession,
   setUserSession,
 } from "./session"
+import { reportBackendUnavailable } from "./api-error"
 
 const API_ORIGIN = (process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:3000").replace(/\/$/, "")
 
@@ -131,7 +134,9 @@ export class ApiClassroomService implements ClassroomService {
     try {
       response = await fetch(`${API_ORIGIN}/api/v1${path}`, { ...init, headers })
     } catch {
-      throw new ClassroomServiceError("API_UNAVAILABLE", "无法连接到后端服务，请确认服务已启动", 503)
+      const error = new ClassroomServiceError("API_UNAVAILABLE", "无法连接到后端服务，请确认服务已启动", 503)
+      reportBackendUnavailable(error.message)
+      throw error
     }
 
     if (response.status === 401 && options.retry !== false && auth !== "none") {
@@ -142,7 +147,11 @@ export class ApiClassroomService implements ClassroomService {
     }
 
     const payload = await response.json().catch(() => null)
-    if (!response.ok) throw errorPayload(payload, response.status)
+    if (!response.ok) {
+      const error = errorPayload(payload, response.status)
+      if (response.status >= 500) reportBackendUnavailable(error.message)
+      throw error
+    }
     return (isEnvelope(payload) && !isPaginatedPayload(payload) ? payload.data : payload) as T
   }
 
@@ -235,6 +244,18 @@ export class ApiClassroomService implements ClassroomService {
     })
   }
 
+  async restoreStudent(classId: string, studentId: string): Promise<Student> {
+    return this.request<Student>(`/classes/${encodeURIComponent(classId)}/students/${encodeURIComponent(studentId)}/restore`, {
+      method: "POST",
+    })
+  }
+
+  async deleteStudent(classId: string, studentId: string): Promise<Student> {
+    return this.request<Student>(`/classes/${encodeURIComponent(classId)}/students/${encodeURIComponent(studentId)}/delete`, {
+      method: "POST",
+    })
+  }
+
   async importStudents(classId: string, input: ImportedStudentInput[]): Promise<StudentImportResult> {
     return this.request<StudentImportResult>(`/classes/${encodeURIComponent(classId)}/students/import`, {
       method: "POST",
@@ -270,6 +291,13 @@ export class ApiClassroomService implements ClassroomService {
     return this.request<{ revoked: true }>(`/classes/${encodeURIComponent(classId)}/teachers/${encodeURIComponent(classTeacherId)}/revoke`, {
       method: "POST",
     })
+  }
+
+  async deleteTeacher(classId: string, classTeacherId: string): Promise<{ deleted: true }> {
+    return this.request<{ deleted: true }>(
+      "/classes/" + encodeURIComponent(classId) + "/teachers/" + encodeURIComponent(classTeacherId),
+      { method: "DELETE" },
+    )
   }
 
   async restoreTeacher(classId: string, classTeacherId: string): Promise<{ restored: true }> {
@@ -489,6 +517,12 @@ export class ApiClassroomService implements ClassroomService {
       body: jsonBody(input),
     }, { auth: "none" })
     setUserSession(result)
+    return result
+  }
+
+  async logout(): Promise<LogoutResult> {
+    const result = await this.request<LogoutResult>("/auth/logout", { method: "POST" })
+    clearUserSession()
     return result
   }
 

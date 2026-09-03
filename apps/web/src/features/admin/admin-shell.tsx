@@ -2,7 +2,6 @@
 
 import {
   AppstoreOutlined,
-  ArrowUpOutlined,
   BellOutlined,
   CalendarOutlined,
   BookOutlined,
@@ -20,13 +19,15 @@ import {
 import { Refine } from "@refinedev/core";
 import { App as AntApp, Avatar, Badge, Breadcrumb, Button, ConfigProvider, Layout, Space, Tag, Typography } from "antd";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { adminResources, classroom, cloneSeats, navItems, type AdminRoute } from "./admin-data";
+import { adminResources, cloneSeats, navItems, type AdminRoute } from "./admin-data";
 import { AdminNotificationDrawer } from "./admin-notification-drawer";
-import { useAdminNotifications, useAdminSchedule, useAdminSeating } from "./admin-queries";
+import { useAdminClassroom, useAdminNotifications, useAdminSchedule, useAdminSeating } from "./admin-queries";
+import { useClassroomService } from "@/components/providers/classroom-system-provider";
+import { getUserSession, clearUserSession } from "@/lib/session";
 
 const { Header, Sider, Content } = Layout;
 
@@ -38,7 +39,6 @@ const iconByRoute: Record<AdminRoute, ReactNode> = {
   teachers: <ReadOutlined />,
   "score-rules": <BookOutlined />,
   "score-records": <FileTextOutlined />,
-  "score-ranking": <ArrowUpOutlined />,
   "display-devices": <DesktopOutlined />,
 };
 
@@ -50,7 +50,6 @@ const pageTitleByPath: Record<string, string> = {
   "/admin/teachers": "任课教师",
   "/admin/score-rules": "积分规则",
   "/admin/score-records": "积分流水",
-  "/admin/score-ranking": "积分排序",
   "/admin/display-devices": "大屏设备",
 };
 
@@ -64,6 +63,20 @@ function getRouteFromPath(pathname: string): AdminRoute {
   return navItems.some((item) => item.key === segment)
     ? (segment as AdminRoute)
     : "overview";
+}
+
+function subscribeToAdminSession(onStoreChange: () => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  window.addEventListener("classroom-auth-changed", onStoreChange);
+  return () => window.removeEventListener("classroom-auth-changed", onStoreChange);
+}
+
+function getAdminTeacherNameSnapshot(): string {
+  return getUserSession()?.user.name ?? "班主任";
+}
+
+function getServerAdminTeacherNameSnapshot(): string {
+  return "班主任";
 }
 
 export function AdminShell({ children }: AdminShellProps) {
@@ -93,17 +106,53 @@ export function AdminShell({ children }: AdminShellProps) {
 }
 
 function AdminShellContent({ children }: AdminShellProps) {
-  const { modal } = AntApp.useApp();
+  const { modal, notification } = AntApp.useApp();
   const pathname = usePathname();
   const router = useRouter();
+  const service = useClassroomService();
   const [collapsed, setCollapsed] = useCollapsedSider();
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const currentRoute = getRouteFromPath(pathname);
   const title = pageTitleByPath[pathname] ?? "班级概览";
+  const { data: classroom } = useAdminClassroom();
+  const classroomName = classroom?.name ?? "当前班级";
+  const teacherName = useSyncExternalStore(
+    subscribeToAdminSession,
+    getAdminTeacherNameSnapshot,
+    getServerAdminTeacherNameSnapshot,
+  );
 
   const { isDirty, savedLayout, updateDraft } = useAdminSeating();
   const { isDirty: isScheduleDirty, savedSchedule, updateDraft: updateScheduleDraft } = useAdminSchedule();
   const { unreadCount, markAllAsRead } = useAdminNotifications();
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await service.logout();
+    } catch (error) {
+      notification.error({
+        title: "退出登录请求失败",
+        description: error instanceof Error ? error.message : "服务端未确认登出，本地登录态已清除。",
+      });
+      clearUserSession();
+    } finally {
+      router.replace("/login");
+    }
+  };
+
+  const confirmLogout = () => {
+    modal.confirm({
+      title: "确认退出登录？",
+      content: "退出后需要重新登录才能进入后台。",
+      okText: "退出登录",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: handleLogout,
+    });
+  };
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -299,10 +348,10 @@ function AdminShellContent({ children }: AdminShellProps) {
                   {!collapsed && (
                     <>
                       <Typography.Text strong style={{ display: "block", marginTop: 8, color: "#1b2c48" }}>
-                        {classroom.name}
+                        {classroomName}
                       </Typography.Text>
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        {classroom.teacherName} · 班主任
+                        {teacherName} · 班主任
                       </Typography.Text>
                     </>
                   )}
@@ -338,7 +387,7 @@ function AdminShellContent({ children }: AdminShellProps) {
                 <Breadcrumb
                   separator="/"
                   items={[
-                    { title: <span style={{ color: "#6d7c92" }}>{classroom.name}</span> },
+                    { title: <span style={{ color: "#6d7c92" }}>{classroomName}</span> },
                     { title: <span style={{ color: "#172b4d", fontWeight: 600 }}>{title}</span> },
                   ]}
                   style={{ fontSize: 13 }}
@@ -362,14 +411,21 @@ function AdminShellContent({ children }: AdminShellProps) {
                   <Avatar size={35} style={{ background: "#dce9ff", color: "#0a59f7" }} icon={<UserOutlined />} />
                   <div style={{ lineHeight: 1.2 }}>
                     <Typography.Text strong style={{ display: "block", color: "#243650" }}>
-                      {classroom.teacherName}
+                      {teacherName}
                     </Typography.Text>
                     <Typography.Text type="secondary" style={{ fontSize: 11 }}>
                       HEAD TEACHER
                     </Typography.Text>
                   </div>
                 </Space>
-                <Button type="text" icon={<LogoutOutlined />} aria-label="登出" style={{ color: "#8190a6" }} />
+                <Button
+                  type="text"
+                  icon={<LogoutOutlined />}
+                  aria-label="登出"
+                  loading={loggingOut}
+                  onClick={confirmLogout}
+                  style={{ color: "#8190a6" }}
+                />
               </Space>
             </Header>
 

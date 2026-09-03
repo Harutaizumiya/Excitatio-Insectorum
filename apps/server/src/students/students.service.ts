@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { Prisma, StudentGender, StudentStatus, TeacherRole } from '@prisma/client';
+import { Prisma, RelationStatus, StudentGender, StudentStatus, TeacherRole } from '@prisma/client';
 import { BusinessException, ClassEventType } from '../common';
 import { ClassroomsService } from '../classrooms';
 import { isPostgresDatabase, PrismaService } from '../prisma';
@@ -22,13 +22,15 @@ export class StudentsService {
   ) {}
 
   async list(userId: string, classId: string, query: ListStudentsQuery) {
-    await this.classrooms.assertAccess(userId, classId);
+    const access = await this.classrooms.assertAccess(userId, classId);
+    const includeDeleted = query.includeDeleted && access.role === TeacherRole.HEAD_TEACHER;
     const keywordFilter = (value: string) =>
       isPostgresDatabase()
         ? ({ contains: value, mode: 'insensitive' } as unknown as Prisma.StudentWhereInput['name'])
         : { contains: value };
     const where: Prisma.StudentWhereInput = {
       classId,
+      ...(!includeDeleted ? { deletedAt: null } : {}),
       status: query.status,
       ...(query.keyword
         ? {
@@ -71,7 +73,9 @@ export class StudentsService {
 
   async update(userId: string, classId: string, studentId: string, dto: UpdateStudentDto) {
     await this.classrooms.assertAccess(userId, classId, [TeacherRole.HEAD_TEACHER]);
-    const student = await this.prisma.student.findFirst({ where: { id: studentId, classId } });
+    const student = await this.prisma.student.findFirst({
+      where: { id: studentId, classId, deletedAt: null },
+    });
     if (!student) {
       throw new BusinessException('STUDENT_NOT_FOUND', '学生不存在', HttpStatus.NOT_FOUND);
     }
@@ -88,6 +92,49 @@ export class StudentsService {
   }
 
   async deactivate(userId: string, classId: string, studentId: string) {
+    return this.changeStudentLifecycle(userId, classId, studentId, {
+      action: 'DEACTIVATED',
+      deletedAt: null,
+      allowInactive: false,
+    });
+  }
+
+  async restore(userId: string, classId: string, studentId: string) {
+    await this.classrooms.assertAccess(userId, classId, [TeacherRole.HEAD_TEACHER]);
+    const current = await this.prisma.student.findFirst({ where: { id: studentId, classId } });
+    if (!current) {
+      throw new BusinessException('STUDENT_NOT_FOUND', '学生不存在', HttpStatus.NOT_FOUND);
+    }
+    if (!current.deletedAt && current.status === StudentStatus.ACTIVE) {
+      throw new BusinessException('STUDENT_ALREADY_ACTIVE', '学生已经是启用状态', HttpStatus.CONFLICT);
+    }
+
+    const updated = await this.prisma.student.update({
+      where: { id: studentId },
+      data: { status: StudentStatus.ACTIVE, deletedAt: null },
+    });
+    await this.publishStudentChanged(classId, studentId, 'RESTORED');
+    return updated;
+  }
+
+  async delete(userId: string, classId: string, studentId: string) {
+    return this.changeStudentLifecycle(userId, classId, studentId, {
+      action: 'DELETED',
+      deletedAt: new Date(),
+      allowInactive: true,
+    });
+  }
+
+  private async changeStudentLifecycle(
+    userId: string,
+    classId: string,
+    studentId: string,
+    options: {
+      action: 'DEACTIVATED' | 'DELETED';
+      deletedAt: Date | null;
+      allowInactive: boolean;
+    },
+  ) {
     await this.classrooms.assertAccess(userId, classId, [TeacherRole.HEAD_TEACHER]);
     const result = await this.withLayoutVersionRetry(() =>
       this.prisma.$transaction(
@@ -98,7 +145,14 @@ export class StudentsService {
           if (!current) {
             throw new BusinessException('STUDENT_NOT_FOUND', '学生不存在', HttpStatus.NOT_FOUND);
           }
-          if (current.status === StudentStatus.INACTIVE) {
+          if (current.deletedAt) {
+            throw new BusinessException(
+              'STUDENT_ALREADY_DELETED',
+              '学生已经删除',
+              HttpStatus.CONFLICT,
+            );
+          }
+          if (!options.allowInactive && current.status === StudentStatus.INACTIVE) {
             throw new BusinessException(
               'STUDENT_ALREADY_INACTIVE',
               '学生已经停用',
@@ -116,7 +170,7 @@ export class StudentsService {
 
           const updated = await transaction.student.update({
             where: { id: studentId },
-            data: { status: StudentStatus.INACTIVE },
+            data: { status: StudentStatus.INACTIVE, deletedAt: options.deletedAt },
           });
           let layoutVersion: number | null = null;
 
@@ -178,6 +232,13 @@ export class StudentsService {
             layoutVersion = createdLayout.version;
           }
 
+          if (options.action === 'DELETED') {
+            await transaction.classCommitteeAssignment.updateMany({
+              where: { classId, studentId, status: RelationStatus.ACTIVE },
+              data: { status: RelationStatus.REVOKED },
+            });
+          }
+
           return { student: updated, layoutVersion };
         },
         isPostgresDatabase()
@@ -186,7 +247,7 @@ export class StudentsService {
       ),
     );
 
-    await this.publishStudentChanged(classId, studentId, 'DEACTIVATED');
+    await this.publishStudentChanged(classId, studentId, options.action);
     if (result.layoutVersion !== null) {
       await this.publishSafely(classId, ClassEventType.SEAT_LAYOUT_CHANGED, {
         version: result.layoutVersion,

@@ -55,7 +55,6 @@ import { useRealtimeClient } from "@/components/providers/classroom-system-provi
 import { useRealtimeStatus } from "@/components/providers/realtime-hooks";
 import type { CreateScoreEventInput, ScoreRecord, Seat, Student } from "@/lib";
 import { getActiveClassId, getUserSession } from "@/lib/session";
-import { classroomRealtime } from "./classroom-realtime";
 
 function formatTime(date: string): string {
   try {
@@ -115,7 +114,7 @@ type PickAnimationState = "idle" | "running" | "locked" | "showcase";
 
 function TeacherMainContent(): ReactElement {
   const { notification, message } = AntApp.useApp();
-  const classId = getActiveClassId() ?? "class-1";
+  const classId = getActiveClassId() ?? "";
   const realtime = useRealtimeClient();
   const realtimeStatus = useRealtimeStatus();
 
@@ -153,18 +152,8 @@ function TeacherMainContent(): ReactElement {
 
   // Normalize grid seats
   const gridSeats = useMemo(() => {
-    if (layout?.seats && layout.seats.length > 0) {
-      return layout.seats;
-    }
-    // Fallback: arrange all active students in a 4-column grid
-    return students.map((s, idx) => ({
-      id: `seat-${Math.floor(idx / 4)}-${idx % 4}`,
-      row: Math.floor(idx / 4),
-      col: idx % 4,
-      cellType: "seat" as const,
-      student: { id: s.id, name: s.name },
-    }));
-  }, [layout, students]);
+    return layout?.seats ?? [];
+  }, [layout]);
 
   // Clean up marquee timer
   useEffect(() => {
@@ -173,7 +162,7 @@ function TeacherMainContent(): ReactElement {
     };
   }, []);
 
-  // WebSocket & Broadcast Realtime Subscriptions
+  // WebSocket realtime subscriptions
   useEffect(() => {
     const unsubscribers = [
       realtime.subscribe("SCORE_CHANGED", classId, () => {
@@ -201,33 +190,14 @@ function TeacherMainContent(): ReactElement {
       }),
     ];
 
-    const unsubscribeBroadcast = classroomRealtime.subscribe((event) => {
-      if (event.classId !== classId) return;
-      if (event.type === "SCORE_CHANGED" || event.type === "SCORE_REVERTED") {
-        void studentsQuery.refetch();
-      } else if (event.type === "SEAT_LAYOUT_CHANGED") {
-        void layoutQuery.refetch();
-      } else if (event.type === "STUDENT_CHANGED") {
-        void studentsQuery.refetch();
-        void layoutQuery.refetch();
-      }
-    });
-
     return () => {
       unsubscribers.forEach((unsub) => unsub());
-      unsubscribeBroadcast();
     };
   }, [realtime, classId, students, gridSeats, studentsQuery, layoutQuery]);
 
   // Handle Random Pick flow
   const startRandomPick = async () => {
     if (pickState !== "idle" || students.length === 0) return;
-
-    const availableStudents = students.filter(
-      (s) => !excludedIds.includes(s.id),
-    );
-    const candidateList =
-      availableStudents.length > 0 ? availableStudents : students;
 
     setPickState("running");
     setSelectedStudent(null);
@@ -258,46 +228,29 @@ function TeacherMainContent(): ReactElement {
       const result = await randomPickMutation.mutateAsync(
         excludedIds.length >= students.length ? [] : excludedIds,
       );
-      const chosenStudent =
-        students.find((s) => s.id === result.student.id) ??
-        candidateList[Math.floor(Math.random() * candidateList.length)] ??
-        students[0];
+      const chosenStudent = students.find((s) => s.id === result.student.id);
+      if (!chosenStudent) throw new Error("点名结果中的学生不在当前班级数据中");
 
       // Wait until marquee finishes
       await new Promise((r) => setTimeout(r, maxHops * intervalMs + 80));
 
-      if (chosenStudent) {
-        // Find matching seat in grid
-        const matchedSeat = gridSeats.find(
-          (s) => s.student?.id === chosenStudent.id,
-        );
-        setHighlightSeatId(matchedSeat?.id ?? gridSeats[0]?.id ?? null);
-        setPickedStudent(chosenStudent);
-        setExcludedIds((prev) =>
-          prev.includes(chosenStudent.id) ? prev : [...prev, chosenStudent.id],
-        );
+      // Find matching seat
+      const matchedSeat = gridSeats.find(
+        (s) => s.student?.id === chosenStudent.id,
+      );
+      setHighlightSeatId(matchedSeat?.id ?? gridSeats[0]?.id ?? null);
+      setPickedStudent(chosenStudent);
+      setExcludedIds((prev) =>
+        prev.includes(chosenStudent.id) ? prev : [...prev, chosenStudent.id],
+      );
 
-        // Step 3: Lock highlight on seat
-        setPickState("locked");
+      // Step 3: Lock highlight on seat
+      setPickState("locked");
 
-        // Broadcast to classroomRealtime
-        classroomRealtime.publish({
-          id: `event-${Date.now()}`,
-          type: "RANDOM_PICKED",
-          classId,
-          occurredAt: new Date().toISOString(),
-          payload: {
-            studentId: chosenStudent.id,
-            name: chosenStudent.name,
-            displayDurationMs: 8000,
-          },
-        });
-
-        // Step 4: After 400ms, pop up showcase modal with spring animation
-        setTimeout(() => {
-          setPickState("showcase");
-        }, 400);
-      }
+      // Step 4: After 400ms, pop up showcase modal with spring animation
+      setTimeout(() => {
+        setPickState("showcase");
+      }, 400);
     } catch {
       if (marqueeTimerRef.current) clearInterval(marqueeTimerRef.current);
       setPickState("idle");
@@ -325,9 +278,9 @@ function TeacherMainContent(): ReactElement {
     }
   };
 
-  const classroomName = classroomQuery.data?.name ?? "高一(10)班";
-  const subjectName = classroomQuery.data?.subject ?? "数学";
-  const seatColumnCount = layout?.cols ?? 4;
+  const classroomName = classroomQuery.data?.name ?? "";
+  const subjectName = classroomQuery.data?.subject ?? "";
+  const seatColumnCount = layout?.cols ?? 0;
   const seatGridMinWidth = `${Math.max(
     0,
     seatColumnCount * 56 + (seatColumnCount - 1) * 8,
@@ -1314,7 +1267,7 @@ function TeacherScoreDrawerContent({
 // -------------------------------------------------------------
 
 export function TeacherHistorySurface(): ReactElement {
-  const classId = getActiveClassId() ?? "class-1";
+  const classId = getActiveClassId() ?? "";
   const recordsQuery = useScoreRecords(classId, { page: 1, pageSize: 100 });
   const revertScoreMutation = useRevertScore(classId);
   const records = useMemo(

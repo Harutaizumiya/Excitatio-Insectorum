@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiNotFoundResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TeacherRole } from '@prisma/client';
 import {
   ClassAccessGuard,
@@ -64,6 +64,18 @@ export class TeachersController {
   ) {
     await this.teachers.revoke(request.user!.sub, classId, classTeacherId);
     return { data: { revoked: true } };
+  }
+
+  @Delete(':classTeacherId')
+  @ApiOperation({ summary: '删除任课教师关系' })
+  @ApiNotFoundResponse({ description: 'CLASS_TEACHER_NOT_FOUND' })
+  async remove(
+    @Req() request: RequestContext,
+    @Param('classId') classId: string,
+    @Param('classTeacherId') classTeacherId: string,
+  ) {
+    await this.teachers.remove(request.user!.sub, classId, classTeacherId);
+    return { data: { deleted: true } };
   }
 
   @Post(':classTeacherId/restore')

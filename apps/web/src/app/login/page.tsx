@@ -1,11 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import {
-  ArrowRight,
-  KeyRound,
-  ShieldCheck,
-} from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -27,56 +23,23 @@ const loginSchema = z.object({
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
-type LoginRole = "HEAD_TEACHER" | "SUBJECT_TEACHER";
-
-const roleCopy: Record<
-  LoginRole,
-  { label: string; account: string; destination: string }
-> = {
-  HEAD_TEACHER: {
-    label: "班主任",
-    account: "zhangsha",
-    destination: "/admin",
-  },
-  SUBJECT_TEACHER: {
-    label: "任课教师",
-    account: "math.teacher",
-    destination: "/teacher",
-  },
-};
-
-const demoPasswords: Record<LoginRole, string> = {
-  HEAD_TEACHER: "admin123",
-  SUBJECT_TEACHER: "classroom-demo",
-};
 
 export default function LoginPage() {
   const router = useRouter();
   const service = useClassroomService();
   const login = useLogin();
-  const [role, setRole] = useState<LoginRole>("HEAD_TEACHER");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
-    reset,
     formState: { errors },
   } = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      account: roleCopy.HEAD_TEACHER.account,
-      password: demoPasswords.HEAD_TEACHER,
+      account: "zhangsha",
     },
   });
-
-  const chooseRole = (nextRole: LoginRole) => {
-    setRole(nextRole);
-    reset({
-      account: roleCopy[nextRole].account,
-      password: demoPasswords[nextRole],
-    });
-  };
 
   const onSubmit = async (values: LoginValues) => {
     setSubmitting(true);
@@ -89,7 +52,7 @@ export default function LoginPage() {
         throw new Error("当前账号尚未分配班级");
       }
       setActiveClassId(classrooms[0].id);
-      router.push(roleCopy[role].destination);
+      router.push("/admin");
     } catch (error) {
       setSubmitError(
         error instanceof ClassroomServiceError || error instanceof Error
@@ -123,7 +86,7 @@ export default function LoginPage() {
               课序
             </div>
             <Badge className="mt-16 rounded-full border-white/20 bg-white/12 px-3 py-1 text-white">
-              MVP
+              测试版
             </Badge>
             <h1 className="mt-5 max-w-md text-4xl leading-[1.2] font-semibold tracking-tight">
               让每一次课堂互动
@@ -149,34 +112,11 @@ export default function LoginPage() {
               </div>
               <h2 className="text-3xl font-semibold tracking-tight text-[#102344]">欢迎回来</h2>
               <p className="mt-1.5 text-base text-muted-foreground">
-                选择身份并使用预置演示账号进入系统。
+                使用班主任账号登录系统。
               </p>
             </div>
             <div>
-              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1.5">
-                {(Object.keys(roleCopy) as LoginRole[]).map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => chooseRole(item)}
-                    className={`flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium transition ${
-                      role === item
-                        ? "bg-white text-[#0a59f7] shadow-sm"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                    aria-pressed={role === item}
-                  >
-                    {item === "HEAD_TEACHER" ? (
-                      <ShieldCheck className="size-4" aria-hidden="true" />
-                    ) : (
-                      <KeyRound className="size-4" aria-hidden="true" />
-                    )}
-                    {roleCopy[item].label}
-                  </button>
-                ))}
-              </div>
-
-              <form className="mt-7 space-y-5" onSubmit={handleSubmit(onSubmit)}>
+              <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
                 {submitError ? (
                   <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600" role="alert">
                     {submitError}
@@ -198,7 +138,6 @@ export default function LoginPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="password">密码</Label>
-                    <span className="text-xs text-muted-foreground">演示环境无需修改</span>
                   </div>
                   <Input
                     id="password"
@@ -219,14 +158,10 @@ export default function LoginPage() {
                   disabled={submitting}
                   className="h-12 w-full rounded-full bg-[#0a59f7] text-base shadow-[0_10px_24px_rgba(10,89,247,0.24)] hover:bg-[#084bd0]"
                 >
-                  {submitting ? "正在进入…" : `进入${roleCopy[role].label}工作台`}
+                  {submitting ? "正在进入…" : "进入班主任工作台"}
                   {!submitting ? <ArrowRight className="size-4" aria-hidden="true" /> : null}
                 </Button>
               </form>
-
-              <p className="mt-7 text-center text-xs leading-5 text-muted-foreground">
-                当前版本连接本地服务，账号信息仅提交到本机后端。
-              </p>
             </div>
           </div>
         </div>

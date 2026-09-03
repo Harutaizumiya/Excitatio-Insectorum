@@ -9,7 +9,6 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 ARG NEXT_PUBLIC_API_ORIGIN=https://seat.haruta.top
 ENV NEXT_PUBLIC_API_ORIGIN=$NEXT_PUBLIC_API_ORIGIN
-ENV NEXT_PUBLIC_DATA_MODE=api
 RUN pnpm --filter @repo/web build
 
 FROM base AS runner

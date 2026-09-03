@@ -13,7 +13,7 @@ export default function NotFound() {
         <p className="mt-6 text-sm font-semibold text-[#0a59f7]">404</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">没有找到这个页面</h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          链接可能已经失效，或当前演示版本还没有开放对应页面。
+          链接可能已经失效，请返回登录页继续操作。
         </p>
         <Link
           href="/login"
