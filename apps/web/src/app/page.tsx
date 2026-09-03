@@ -1,5 +1,10 @@
 import { redirect } from "next/navigation";
+import { HomeRedirect } from "@/features/classroom/home-redirect";
 
 export default function Home() {
-  redirect("/login");
+  if (process.env.NEXT_OUTPUT_MODE !== "export") {
+    redirect("/login");
+  }
+
+  return <HomeRedirect />;
 }

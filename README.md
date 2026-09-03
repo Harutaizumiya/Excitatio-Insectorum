@@ -98,6 +98,30 @@ pnpm format       # Prettier 格式化
 
 后端 API 前缀为 `/api/v1`；启用 Swagger 后访问 `/api/docs`。
 
+## Docker 镜像
+
+在仓库根目录构建：
+
+```bash
+docker build -f Dockerfile -t excitatio-insectorum-server:latest .
+docker build -f Dockerfile.web -t excitatio-insectorum-web:latest --build-arg NEXT_PUBLIC_API_ORIGIN=https://seat.haruta.top .
+```
+
+前端使用 Next.js standalone，默认运行 `node apps/web/server.js`，监听 `0.0.0.0:3001`。镜像仅包含追踪到的运行依赖、页面产物、public 和静态资源；不要在 Compose 中覆盖为 `next start`。
+
+后端仅安装 server / database 的生产依赖，保留 Prisma CLI、客户端、引擎和迁移文件。容器启动时先执行 SQLite 迁移，再启动 NestJS；数据库路径及 `deploy/docker-compose.yml` 中的持久化挂载保持不变。Prisma CLI 属于运行依赖，因为默认启动命令需要它。镜像不包含本地数据库或环境文件。
+
+生产环境通过 `deploy/server.env` 注入后端配置。`NEXT_PUBLIC_API_ORIGIN` 是前端构建时配置，修改它需要重新构建前端镜像。
+
+检查磁盘占用和回收超过 24 小时未使用的构建缓存：
+
+```bash
+docker system df
+docker builder prune --all --filter until=24h
+```
+
+该命令针对构建缓存，不删除应用镜像或数据库卷。近期构建缓存保留，方便后续增量构建。
+
 ## 文档
 
 - [需求说明](docs/01-requirements.md)

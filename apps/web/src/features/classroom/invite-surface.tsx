@@ -9,11 +9,17 @@ import { useConsumeInvitation } from "@/components/providers/query-hooks"
 
 export function InviteSurface({ token }: { token: string }): React.ReactElement {
   const consumeInvitation = useConsumeInvitation(token)
+  const hasToken = token.length > 0
   const [result, setResult] = useState<Awaited<ReturnType<typeof consumeInvitation.mutateAsync>> | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const handleActivate = async () => {
     setError(null)
+    if (!hasToken) {
+      setError("邀请链接无效，请联系班主任重新生成。")
+      return
+    }
+
     try {
       const next = await consumeInvitation.mutateAsync({ deviceName: "教师端" })
       setResult(next)
@@ -53,8 +59,9 @@ export function InviteSurface({ token }: { token: string }): React.ReactElement 
           <p className="mt-2 break-all text-xs text-[#8190a8]">Token {token.slice(0, 6)}…</p>
         </div>
         <div className="mt-6 flex gap-3 rounded-2xl border border-[#e0eaf6] px-4 py-3"><ShieldCheck className="mt-0.5 size-5 shrink-0 text-[#0a59f7]" aria-hidden="true" /><p className="text-sm leading-6 text-[#5e7190]">确认后将通过后端验证邀请并激活教师身份。</p></div>
+        {!hasToken && !error ? <Alert className="mt-5" type="error" showIcon title="邀请无法使用" description="邀请链接无效，请联系班主任重新生成。" /> : null}
         {error ? <Alert className="mt-5" type="error" showIcon title="邀请无法使用" description={error} /> : null}
-        <button type="button" disabled={consumeInvitation.isPending} onClick={() => void handleActivate()} className="mt-6 flex min-h-13 w-full items-center justify-center gap-2 rounded-full bg-[#0a59f7] px-4 text-sm font-semibold text-white shadow-lg shadow-[#0a59f7]/20 hover:bg-[#084bd4] disabled:cursor-not-allowed disabled:opacity-60">
+        <button type="button" disabled={!hasToken || consumeInvitation.isPending} onClick={() => void handleActivate()} className="mt-6 flex min-h-13 w-full items-center justify-center gap-2 rounded-full bg-[#0a59f7] px-4 text-sm font-semibold text-white shadow-lg shadow-[#0a59f7]/20 hover:bg-[#084bd4] disabled:cursor-not-allowed disabled:opacity-60">
           {consumeInvitation.isPending ? <Spin size="small" /> : <><span>确认并激活</span><ArrowRight className="size-4" aria-hidden="true" /></>}
         </button>
         <Link href="/" className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-[#d5e1f1] px-4 text-sm font-medium text-[#526887] hover:border-[#0a59f7] hover:text-[#0a59f7]"><Link2 className="size-4" aria-hidden="true" />返回首页</Link>

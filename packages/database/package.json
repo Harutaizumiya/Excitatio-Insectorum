@@ -24,11 +24,11 @@
     "postinstall": "node scripts/sync-sqlite-schema.mjs && node scripts/run-sqlite-prisma.mjs generate --schema prisma/sqlite/schema.prisma"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.0"
+    "@prisma/client": "^6.19.0",
+    "prisma": "^6.19.0"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
-    "prisma": "^6.19.0",
     "typescript": "^5.9.2"
   }
 }
