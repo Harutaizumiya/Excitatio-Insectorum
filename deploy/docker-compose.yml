@@ -16,13 +16,6 @@ services:
     networks:
       - panel
 
-  web:
-    image: excitatio-insectorum-web:latest
-    container_name: excitatio-insectorum-web
-    restart: unless-stopped
-    ports:
-      - '127.0.0.1:3001:3001'
-
 networks:
   panel:
     external: true

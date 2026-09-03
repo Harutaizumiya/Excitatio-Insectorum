@@ -4,7 +4,7 @@
 
 课序是面向班主任、任课教师和班级大屏的课堂管理应用。当前采用 pnpm workspace + Turborepo，前端为 Next.js 16 / React 19，后端为 NestJS 11 模块化单体，通过 REST API 与 Socket.IO 通信，Prisma 管理持久化。
 
-本次以 2026-09-03 工作区（基准提交 `31b3cef`）为准。部署配置启动一个 NestJS 进程和一个 Next.js 进程，由 OpenResty 反向代理；部署数据库配置使用 SQLite，另保留 PostgreSQL schema 和命令。前端当前 Provider 固定使用 API，部分旧说明中的默认 mock 模式已不符合实现。
+本次以 2026-09-03 工作区（基准提交 `31b3cef`）为准。生产部署启动一个 NestJS 进程，由 OpenResty 托管 Next.js 静态导出产物；部署数据库配置使用 SQLite，另保留 PostgreSQL schema 和命令。前端当前 Provider 固定使用 API，部分旧说明中的默认 mock 模式已不符合实现。
 
 ## Modules
 
