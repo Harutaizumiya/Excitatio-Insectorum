@@ -15,7 +15,7 @@
 ## 2. 前端技术基线
 
 ```text
-Next.js
+Vite
 React
 TypeScript
 Refine Core
@@ -1037,7 +1037,7 @@ Motion:
 
 ### Phase 1：公共基础
 
-- Next.js。
+- Vite SPA。
 - Auth。
 - API Client。
 - TanStack Query。
