@@ -44,11 +44,16 @@ function parseDuration(duration: string): number {
   const value = parseInt(match[1]!, 10);
   const unit = match[2]!;
   switch (unit) {
-    case 's': return value;
-    case 'm': return value * 60;
-    case 'h': return value * 3600;
-    case 'd': return value * 86400;
-    default: return value;
+    case 's':
+      return value;
+    case 'm':
+      return value * 60;
+    case 'h':
+      return value * 3600;
+    case 'd':
+      return value * 86400;
+    default:
+      return value;
   }
 }
 
@@ -193,9 +198,7 @@ export class AuthService {
   }
 
   private async createSession(userId: string, clientType: SessionClientType): Promise<TokenPair> {
-    return prisma.$transaction((tx) =>
-      this.createSessionInTransaction(tx, userId, clientType),
-    );
+    return prisma.$transaction((tx) => this.createSessionInTransaction(tx, userId, clientType));
   }
 
   private async createSessionInTransaction(

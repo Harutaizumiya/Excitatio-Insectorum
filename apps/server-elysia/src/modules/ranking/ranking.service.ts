@@ -45,7 +45,9 @@ export function previousPeriod(period: RankingPeriod): RankingPeriod {
   };
 }
 
-export function rankStudentTotals(students: Array<{ studentId: string; name: string; score: number }>): RankedStudent[] {
+export function rankStudentTotals(
+  students: Array<{ studentId: string; name: string; score: number }>,
+): RankedStudent[] {
   const sorted = [...students].sort((left, right) => {
     if (left.score !== right.score) return right.score - left.score;
     return left.studentId < right.studentId ? -1 : left.studentId > right.studentId ? 1 : 0;

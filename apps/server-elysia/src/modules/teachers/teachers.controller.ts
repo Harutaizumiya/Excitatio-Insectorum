@@ -1,7 +1,14 @@
 import { Elysia, t } from 'elysia';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { hash } from 'bcryptjs';
-import { InvitationStatus, Prisma, PrismaClient, RelationStatus, TeacherRole, UserStatus } from '@prisma/client';
+import {
+  InvitationStatus,
+  Prisma,
+  PrismaClient,
+  RelationStatus,
+  TeacherRole,
+  UserStatus,
+} from '@prisma/client';
 import { prismaPlugin } from '../../plugins/prisma';
 import { authPlugin } from '../../plugins/auth';
 import { BusinessError } from '../../plugins/error-handler';

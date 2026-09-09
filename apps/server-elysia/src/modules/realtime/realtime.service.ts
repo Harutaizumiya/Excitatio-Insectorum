@@ -3,10 +3,7 @@ import type { Server as HTTPServer } from 'node:http';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../../plugins/prisma';
 import { config } from '../../config';
-import {
-  classRoomName,
-  type ClassRealtimeEvent,
-} from './realtime.types';
+import { classRoomName, type ClassRealtimeEvent } from './realtime.types';
 import { PrincipalType, type AccessTokenClaims } from '../../plugins/auth';
 
 export class RealtimeService {

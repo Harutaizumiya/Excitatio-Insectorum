@@ -1,4 +1,10 @@
-import { type Prisma, RelationStatus, ScoreRecordType, StudentStatus, TeacherRole } from '@prisma/client';
+import {
+  type Prisma,
+  RelationStatus,
+  ScoreRecordType,
+  StudentStatus,
+  TeacherRole,
+} from '@prisma/client';
 import { prisma } from '../../plugins/prisma';
 import { BusinessError } from '../../plugins/error-handler';
 import { ClassEventType } from '../realtime/realtime.types';
@@ -34,7 +40,13 @@ export class ScoresService {
   async createRule(
     classId: string,
     operatorId: string,
-    dto: { name: string; delta: number; group?: string; description?: string; systemPolicyKey?: string },
+    dto: {
+      name: string;
+      delta: number;
+      group?: string;
+      description?: string;
+      systemPolicyKey?: string;
+    },
   ) {
     if (!Number.isInteger(dto.delta) || dto.delta === 0) {
       throw new BusinessError('INVALID_SCORE_DELTA', '积分值必须为非 0 整数', 400);
@@ -63,7 +75,14 @@ export class ScoresService {
     classId: string,
     ruleId: string,
     operatorId: string,
-    dto: { name?: string; delta?: number; group?: string; description?: string; systemPolicyKey?: string; enabled?: boolean },
+    dto: {
+      name?: string;
+      delta?: number;
+      group?: string;
+      description?: string;
+      systemPolicyKey?: string;
+      enabled?: boolean;
+    },
   ) {
     await this.assertClassAccess(operatorId, classId, [TeacherRole.HEAD_TEACHER]);
     if (dto.delta !== undefined && (!Number.isInteger(dto.delta) || dto.delta === 0)) {

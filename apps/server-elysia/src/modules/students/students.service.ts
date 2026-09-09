@@ -32,7 +32,9 @@ export class StudentsService {
     const access = await this.assertAccess(userId, classId);
     const page = Math.max(1, Number(query.page || 1));
     const pageSize = Math.min(100, Math.max(1, Number(query.pageSize || 20)));
-    const includeDeleted = Boolean(query.includeDeleted && access.role === TeacherRole.HEAD_TEACHER);
+    const includeDeleted = Boolean(
+      query.includeDeleted && access.role === TeacherRole.HEAD_TEACHER,
+    );
 
     const where: Prisma.StudentWhereInput = {
       classId,
@@ -40,10 +42,7 @@ export class StudentsService {
       ...(query.status ? { status: query.status } : {}),
       ...(query.keyword
         ? {
-            OR: [
-              { name: { contains: query.keyword } },
-              { studentNo: { contains: query.keyword } },
-            ],
+            OR: [{ name: { contains: query.keyword } }, { studentNo: { contains: query.keyword } }],
           }
         : {}),
     };

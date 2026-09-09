@@ -30,7 +30,8 @@ export const config: AppConfig = {
   invitationExpiresIn: process.env.INVITATION_EXPIRES_IN || '24h',
   deviceAccessExpiresIn: process.env.DEVICE_ACCESS_EXPIRES_IN || '30m',
   deviceBindingSecret:
-    process.env.DEVICE_BINDING_ENCRYPTION_SECRET || 'replace-with-a-third-32-character-random-secret',
+    process.env.DEVICE_BINDING_ENCRYPTION_SECRET ||
+    'replace-with-a-third-32-character-random-secret',
   corsOrigins: (process.env.CORS_ORIGIN || 'http://localhost:3001,http://localhost:3002')
     .split(',')
     .map((origin) => origin.trim())

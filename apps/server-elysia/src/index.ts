@@ -1,4 +1,5 @@
 import { Elysia } from 'elysia';
+import http from 'node:http';
 import { cors } from '@elysiajs/cors';
 import { swagger } from '@elysiajs/swagger';
 import { node } from '@elysiajs/node';
@@ -74,23 +75,83 @@ export const app = baseApp.group('/api/v1', (group) =>
     .use(displaysController),
 );
 
-// Start server and attach Socket.IO
-app.listen(config.port, (server) => {
-  const nodeServer =
-    (server as unknown as { node?: { server?: import('node:http').Server } })?.node?.server ||
-    (server as unknown as { raw?: { node?: { server?: import('node:http').Server } } })?.raw?.node
-      ?.server;
-  if (nodeServer) {
-    realtimeService.attach(nodeServer);
-  } else {
-    console.warn(
-      '⚠️ Underlying Node HTTP server not found, Socket.IO could not attach to HTTP listener directly',
-    );
-  }
+// Dual-runtime server bootstrap (Bun and Node.js)
+if (isBun) {
+  // Under Bun, use native node:http wrapper so Socket.IO attaches smoothly
+  const bunServer = http.createServer(async (req, res) => {
+    if (req.url?.startsWith('/socket.io')) return;
 
-  console.log(`🚀 Elysia standalone server running at http://localhost:${config.port}`);
-  if (config.swaggerEnabled) {
-    console.log(`📖 Swagger docs available at http://localhost:${config.port}/api/docs`);
-  }
-  console.log(`⚡ Runtime engine: ${isBun ? 'Bun' : `Node.js (${process.version})`}`);
-});
+    const url = `http://${req.headers.host || 'localhost'}${req.url}`;
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (value) {
+        if (Array.isArray(value)) {
+          value.forEach((v) => headers.append(key, v));
+        } else {
+          headers.set(key, value);
+        }
+      }
+    }
+
+    const method = req.method || 'GET';
+    const hasBody = method !== 'GET' && method !== 'HEAD';
+
+    const request = new Request(url, {
+      method,
+      headers,
+      body: hasBody ? req : undefined,
+      duplex: hasBody ? 'half' : undefined,
+    } as RequestInit);
+
+    const response = await app.handle(request);
+
+    res.statusCode = response.status;
+    for (const [key, value] of response.headers.entries()) {
+      res.setHeader(key, value);
+    }
+
+    if (!response.body) {
+      res.end();
+      return;
+    }
+
+    const reader = response.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+    res.end();
+  });
+
+  realtimeService.attach(bunServer);
+
+  bunServer.listen(config.port, () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const bunVersion = (globalThis as any).Bun?.version || 'unknown';
+    console.log(`🚀 Elysia standalone server running on Bun at http://localhost:${config.port}`);
+    if (config.swaggerEnabled) {
+      console.log(`📖 Swagger docs available at http://localhost:${config.port}/api/docs`);
+    }
+    console.log(`⚡ Runtime engine: Bun (v${bunVersion})`);
+  });
+} else {
+  // Under Node.js
+  app.listen(config.port, (server) => {
+    const nodeServer =
+      (server as unknown as { node?: { server?: import('node:http').Server } })?.node?.server ||
+      (server as unknown as { raw?: { node?: { server?: import('node:http').Server } } })?.raw?.node
+        ?.server;
+    if (nodeServer) {
+      realtimeService.attach(nodeServer);
+    }
+
+    console.log(
+      `🚀 Elysia standalone server running on Node.js at http://localhost:${config.port}`,
+    );
+    if (config.swaggerEnabled) {
+      console.log(`📖 Swagger docs available at http://localhost:${config.port}/api/docs`);
+    }
+    console.log(`⚡ Runtime engine: Node.js (${process.version})`);
+  });
+}

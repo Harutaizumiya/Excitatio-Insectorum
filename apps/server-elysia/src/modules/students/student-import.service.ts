@@ -386,7 +386,11 @@ export class StudentImportService {
       .slice(file.originalname.lastIndexOf('.'))
       .toLocaleLowerCase();
     if (!(SUPPORTED_IMPORT_EXTENSIONS as readonly string[]).includes(extension)) {
-      throw new BusinessError('STUDENT_IMPORT_FILE_TYPE_UNSUPPORTED', '仅支持 .xlsx 和 .csv 文件', 400);
+      throw new BusinessError(
+        'STUDENT_IMPORT_FILE_TYPE_UNSUPPORTED',
+        '仅支持 .xlsx 和 .csv 文件',
+        400,
+      );
     }
 
     const manualMapping = parseMappingInput(mappingInput);
@@ -401,7 +405,10 @@ export class StudentImportService {
         header = candidateHeader;
         break;
       } catch (error) {
-        if (!(error instanceof BusinessError) || error.code !== 'STUDENT_IMPORT_NAME_COLUMN_NOT_FOUND') {
+        if (
+          !(error instanceof BusinessError) ||
+          error.code !== 'STUDENT_IMPORT_NAME_COLUMN_NOT_FOUND'
+        ) {
           throw error;
         }
       }

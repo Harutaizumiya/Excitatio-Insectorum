@@ -9,11 +9,11 @@
 ```mermaid
 flowchart TD
     Client["前端客户端 (Vite / Next.js SPA)"] -->|"统一请求入口 (:3003 或 :3000)"| Elysia["Elysia 网关服务"]
-    
+
     Elysia --> Match{"路由是否已在 Elysia 迁移?"}
     Match -->|"是 (Hit)"| Native["Elysia 原生处理 (响应头: X-Served-By: Elysia)"]
     Match -->|"否 (404 Fallback)"| Proxy["透明反向代理 (响应头: X-Proxied-By: Elysia-Strangler)"]
-    
+
     Native --> Prisma["@repo/database (Prisma 共享数据层)"]
     Proxy -->|"转发请求"| NestJS["传统 NestJS 后端 (:3000)"]
     NestJS --> Prisma

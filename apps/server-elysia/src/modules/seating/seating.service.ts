@@ -74,9 +74,7 @@ export class SeatingService {
       throw new BusinessError('CLASSROOM_NOT_FOUND', '班级不存在', 404);
     }
 
-    const studentIds = dto.seats
-      .map((s) => s.studentId)
-      .filter((id): id is string => Boolean(id));
+    const studentIds = dto.seats.map((s) => s.studentId).filter((id): id is string => Boolean(id));
 
     // Check bounds
     for (const seat of dto.seats) {
@@ -86,11 +84,7 @@ export class SeatingService {
         seat.colIndex < 0 ||
         seat.colIndex >= classroom.gridCols
       ) {
-        throw new BusinessError(
-          'SEAT_POSITION_OUT_OF_BOUNDS',
-          '座位坐标超出班级网格范围',
-          400,
-        );
+        throw new BusinessError('SEAT_POSITION_OUT_OF_BOUNDS', '座位坐标超出班级网格范围', 400);
       }
     }
 

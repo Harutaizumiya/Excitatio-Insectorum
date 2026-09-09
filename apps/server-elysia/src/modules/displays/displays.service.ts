@@ -112,14 +112,14 @@ export class DisplaysService {
     }
 
     if (!code) {
-      throw new BusinessError(
-        'BINDING_CODE_UNAVAILABLE',
-        '暂时无法生成绑定码，请稍后重试',
-        503,
-      );
+      throw new BusinessError('BINDING_CODE_UNAVAILABLE', '暂时无法生成绑定码，请稍后重试', 503);
     }
 
-    await redisService.setJson(this.bindingSessionKey(bindingSessionId), state, BINDING_TTL_SECONDS);
+    await redisService.setJson(
+      this.bindingSessionKey(bindingSessionId),
+      state,
+      BINDING_TTL_SECONDS,
+    );
     return { code, expiresAt, bindingSessionId, nonce };
   }
 
@@ -132,11 +132,7 @@ export class DisplaysService {
     await this.enforceBindingAttemptRateLimit(actorId, classId, clientAddress);
     const consumed = await redisService.client.getdel(this.bindingCodeKey(input.code));
     if (!consumed) {
-      throw new BusinessError(
-        'BINDING_CODE_INVALID',
-        '绑定码无效、已过期或已被使用',
-        410,
-      );
+      throw new BusinessError('BINDING_CODE_INVALID', '绑定码无效、已过期或已被使用', 410);
     }
 
     const bindingState = this.parseBindingState(consumed);
@@ -186,18 +182,10 @@ export class DisplaysService {
     const key = this.bindingSessionKey(bindingSessionId);
     const session = await redisService.getJson<BindingSession>(key);
     if (!session || session.bindingSessionId !== bindingSessionId) {
-      throw new BusinessError(
-        'BINDING_SESSION_NOT_FOUND',
-        '绑定会话不存在或已过期',
-        404,
-      );
+      throw new BusinessError('BINDING_SESSION_NOT_FOUND', '绑定会话不存在或已过期', 404);
     }
     if (!this.safeEqualNonce(session.nonceHash, nonce)) {
-      throw new BusinessError(
-        'BINDING_SESSION_FORBIDDEN',
-        '绑定会话校验失败',
-        403,
-      );
+      throw new BusinessError('BINDING_SESSION_FORBIDDEN', '绑定会话校验失败', 403);
     }
     if (session.status === 'PENDING') {
       return { status: 'PENDING' };
@@ -205,11 +193,7 @@ export class DisplaysService {
 
     const consumed = await redisService.client.getdel(key);
     if (!consumed) {
-      throw new BusinessError(
-        'BINDING_CREDENTIAL_ALREADY_CLAIMED',
-        '设备凭证已被领取',
-        410,
-      );
+      throw new BusinessError('BINDING_CREDENTIAL_ALREADY_CLAIMED', '设备凭证已被领取', 410);
     }
     const ready = this.parseBindingState(consumed);
     if (ready.status !== 'READY') {
@@ -253,11 +237,7 @@ export class DisplaysService {
       }
     }
     if (!device || !valid) {
-      throw new BusinessError(
-        'INVALID_DEVICE_CREDENTIAL',
-        '设备不存在、已吊销或凭证错误',
-        401,
-      );
+      throw new BusinessError('INVALID_DEVICE_CREDENTIAL', '设备不存在、已吊销或凭证错误', 401);
     }
 
     const expiresIn = this.parseDurationSeconds(config.deviceAccessExpiresIn);
@@ -301,11 +281,7 @@ export class DisplaysService {
         data: { status: DeviceStatus.REVOKED, revokedAt: now },
       });
       if (revoked.count !== 1) {
-        throw new BusinessError(
-          'DISPLAY_DEVICE_NOT_FOUND',
-          '大屏设备不存在或已吊销',
-          404,
-        );
+        throw new BusinessError('DISPLAY_DEVICE_NOT_FOUND', '大屏设备不存在或已吊销', 404);
       }
       await transaction.deviceCredential.updateMany({
         where: { deviceId, revokedAt: null },
@@ -350,11 +326,7 @@ export class DisplaysService {
     ]);
 
     if (!device) {
-      throw new BusinessError(
-        'DISPLAY_DEVICE_REVOKED',
-        '设备未绑定或已吊销',
-        401,
-      );
+      throw new BusinessError('DISPLAY_DEVICE_REVOKED', '设备未绑定或已吊销', 401);
     }
     if (!classroom) {
       throw new BusinessError('CLASS_NOT_FOUND', '班级不存在', 404);
@@ -439,11 +411,7 @@ export class DisplaysService {
     }
 
     if (!code) {
-      throw new BusinessError(
-        'BINDING_CODE_UNAVAILABLE',
-        '暂时无法生成绑定码，请稍后重试',
-        503,
-      );
+      throw new BusinessError('BINDING_CODE_UNAVAILABLE', '暂时无法生成绑定码，请稍后重试', 503);
     }
 
     await redisService.setJson(
@@ -461,11 +429,7 @@ export class DisplaysService {
     await this.enforceBindingCodeRateLimit(clientAddress);
     const consumed = await redisService.client.getdel(this.classroomBindingCodeKey(input.code));
     if (!consumed) {
-      throw new BusinessError(
-        'BINDING_CODE_INVALID',
-        '绑定码无效、已过期或已被使用',
-        410,
-      );
+      throw new BusinessError('BINDING_CODE_INVALID', '绑定码无效、已过期或已被使用', 410);
     }
 
     interface StateShape {
@@ -600,11 +564,7 @@ export class DisplaysService {
       await redisService.client.expire(key, BINDING_RATE_WINDOW_SECONDS);
     }
     if (count > BINDING_RATE_LIMIT) {
-      throw new BusinessError(
-        'BINDING_CODE_RATE_LIMITED',
-        '绑定码请求过于频繁，请稍后重试',
-        429,
-      );
+      throw new BusinessError('BINDING_CODE_RATE_LIMITED', '绑定码请求过于频繁，请稍后重试', 429);
     }
   }
 
@@ -681,9 +641,7 @@ export class DisplaysService {
   }
 
   private bindingEncryptionKey(): Buffer {
-    return createHash('sha256')
-      .update(config.deviceBindingSecret)
-      .digest();
+    return createHash('sha256').update(config.deviceBindingSecret).digest();
   }
 
   private parseBindingState(serialized: string): BindingSession {

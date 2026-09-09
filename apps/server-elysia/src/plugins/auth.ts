@@ -64,7 +64,11 @@ export const authPlugin = new Elysia({ name: 'plugin.auth' })
           user: null,
           displayDevice: null,
           principal: null,
-          authError: { code: 'DEVICE_ACCESS_REVOKED', message: '大屏设备凭证已经失效', status: 401 },
+          authError: {
+            code: 'DEVICE_ACCESS_REVOKED',
+            message: '大屏设备凭证已经失效',
+            status: 401,
+          },
         };
       }
       return {
@@ -155,4 +159,3 @@ export const authPlugin = new Elysia({ name: 'plugin.auth' })
       };
     },
   });
-

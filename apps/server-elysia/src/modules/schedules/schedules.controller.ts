@@ -23,7 +23,11 @@ export const schedulesController = new Elysia({ prefix: '/classes/:classId/sched
     '',
     async ({ user, params: { classId }, body }) => {
       await studentsService.assertAccess(user!.sub, classId, [TeacherRole.HEAD_TEACHER]);
-      const data = await schedulesService.save(user!.sub, classId, body as unknown as SaveScheduleInput);
+      const data = await schedulesService.save(
+        user!.sub,
+        classId,
+        body as unknown as SaveScheduleInput,
+      );
       return { data };
     },
     {

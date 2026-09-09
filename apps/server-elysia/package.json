@@ -6,10 +6,12 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "bun --watch src/index.ts",
     "dev:bun": "bun --watch src/index.ts",
-    "start": "node dist/index.js",
-    "build": "node scripts/build.mjs && tsc --noEmit",
+    "dev:node": "tsx watch src/index.ts",
+    "start": "bun dist/index.js",
+    "start:node": "node dist/index.js",
+    "build": "bun scripts/build.mjs && tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "lint:fix": "eslint \"src/**/*.ts\" --fix",
     "typecheck": "tsc --noEmit"

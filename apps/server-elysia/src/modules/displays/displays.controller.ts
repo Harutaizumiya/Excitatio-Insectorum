@@ -50,7 +50,10 @@ export const displaysController = new Elysia()
       .get(
         '/bootstrap',
         async ({ displayDevice }) => {
-          const data = await displaysService.getBootstrap(displayDevice!.sub, displayDevice!.classId);
+          const data = await displaysService.getBootstrap(
+            displayDevice!.sub,
+            displayDevice!.classId,
+          );
           return { data };
         },
         {
