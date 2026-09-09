@@ -48,7 +48,10 @@ export class CommitteeAssignmentInputDto {
 export class UpdateCommitteeDto {
   @ApiProperty({ type: [CommitteeAssignmentInputDto] })
   @IsArray()
-  @ArrayUnique((assignment: CommitteeAssignmentInputDto) => `${assignment.studentId}:${assignment.role}:${assignment.termStartAt}`)
+  @ArrayUnique(
+    (assignment: CommitteeAssignmentInputDto) =>
+      `${assignment.studentId}:${assignment.role}:${assignment.termStartAt}`,
+  )
   @ValidateNested({ each: true })
   @Type(() => CommitteeAssignmentInputDto)
   assignments: CommitteeAssignmentInputDto[];

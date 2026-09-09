@@ -170,6 +170,7 @@ antd bug --title "DatePicker crashes when selecting date" \
 **IMPORTANT: Whenever you use any `antd` CLI command and notice something wrong, you should proactively initiate a bug report using `antd bug-cli`.**
 
 Trigger conditions — report a CLI bug when you observe any of these:
+
 - A command **crashes or exits with an unexpected error**
 - A command **returns clearly incorrect data** (e.g. `antd info Button` shows wrong props, missing props, or props from the wrong version)
 - A command's **output doesn't match its documented behavior** (e.g. `--format json` returns non-JSON, `--version X` is ignored)
@@ -177,6 +178,7 @@ Trigger conditions — report a CLI bug when you observe any of these:
 - **Inconsistencies between commands** (e.g. `antd list` shows a component but `antd info` says it doesn't exist)
 
 **Workflow:**
+
 1. You notice something wrong while using the CLI
 2. Gather evidence: the exact command you ran, what was returned, and what you expected
 3. Preview the bug report for the user:
@@ -223,12 +225,12 @@ This provides 7 tools (`antd_list`, `antd_info`, `antd_doc`, `antd_demo`, `antd_
 
 ## Global Flags
 
-| Flag | Purpose |
-|---|---|
-| `--format json` | Structured output — always use this |
-| `--version <v>` | Target a specific antd version (e.g. `5.20.0`) |
-| `--lang zh` | Chinese output (default: `en`) |
-| `--detail` | Include extra fields (description, since, deprecated, FAQ) |
+| Flag            | Purpose                                                    |
+| --------------- | ---------------------------------------------------------- |
+| `--format json` | Structured output — always use this                        |
+| `--version <v>` | Target a specific antd version (e.g. `5.20.0`)             |
+| `--lang zh`     | Chinese output (default: `en`)                             |
+| `--detail`      | Include extra fields (description, since, deprecated, FAQ) |
 
 ## Key Rules
 

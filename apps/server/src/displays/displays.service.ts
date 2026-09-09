@@ -399,7 +399,7 @@ export class DisplaysService {
           classroom.currentLayout?.seats.map((seat) => ({
             row: seat.rowIndex,
             col: seat.colIndex,
-            cellType: seat.cellType?.toLowerCase() ?? "seat",
+            cellType: seat.cellType?.toLowerCase() ?? 'seat',
             student:
               seat.student?.status === StudentStatus.ACTIVE
                 ? { id: seat.student.id, name: seat.student.name }
@@ -714,10 +714,7 @@ export class DisplaysService {
       select: { id: true, name: true },
     });
 
-    const ttlSeconds = Math.max(
-      1,
-      Math.ceil((Date.parse(state.expiresAt) - Date.now()) / 1000),
-    );
+    const ttlSeconds = Math.max(1, Math.ceil((Date.parse(state.expiresAt) - Date.now()) / 1000));
     const readyState = {
       ...state,
       status: 'READY' as const,

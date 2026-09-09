@@ -36,7 +36,13 @@ export function fixedRankDelta(rank: number, maxRank: number, firstDelta: number
 
 export function roleBonus(role: string): number {
   const normalized = role.trim();
-  if (normalized === '班长' || normalized === '团支书' || normalized === '劳动委员' || normalized === '纪律委员') return 10;
+  if (
+    normalized === '班长' ||
+    normalized === '团支书' ||
+    normalized === '劳动委员' ||
+    normalized === '纪律委员'
+  )
+    return 10;
   if (normalized === '学习委员' || normalized === '课代表' || normalized === '网管') return 4;
   if (normalized === '寝室长') return 3;
   return 5;

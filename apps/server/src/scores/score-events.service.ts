@@ -64,14 +64,25 @@ export class ScoreEventsService {
         select: { teacherId: true, subject: true },
       });
       if (!operator) {
-        throw new BusinessException('FORBIDDEN_CLASS_ACCESS', '当前教师在该班级没有有效关系', HttpStatus.FORBIDDEN);
+        throw new BusinessException(
+          'FORBIDDEN_CLASS_ACCESS',
+          '当前教师在该班级没有有效关系',
+          HttpStatus.FORBIDDEN,
+        );
       }
 
       if (dto.businessKey) {
-        const existing = await tx.scoreEvent.findUnique({ where: { businessKey: dto.businessKey }, include: eventInclude });
+        const existing = await tx.scoreEvent.findUnique({
+          where: { businessKey: dto.businessKey },
+          include: eventInclude,
+        });
         if (existing) {
           if (existing.classId !== classId) {
-            throw new BusinessException('SCORE_EVENT_BUSINESS_KEY_CONFLICT', '事件业务键已被其他班级使用', HttpStatus.CONFLICT);
+            throw new BusinessException(
+              'SCORE_EVENT_BUSINESS_KEY_CONFLICT',
+              '事件业务键已被其他班级使用',
+              HttpStatus.CONFLICT,
+            );
           }
           return existing;
         }
@@ -82,7 +93,11 @@ export class ScoreEventsService {
         select: { id: true },
       });
       if (students.length !== dto.studentIds.length) {
-        throw new BusinessException('STUDENT_NOT_FOUND', '事件学生必须是本班在班学生', HttpStatus.NOT_FOUND);
+        throw new BusinessException(
+          'STUDENT_NOT_FOUND',
+          '事件学生必须是本班在班学生',
+          HttpStatus.NOT_FOUND,
+        );
       }
 
       const deltas = await this.calculateDeltas(tx, classId, period.id, occurredAt, dto);
@@ -137,13 +152,18 @@ export class ScoreEventsService {
 
     if (result.scoreRecords.length > 0) {
       await Promise.allSettled([
-        ...result.scoreRecords.map((record) => this.realtime.publishClassEvent(classId, {
-          id: randomUUID(),
-          type: ClassEventType.SCORE_CHANGED,
-          classId,
-          occurredAt: new Date().toISOString(),
-          payload: { studentId: record.studentId, direction: record.delta > 0 ? 'INCREASE' : 'DECREASE' },
-        })),
+        ...result.scoreRecords.map((record) =>
+          this.realtime.publishClassEvent(classId, {
+            id: randomUUID(),
+            type: ClassEventType.SCORE_CHANGED,
+            classId,
+            occurredAt: new Date().toISOString(),
+            payload: {
+              studentId: record.studentId,
+              direction: record.delta > 0 ? 'INCREASE' : 'DECREASE',
+            },
+          }),
+        ),
         this.realtime.publishClassEvent(classId, {
           id: randomUUID(),
           type: ClassEventType.RANKING_CHANGED,
@@ -158,9 +178,16 @@ export class ScoreEventsService {
 
   private validateEventInput(dto: CreateScoreEventDto): void {
     if (systemEventTypes.has(dto.type)) {
-      throw new BusinessException('SCORE_EVENT_SYSTEM_ONLY', '该事件由周期结算生成', HttpStatus.BAD_REQUEST);
+      throw new BusinessException(
+        'SCORE_EVENT_SYSTEM_ONLY',
+        '该事件由周期结算生成',
+        HttpStatus.BAD_REQUEST,
+      );
     }
-    if (dto.type === ScoreEventType.LATE && (!Number.isInteger(dto.minutesLate) || dto.minutesLate! < 1)) {
+    if (
+      dto.type === ScoreEventType.LATE &&
+      (!Number.isInteger(dto.minutesLate) || dto.minutesLate! < 1)
+    ) {
       throw new BusinessException('INVALID_SCORE_EVENT_VALUE', '迟到分钟数必须为正整数');
     }
     const rankTypes = new Set<ScoreEventType>([
@@ -175,23 +202,33 @@ export class ScoreEventsService {
     if (rankTypes.has(dto.type) && !Number.isInteger(dto.rank)) {
       throw new BusinessException('INVALID_SCORE_EVENT_RANK', '名次不能为空');
     }
-    const maxRank = dto.type === ScoreEventType.EXAM_GRADE_TOP10
-      ? 10
-      : dto.type === ScoreEventType.SPORTS_FINAL_TOP8
-        ? 8
-        : dto.type === ScoreEventType.NOISIEST_CLASS_TOP3 || dto.type === ScoreEventType.SUBJECT_TOP3
-          ? 3
-          : 3;
+    const maxRank =
+      dto.type === ScoreEventType.EXAM_GRADE_TOP10
+        ? 10
+        : dto.type === ScoreEventType.SPORTS_FINAL_TOP8
+          ? 8
+          : dto.type === ScoreEventType.NOISIEST_CLASS_TOP3 ||
+              dto.type === ScoreEventType.SUBJECT_TOP3
+            ? 3
+            : 3;
     if (rankTypes.has(dto.type) && (dto.rank! < 1 || dto.rank! > maxRank)) {
       throw new BusinessException('INVALID_SCORE_EVENT_RANK', `名次必须在 1-${maxRank} 之间`);
     }
-    if (manualEventTypes.has(dto.type) && (!Number.isInteger(dto.manualDelta) || dto.manualDelta === 0)) {
+    if (
+      manualEventTypes.has(dto.type) &&
+      (!Number.isInteger(dto.manualDelta) || dto.manualDelta === 0)
+    ) {
       throw new BusinessException('INVALID_SCORE_EVENT_VALUE', '教师最终分值必须为非 0 整数');
     }
     if (manualEventTypes.has(dto.type) && (!dto.reason || dto.reason.trim().length === 0)) {
       throw new BusinessException('INVALID_SCORE_EVENT_REASON', '人工登记事件需要填写原因');
     }
-    if (dto.type === ScoreEventType.GROUP_ACTIVITY && !dto.isOrganizer && !dto.specialContribution && !dto.rank) {
+    if (
+      dto.type === ScoreEventType.GROUP_ACTIVITY &&
+      !dto.isOrganizer &&
+      !dto.specialContribution &&
+      !dto.rank
+    ) {
       throw new BusinessException('INVALID_SCORE_EVENT_VALUE', '团体活动需要填写名次或角色');
     }
   }
@@ -214,22 +251,24 @@ export class ScoreEventsService {
           select: { occurredAt: true, participants: { select: { studentId: true } } },
         });
         return dto.studentIds.map((studentId) => {
-          const sameDayCount = events.filter((event) =>
-            getTaipeiDateKey(event.occurredAt) === getTaipeiDateKey(occurredAt) &&
-            event.participants.some((participant) => participant.studentId === studentId),
-          ).length + 1;
+          const sameDayCount =
+            events.filter(
+              (event) =>
+                getTaipeiDateKey(event.occurredAt) === getTaipeiDateKey(occurredAt) &&
+                event.participants.some((participant) => participant.studentId === studentId),
+            ).length + 1;
           return -(2 ** sameDayCount);
         });
       }
       case ScoreEventType.NOISIEST_CLASS_TOP3:
-        return dto.studentIds.map(() => dto.rank === 1 ? -10 : dto.rank === 2 ? -8 : -6);
+        return dto.studentIds.map(() => (dto.rank === 1 ? -10 : dto.rank === 2 ? -8 : -6));
       case ScoreEventType.EXAM_GRADE_TOP10:
         return dto.studentIds.map(() => fixedRankDelta(dto.rank!, 10, 10));
       case ScoreEventType.SUBJECT_TOP3:
         return dto.studentIds.map(() => fixedRankDelta(dto.rank!, 3, 3));
       case ScoreEventType.BLACKBOARD:
       case ScoreEventType.INDIVIDUAL_ACTIVITY:
-        return dto.studentIds.map(() => dto.rank === 1 ? 10 : dto.rank === 2 ? 6 : 0);
+        return dto.studentIds.map(() => (dto.rank === 1 ? 10 : dto.rank === 2 ? 6 : 0));
       case ScoreEventType.SPORTS_FINAL_TOP8:
         return dto.studentIds.map(() => fixedRankDelta(dto.rank!, 8, 10));
       case ScoreEventType.GROUP_ACTIVITY: {
@@ -278,7 +317,10 @@ export class ScoreEventsService {
       periodId: event.periodId,
       occurredAt: event.occurredAt,
       studentIds: event.participants.map((participant) => participant.studentId),
-      records: event.scoreRecords.map((record) => ({ studentId: record.studentId, delta: record.delta })),
+      records: event.scoreRecords.map((record) => ({
+        studentId: record.studentId,
+        delta: record.delta,
+      })),
     };
   }
 }

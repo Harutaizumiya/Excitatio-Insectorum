@@ -58,7 +58,9 @@ export class ScoreRecordsService {
     operatorId: string,
     dto: CreateRuleScoreDto,
   ): Promise<ScoreRecordResponseDto> {
-    const period = this.periods ? await this.periods.ensureCurrentPeriod(classId, operatorId) : null;
+    const period = this.periods
+      ? await this.periods.ensureCurrentPeriod(classId, operatorId)
+      : null;
     const record = await this.prisma.$transaction(async (tx) => {
       const [student, operator, rule] = await Promise.all([
         tx.student.findFirst({
@@ -90,7 +92,9 @@ export class ScoreRecordsService {
           delta: rule.delta,
           reason: null,
           recordType: ScoreRecordType.NORMAL,
-          ...(period ? { periodId: period.id, occurredAt: new Date(), violation: rule.delta < 0 } : {}),
+          ...(period
+            ? { periodId: period.id, occurredAt: new Date(), violation: rule.delta < 0 }
+            : {}),
         },
         include: scoreRecordInclude,
       });
@@ -111,7 +115,9 @@ export class ScoreRecordsService {
       throw new BusinessException('INVALID_SCORE_REASON', '自定义积分原因至少需要 10 个字符');
     }
 
-    const period = this.periods ? await this.periods.ensureCurrentPeriod(classId, operatorId) : null;
+    const period = this.periods
+      ? await this.periods.ensureCurrentPeriod(classId, operatorId)
+      : null;
     const record = await this.prisma.$transaction(async (tx) => {
       const [student, operator] = await Promise.all([
         tx.student.findFirst({
@@ -134,7 +140,9 @@ export class ScoreRecordsService {
           delta: dto.delta,
           reason,
           recordType: ScoreRecordType.NORMAL,
-          ...(period ? { periodId: period.id, occurredAt: new Date(), violation: dto.delta < 0 } : {}),
+          ...(period
+            ? { periodId: period.id, occurredAt: new Date(), violation: dto.delta < 0 }
+            : {}),
         },
         include: scoreRecordInclude,
       });

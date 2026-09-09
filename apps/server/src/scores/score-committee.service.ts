@@ -22,17 +22,26 @@ export class ScoreCommitteeService {
     const keys = new Set<string>();
     for (const assignment of normalized) {
       const key = `${assignment.studentId}:${assignment.role}:${assignment.termStartAt.toISOString()}`;
-      if (keys.has(key)) throw new BusinessException('DUPLICATE_COMMITTEE_ASSIGNMENT', '班委名单存在重复项');
+      if (keys.has(key))
+        throw new BusinessException('DUPLICATE_COMMITTEE_ASSIGNMENT', '班委名单存在重复项');
       keys.add(key);
     }
 
     await this.prisma.$transaction(async (tx) => {
       const students = await tx.student.findMany({
-        where: { classId, id: { in: normalized.map((assignment) => assignment.studentId) }, status: StudentStatus.ACTIVE },
+        where: {
+          classId,
+          id: { in: normalized.map((assignment) => assignment.studentId) },
+          status: StudentStatus.ACTIVE,
+        },
         select: { id: true },
       });
       if (students.length !== new Set(normalized.map((assignment) => assignment.studentId)).size) {
-        throw new BusinessException('STUDENT_NOT_FOUND', '班委必须是本班在班学生', HttpStatus.NOT_FOUND);
+        throw new BusinessException(
+          'STUDENT_NOT_FOUND',
+          '班委必须是本班在班学生',
+          HttpStatus.NOT_FOUND,
+        );
       }
       await tx.classCommitteeAssignment.updateMany({
         where: { classId, status: RelationStatus.ACTIVE },
@@ -62,7 +71,11 @@ export class ScoreCommitteeService {
     const trialEndsAt = assignment.trialEndsAt
       ? new Date(assignment.trialEndsAt)
       : new Date(termStartAt.getTime() + 31 * 24 * 60 * 60 * 1000);
-    if (Number.isNaN(termStartAt.getTime()) || (termEndAt && Number.isNaN(termEndAt.getTime())) || Number.isNaN(trialEndsAt.getTime())) {
+    if (
+      Number.isNaN(termStartAt.getTime()) ||
+      (termEndAt && Number.isNaN(termEndAt.getTime())) ||
+      Number.isNaN(trialEndsAt.getTime())
+    ) {
       throw new BusinessException('INVALID_COMMITTEE_TERM', '班委任期时间无效');
     }
     if ((termEndAt && termEndAt <= termStartAt) || trialEndsAt < termStartAt) {

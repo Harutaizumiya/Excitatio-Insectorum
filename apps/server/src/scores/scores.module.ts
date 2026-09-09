@@ -13,7 +13,19 @@ import { ScorePeriodsService } from './score-periods.service';
 @Module({
   imports: [PrismaModule, RealtimeModule],
   controllers: [ScoreRulesController, ScoreRecordsController, ScorePeriodsController],
-  providers: [ScoreRulesService, ScoreRecordsService, ScorePeriodsService, ScoreEventsService, ScoreCommitteeService],
-  exports: [ScoreRulesService, ScoreRecordsService, ScorePeriodsService, ScoreEventsService, ScoreCommitteeService],
+  providers: [
+    ScoreRulesService,
+    ScoreRecordsService,
+    ScorePeriodsService,
+    ScoreEventsService,
+    ScoreCommitteeService,
+  ],
+  exports: [
+    ScoreRulesService,
+    ScoreRecordsService,
+    ScorePeriodsService,
+    ScoreEventsService,
+    ScoreCommitteeService,
+  ],
 })
 export class ScoresModule {}

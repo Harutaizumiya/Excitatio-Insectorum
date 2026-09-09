@@ -94,7 +94,9 @@ describe('StudentsService student lifecycle', () => {
     await service.list('teacher-1', 'class-1', { includeDeleted: true, page: 1, pageSize: 20 });
 
     expect(prisma.student.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { classId: 'class-1', deletedAt: null, status: undefined } }),
+      expect.objectContaining({
+        where: { classId: 'class-1', deletedAt: null, status: undefined },
+      }),
     );
   });
 
@@ -159,7 +161,11 @@ describe('StudentsService student lifecycle', () => {
     const prisma = {
       student: {
         findFirst: jest.fn(async () => current),
-        update: jest.fn(async () => ({ ...current, status: StudentStatus.ACTIVE, deletedAt: null })),
+        update: jest.fn(async () => ({
+          ...current,
+          status: StudentStatus.ACTIVE,
+          deletedAt: null,
+        })),
       },
     } as unknown as PrismaService;
     const classrooms = {

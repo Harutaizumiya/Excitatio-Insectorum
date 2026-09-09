@@ -22,15 +22,17 @@ describe('ScoreEventsService policy calculations', () => {
     tx: { scoreEvent: { findMany: jest.Mock } },
     dto: CreateScoreEventDto,
   ) {
-    return (service as unknown as {
-      calculateDeltas: (
-        transaction: unknown,
-        classId: string,
-        periodId: string,
-        occurredAt: Date,
-        input: CreateScoreEventDto,
-      ) => Promise<number[]>;
-    }).calculateDeltas(tx, 'class-1', 'period-1', new Date('2026-08-10T02:00:00.000Z'), dto);
+    return (
+      service as unknown as {
+        calculateDeltas: (
+          transaction: unknown,
+          classId: string,
+          periodId: string,
+          occurredAt: Date,
+          input: CreateScoreEventDto,
+        ) => Promise<number[]>;
+      }
+    ).calculateDeltas(tx, 'class-1', 'period-1', new Date('2026-08-10T02:00:00.000Z'), dto);
   }
 
   it.each([
@@ -45,7 +47,11 @@ describe('ScoreEventsService policy calculations', () => {
     [ScoreEventType.BLACKBOARD, { rank: 3 }, [0]],
     [ScoreEventType.INDIVIDUAL_ACTIVITY, { rank: 2 }, [6]],
     [ScoreEventType.SPORTS_FINAL_TOP8, { rank: 8 }, [3]],
-    [ScoreEventType.GROUP_ACTIVITY, { rank: 2, isOrganizer: true, specialContribution: true }, [13]],
+    [
+      ScoreEventType.GROUP_ACTIVITY,
+      { rank: 2, isOrganizer: true, specialContribution: true },
+      [13],
+    ],
     [ScoreEventType.ACTIVITY_NEGATIVE, {}, [-10]],
     [ScoreEventType.HOMEWORK_PRAISE, { manualDelta: 7 }, [7]],
     [ScoreEventType.COMMITTEE_TASK_COMPLETED, {}, [0]],
