@@ -2,6 +2,7 @@ import type { IsoDateTime } from "./domain"
 import { io, type Socket } from "socket.io-client"
 import { getActiveClassId, getDisplaySession, getUserSession } from "./session"
 import { reportBackendUnavailable } from "./api-error"
+import { getApiOrigin } from "./utils"
 
 export interface RealtimeEventPayloads {
   SCORE_CHANGED: {
@@ -119,7 +120,7 @@ export class InMemoryRealtimeBus implements ClassRealtimeClient, ClassRealtimePu
   }
 }
 
-const API_ORIGIN = (process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:3000").replace(/\/$/, "")
+const API_ORIGIN = getApiOrigin()
 
 export class SocketIoRealtimeClient implements ClassRealtimeClient {
   private socket: Socket | undefined
@@ -141,7 +142,8 @@ export class SocketIoRealtimeClient implements ClassRealtimeClient {
 
     this.disconnect()
     this.setStatus("CONNECTING")
-    const socket = io(`${API_ORIGIN}/realtime`, {
+    const socketOrigin = API_ORIGIN || (typeof window !== "undefined" ? window.location.origin : "")
+    const socket = io(`${socketOrigin}/realtime`, {
       auth: { token, classId },
       transports: ["websocket", "polling"],
       reconnection: true,

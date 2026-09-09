@@ -1,7 +1,6 @@
 "use client";
 
-import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { App as AntApp } from "antd";
@@ -553,13 +552,12 @@ function Avatar({ rank }: { rank: 1 | 2 | 3 }): React.ReactElement {
             : "flex size-[54px] items-center justify-center overflow-hidden rounded-full border-[2.5px] border-[#adc6ff] bg-[#f5f7fa] text-[#597ef7] shadow-[0_3px_8px_rgba(22,119,255,0.18)]"
       }
     >
-      <Image
+      <img
         src={imageSource}
         alt=""
         width={imageSize}
         height={imageSize}
         className="size-full rounded-full object-cover"
-        priority={first}
       />
     </div>
   );
@@ -628,7 +626,7 @@ function ProgressPanel({ ranking }: { ranking: DisplayBootstrap["ranking"] }): R
 }
 
 export function DisplaySurface(): React.ReactElement {
-  const router = useRouter();
+  const navigate = useNavigate();
   const service = useClassroomService();
   const realtime = useRealtimeClient();
   const [data, setData] = useState<DisplayBootstrap | null>(null);
@@ -647,7 +645,7 @@ export function DisplaySurface(): React.ReactElement {
   useEffect(() => {
     const session = getDisplaySession();
     if (!session) {
-      router.replace("/display/bind");
+      navigate("/display/bind", { replace: true });
       return;
     }
 
@@ -663,7 +661,7 @@ export function DisplaySurface(): React.ReactElement {
         if (stopped) return;
         if (error instanceof ClassroomServiceError && error.status === 401) {
           clearDisplaySession();
-          router.replace("/display/bind");
+          navigate("/display/bind", { replace: true });
           return;
         }
         setLoadError(error instanceof Error ? error.message : "大屏数据加载失败");
@@ -705,7 +703,7 @@ export function DisplaySurface(): React.ReactElement {
         if (stopped) return;
         if (error instanceof ClassroomServiceError && error.status === 401) {
           clearDisplaySession();
-          router.replace("/display/bind");
+          navigate("/display/bind", { replace: true });
           return;
         }
         setLoadError(error instanceof Error ? error.message : "大屏数据加载失败");
@@ -736,7 +734,7 @@ export function DisplaySurface(): React.ReactElement {
       seatUpdatePendingRef.current = false;
       notification.destroy(SEAT_UPDATE_NOTIFICATION_KEY);
     };
-  }, [notification, realtime, router, service]);
+  }, [navigate, notification, realtime, service]);
 
   if (!data) {
     return (
@@ -771,13 +769,12 @@ export function DisplaySurface(): React.ReactElement {
 
       {/* 2. Floating Centered Top Header Bar */}
       <header className="display-surface__header pointer-events-auto absolute top-5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3.5 rounded-2xl border border-[#e2e4ea] bg-white/95 px-5 py-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.06)] backdrop-blur-md">
-        <Image
+        <img
           src="/logo.png"
           alt="课序 Logo"
           width={28}
           height={28}
           className="size-7 rounded-lg shadow-sm"
-          priority
         />
         <h1 className="display-surface__classroom-name shrink-0 text-[18px] font-bold leading-none text-[#1f1f1f]">{data.classroom.name}</h1>
         <div className="display-surface__header-divider h-4 w-px shrink-0 bg-[#e5e8ee]" />

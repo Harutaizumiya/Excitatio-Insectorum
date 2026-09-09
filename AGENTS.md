@@ -1,9 +1,9 @@
-﻿# Excitatio Insectorum 开发协作规范
+# Excitatio Insectorum 开发协作规范
 
 ## 项目概况
 
 - 这是一个 pnpm + Turborepo monorepo，要求使用 Node.js `>=22` 和 pnpm `11.10.0`。
-- `apps/web`（`@repo/web`）是 Next.js 16 + React 19 前端。
+- `apps/web`（`@repo/web`）是 Vite 8 + React 19 SPA 前端。
 - `apps/server`（`@repo/server`）是 NestJS 模块化单体 REST API 和 Socket.IO 网关。
 - `packages/database`（`@repo/database`）维护 Prisma schema、迁移和共享数据库客户端；`packages/typescript-config` 与 `packages/eslint-config` 提供共享配置。
 - 前端路由分工：`/admin/*` 班主任后台，`/teacher/*` 任课教师端，`/display/*` 班级大屏，`/invite/*` 邀请页，`/display/bind` 大屏绑定页。
@@ -14,7 +14,7 @@
 - 常用命令：`pnpm dev`、`pnpm build`、`pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm format:check`。
 - 修改代码后，至少运行与改动范围对应的 lint、typecheck 或测试；涉及跨包改动时运行根目录命令。
 - 需要数据库客户端时运行 `pnpm db:generate`；默认本地数据库是 SQLite。PostgreSQL 使用带 `:postgresql` 后缀的脚本，不要混用两套生成结果。
-- 前端默认 `NEXT_PUBLIC_DATA_MODE=mock`，联调后端时切换为 `api` 并配置 `NEXT_PUBLIC_API_ORIGIN`；不要为了本地页面直接绕过现有 service/repository 抽象。
+- 前端默认 `VITE_DATA_MODE=mock`（兼容 `NEXT_PUBLIC_DATA_MODE`），联调后端时切换为 `api` 并配置 `VITE_API_ORIGIN`（兼容 `NEXT_PUBLIC_API_ORIGIN`）；不要为了本地页面直接绕过现有 service/repository 抽象。
 - 后端 API 前缀是 `/api/v1`，Swagger（启用时）位于 `/api/docs`，Socket.IO 使用 `/realtime` namespace。
 - 不要重置、覆盖或删除用户已有的未提交修改；只修改当前任务涉及的文件。
 

@@ -1,9 +1,6 @@
-"use client";
-
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowRight } from "lucide-react";
-import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -25,7 +22,7 @@ const loginSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const service = useClassroomService();
   const login = useLogin();
   const [submitting, setSubmitting] = useState(false);
@@ -52,7 +49,7 @@ export default function LoginPage() {
         throw new Error("当前账号尚未分配班级");
       }
       setActiveClassId(classrooms[0].id);
-      router.push("/admin");
+      navigate("/admin");
     } catch (error) {
       setSubmitError(
         error instanceof ClassroomServiceError || error instanceof Error
@@ -75,13 +72,12 @@ export default function LoginPage() {
         <div className="hidden min-h-[620px] flex-col justify-between bg-[#0a59f7] p-12 text-white lg:flex">
           <div>
             <div className="flex items-center gap-3 text-lg font-semibold">
-              <Image
+              <img
                 src="/logo.png"
                 alt="课序"
                 width={40}
                 height={40}
                 className="size-10 rounded-xl shadow-md"
-                priority
               />
               课序
             </div>
@@ -101,13 +97,12 @@ export default function LoginPage() {
           <div className="w-full">
             <div className="pb-7">
               <div className="mb-5 flex size-12 items-center justify-center lg:hidden">
-                <Image
+                <img
                   src="/logo.png"
                   alt="课序"
                   width={48}
                   height={48}
                   className="size-12 rounded-2xl shadow-md"
-                  priority
                 />
               </div>
               <h2 className="text-3xl font-semibold tracking-tight text-[#102344]">欢迎回来</h2>

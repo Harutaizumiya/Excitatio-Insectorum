@@ -70,8 +70,9 @@ import {
   setUserSession,
 } from "./session"
 import { reportBackendUnavailable } from "./api-error"
+import { getApiOrigin } from "./utils"
 
-const API_ORIGIN = (process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:3000").replace(/\/$/, "")
+const API_ORIGIN = getApiOrigin()
 
 interface RequestOptions {
   auth?: "user" | "display" | "none"

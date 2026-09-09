@@ -1,5 +1,5 @@
 import { ArrowLeft, SearchX } from "lucide-react";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 
 import { buttonVariants } from "@/components/ui/button";
 
@@ -16,7 +16,7 @@ export default function NotFound() {
           链接可能已经失效，请返回登录页继续操作。
         </p>
         <Link
-          href="/login"
+          to="/login"
           className={buttonVariants({ className: "mt-7 rounded-full px-5" })}
         >
           <ArrowLeft className="size-4" aria-hidden="true" />

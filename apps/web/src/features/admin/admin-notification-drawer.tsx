@@ -9,7 +9,7 @@ import {
   TeamOutlined,
 } from "@ant-design/icons";
 import { Button, Drawer, Empty, Typography } from "antd";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 import type { AdminNotification, NotificationType } from "./admin-data";
@@ -33,7 +33,7 @@ export function AdminNotificationDrawer({
   open,
   onClose,
 }: AdminNotificationDrawerProps) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { notifications, unreadCount, markAsRead, markAllAsRead, clearAll } =
     useAdminNotifications();
 
@@ -47,7 +47,7 @@ export function AdminNotificationDrawer({
     void markAsRead(item.id);
     if (item.targetHref) {
       onClose();
-      router.push(item.targetHref);
+      navigate(item.targetHref);
     }
   };
 
