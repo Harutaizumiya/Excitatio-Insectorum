@@ -33,26 +33,21 @@ describe('ScorePeriodsService settlement', () => {
         findFirst: jest.fn().mockResolvedValue({ teacherId: 'head-1', subject: null }),
       },
       student: {
-        findMany: jest.fn().mockResolvedValue([
-          { id: 'student-1' },
-          { id: 'student-2' },
-          { id: 'student-3' },
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ id: 'student-1' }, { id: 'student-2' }, { id: 'student-3' }]),
       },
       scoreRecord: {
-        findMany: jest.fn().mockResolvedValue([
-          { studentId: 'student-2', reversion: null },
-        ]),
+        findMany: jest.fn().mockResolvedValue([{ studentId: 'student-2', reversion: null }]),
         createMany: jest.fn(),
       },
       scoreEvent: {
         findUnique: jest.fn().mockResolvedValue(null),
-        create: jest.fn()
+        create: jest
+          .fn()
           .mockResolvedValueOnce({ id: 'event-no-violation' })
           .mockResolvedValueOnce({ id: 'event-committee' }),
-        findMany: jest.fn().mockResolvedValue([
-          { participants: [{ studentId: 'student-2' }] },
-        ]),
+        findMany: jest.fn().mockResolvedValue([{ participants: [{ studentId: 'student-2' }] }]),
       },
       scoreEventParticipant: { createMany: jest.fn() },
       classCommitteeAssignment: {
@@ -114,10 +109,14 @@ describe('ScorePeriodsService settlement', () => {
     const tx = {
       scorePeriod: { findFirst: jest.fn().mockResolvedValue(period) },
     };
-    const prisma = { $transaction: jest.fn((callback) => callback(tx)) } as unknown as PrismaService;
+    const prisma = {
+      $transaction: jest.fn((callback) => callback(tx)),
+    } as unknown as PrismaService;
     const service = new ScorePeriodsService(prisma, {} as RealtimeService);
 
     await expect(service.settlePeriod('class-1', 'period-2')).resolves.toEqual(period);
-    expect(tx.scorePeriod.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'period-2', classId: 'class-1' } }));
+    expect(tx.scorePeriod.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'period-2', classId: 'class-1' } }),
+    );
   });
 });

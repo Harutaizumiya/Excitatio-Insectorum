@@ -20,9 +20,7 @@ import { Refine } from "@refinedev/core";
 import { App as AntApp, Avatar, Badge, Breadcrumb, Button, ConfigProvider, Layout, Space, Tag, Typography } from "antd";
 import type { ReactNode } from "react";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import Image from "next/image";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { adminResources, cloneSeats, navItems, type AdminRoute } from "./admin-data";
 import { AdminNotificationDrawer } from "./admin-notification-drawer";
 import { useAdminClassroom, useAdminNotifications, useAdminSchedule, useAdminSeating } from "./admin-queries";
@@ -107,8 +105,8 @@ export function AdminShell({ children }: AdminShellProps) {
 
 function AdminShellContent({ children }: AdminShellProps) {
   const { modal, notification } = AntApp.useApp();
-  const pathname = usePathname();
-  const router = useRouter();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
   const service = useClassroomService();
   const [collapsed, setCollapsed] = useCollapsedSider();
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
@@ -139,7 +137,7 @@ function AdminShellContent({ children }: AdminShellProps) {
       });
       clearUserSession();
     } finally {
-      router.replace("/login");
+      navigate("/login", { replace: true });
     }
   };
 
@@ -177,7 +175,7 @@ function AdminShellContent({ children }: AdminShellProps) {
         cancelText: "留在原处",
         onOk: () => {
           updateDraft({ ...savedLayout, seats: cloneSeats(savedLayout.seats) });
-          router.push(href);
+          navigate(href);
         },
       });
       return;
@@ -197,7 +195,7 @@ function AdminShellContent({ children }: AdminShellProps) {
             templates: savedSchedule.templates.map((template) => ({ ...template, periods: template.periods.map((period) => ({ ...period })) })),
             entries: savedSchedule.entries.map((entry) => ({ ...entry })),
           });
-          router.push(href);
+          navigate(href);
         },
       });
     }
@@ -213,7 +211,7 @@ function AdminShellContent({ children }: AdminShellProps) {
         title: {
           text: "课序",
           icon: (
-            <Image
+            <img
               src="/logo.png"
               alt="Logo"
               width={22}
@@ -268,13 +266,12 @@ function AdminShellContent({ children }: AdminShellProps) {
                     boxShadow: "0 4px 12px rgba(10, 89, 247, 0.16)",
                   }}
                 >
-                  <Image
+                  <img
                     src="/logo.png"
                     alt="课序 Logo"
                     width={38}
                     height={38}
                     style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    priority
                   />
                 </div>
                 {!collapsed && (
@@ -304,7 +301,7 @@ function AdminShellContent({ children }: AdminShellProps) {
                     return (
                       <Link
                         key={item.key}
-                        href={item.href}
+                        to={item.href}
                         onClick={(e) => handleNavClick(e, item.href)}
                         title={collapsed ? item.label : undefined}
                         style={{

@@ -24,7 +24,7 @@
 
 ## 技术栈
 
-Next.js 16 · React 19 · TypeScript · NestJS · Prisma · Ant Design · Tailwind CSS · shadcn/ui · TanStack Query · Socket.IO · Turborepo
+Vite 8 · React 19 · TypeScript · NestJS · Prisma · Ant Design · Tailwind CSS · shadcn/ui · TanStack Query · Socket.IO · Turborepo
 
 ## 快速开始
 
@@ -36,7 +36,7 @@ pnpm --filter @repo/server dev
 pnpm --filter @repo/web dev
 ```
 
-打开 [http://localhost:3001/login](http://localhost:3001/login)。前端需要后端服务可用。
+打开 [http://localhost:3001/login](http://localhost:3001/login)。前端默认通过 Vite 开发服务器反向代理转发 `/api` 与 `/socket.io` 请求至后端（`localhost:3000`），开箱即用。
 
 ## 启动本地全栈
 
@@ -46,10 +46,10 @@ pnpm --filter @repo/web dev
 Copy-Item .env.example apps/server/.env
 ```
 
-在 `apps/web/.env.local` 中设置后端地址：
+前端默认使用相对路径由 Vite 反代（后端默认目标为 `http://localhost:3000`），无需额外配置。如需连接独立的外部后端，可在 `apps/web/.env.local` 中指定：
 
 ```env
-NEXT_PUBLIC_API_ORIGIN=http://localhost:3000
+VITE_API_ORIGIN=http://localhost:3000
 ```
 
 然后分别启动数据库、后端和前端：
@@ -68,7 +68,7 @@ SQLite 文件位于 `packages/database/prisma/sqlite/dev.db`。PostgreSQL 使用
 
 ```text
 apps/
-├── web/       Next.js 前端：后台、大屏与邀请页面
+├── web/       Vite 8 SPA 前端：后台、大屏与邀请页面
 └── server/    NestJS API 与 Socket.IO 网关
 packages/
 ├── database/  Prisma schema、迁移与数据库客户端
@@ -98,28 +98,27 @@ pnpm format       # Prettier 格式化
 
 后端 API 前缀为 `/api/v1`；启用 Swagger 后访问 `/api/docs`。
 
-## Docker 镜像
+## Docker 镜像与部署
 
 在仓库根目录构建：
 
 ```bash
 docker build -f Dockerfile -t excitatio-insectorum-server:latest .
-docker build -f Dockerfile.web -t excitatio-insectorum-web:latest --build-arg NEXT_PUBLIC_API_ORIGIN=https://seat.haruta.top .
+docker build -f Dockerfile.web -t excitatio-insectorum-web:latest .
 ```
 
-前端保留 Next.js standalone 镜像用于回滚或独立运行，默认运行 `node apps/web/server.js`，监听 `0.0.0.0:3001`。生产静态部署使用 `NEXT_OUTPUT_MODE=export` 生成 `apps/web/out`，由 OpenResty 直接托管，不启动 web 容器；镜像仅包含追踪到的运行依赖、页面产物、public 和静态资源。
+- **前端镜像 (`Dockerfile.web`)**：基于多阶段构建的 `nginx:alpine` 镜像，SPA 静态产物位于 `/usr/share/nginx/html`，默认监听 `3001` 端口，已预设单页路由回退 `try_files $uri $uri/ /index.html;`。构建参数 `VITE_API_ORIGIN` 默认留空，直接使用同源相对路径配合反向代理。
+- **后端镜像 (`Dockerfile`)**：仅安装 server / database 的生产依赖，保留 Prisma CLI、客户端、引擎和迁移文件。容器启动时先执行 SQLite 迁移，再启动 NestJS；数据库路径及 `deploy/docker-compose.yml` 中的持久化挂载保持不变。
 
-后端仅安装 server / database 的生产依赖，保留 Prisma CLI、客户端、引擎和迁移文件。容器启动时先执行 SQLite 迁移，再启动 NestJS；数据库路径及 `deploy/docker-compose.yml` 中的持久化挂载保持不变。Prisma CLI 属于运行依赖，因为默认启动命令需要它。镜像不包含本地数据库或环境文件。
+生产环境通过 `deploy/server.env` 注入后端配置。
 
-生产环境通过 `deploy/server.env` 注入后端配置。`NEXT_PUBLIC_API_ORIGIN` 是前端构建时配置，修改它需要重新构建前端产物或镜像。
-
-生产静态前端构建：
+生产静态前端直接部署：
 
 ```bash
-NEXT_OUTPUT_MODE=export NEXT_PUBLIC_API_ORIGIN=https://seat.haruta.top pnpm --filter @repo/web build
+pnpm --filter @repo/web build
 ```
 
-将 `apps/web/out` 发布到 `/www/sites/excitatio-insectorum/static` 对应的 OpenResty 根目录，并保留 `/api/`、`/socket.io/` 反向代理。
+将构建产物 `apps/web/dist` 发布到 `/www/sites/excitatio-insectorum/static`（OpenResty / Nginx 静态站点根目录），并通过反向代理转发 `/api/` 与 `/socket.io/`（完整反代配置参考 [deploy/openresty/excitatio-insectorum.conf](deploy/openresty/excitatio-insectorum.conf)）。
 
 检查磁盘占用和回收超过 24 小时未使用的构建缓存：
 

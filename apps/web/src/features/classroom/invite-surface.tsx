@@ -1,7 +1,7 @@
 "use client"
 
 import { Alert, Spin } from "antd"
-import Link from "next/link"
+import { Link } from "react-router-dom"
 import { useState } from "react"
 import { ArrowRight, CheckCircle2, GraduationCap, Link2, ShieldCheck } from "lucide-react"
 
@@ -40,7 +40,7 @@ export function InviteSurface({ token }: { token: string }): React.ReactElement 
             <p className="text-sm font-semibold text-[#263d61]">{result.classroom.name}</p>
             <p className="mt-1 text-xs text-[#8190a8]">{result.teacher.subject ?? "任课教师"} · {result.teacher.name}</p>
           </div>
-          <Link href="/teacher" className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#0a59f7] px-4 text-sm font-semibold text-white hover:bg-[#084bd4]">进入教师端<ArrowRight className="size-4" aria-hidden="true" /></Link>
+          <Link to="/teacher" className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#0a59f7] px-4 text-sm font-semibold text-white hover:bg-[#084bd4]">进入教师端<ArrowRight className="size-4" aria-hidden="true" /></Link>
         </section>
       </main>
     )
@@ -64,7 +64,7 @@ export function InviteSurface({ token }: { token: string }): React.ReactElement 
         <button type="button" disabled={!hasToken || consumeInvitation.isPending} onClick={() => void handleActivate()} className="mt-6 flex min-h-13 w-full items-center justify-center gap-2 rounded-full bg-[#0a59f7] px-4 text-sm font-semibold text-white shadow-lg shadow-[#0a59f7]/20 hover:bg-[#084bd4] disabled:cursor-not-allowed disabled:opacity-60">
           {consumeInvitation.isPending ? <Spin size="small" /> : <><span>确认并激活</span><ArrowRight className="size-4" aria-hidden="true" /></>}
         </button>
-        <Link href="/" className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-[#d5e1f1] px-4 text-sm font-medium text-[#526887] hover:border-[#0a59f7] hover:text-[#0a59f7]"><Link2 className="size-4" aria-hidden="true" />返回首页</Link>
+        <Link to="/" className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-[#d5e1f1] px-4 text-sm font-medium text-[#526887] hover:border-[#0a59f7] hover:text-[#0a59f7]"><Link2 className="size-4" aria-hidden="true" />返回首页</Link>
       </section>
     </main>
   )

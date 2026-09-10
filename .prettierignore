@@ -1,0 +1,10 @@
+node_modules
+.bun
+.next
+dist
+build
+coverage
+*.log
+bun.lock
+bun.lockb
+pnpm-lock.yaml*

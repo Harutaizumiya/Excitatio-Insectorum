@@ -58,7 +58,7 @@ import { App as AntApp } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import {
   defaultRuleGroups,
   formatDateTime,
@@ -351,7 +351,7 @@ function OverviewPage() {
             <Row gutter={[12, 12]} style={{ flex: 1 }}>
               {quickLinks.map((item) => (
                 <Col key={item.key} xs={24} sm={12} lg={8}>
-                  <Link href={item.href} style={{ textDecoration: "none", display: "block", height: "100%" }}>
+                  <Link to={item.href} style={{ textDecoration: "none", display: "block", height: "100%" }}>
                     <div
                       className="transition-all duration-200 hover:border-[#0a59f7] hover:shadow-sm"
                       style={{
@@ -487,7 +487,7 @@ function MetricCard({
 
   if (href) {
     return (
-      <Link href={href} style={{ textDecoration: "none", display: "block", height: "100%" }}>
+      <Link to={href} style={{ textDecoration: "none", display: "block", height: "100%" }}>
         {cardElement}
       </Link>
     );

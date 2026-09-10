@@ -1,0 +1,1 @@
+bun x --bun commitlint --edit "${1}"

@@ -106,7 +106,11 @@ export class StudentsService {
       throw new BusinessException('STUDENT_NOT_FOUND', '学生不存在', HttpStatus.NOT_FOUND);
     }
     if (!current.deletedAt && current.status === StudentStatus.ACTIVE) {
-      throw new BusinessException('STUDENT_ALREADY_ACTIVE', '学生已经是启用状态', HttpStatus.CONFLICT);
+      throw new BusinessException(
+        'STUDENT_ALREADY_ACTIVE',
+        '学生已经是启用状态',
+        HttpStatus.CONFLICT,
+      );
     }
 
     const updated = await this.prisma.student.update({

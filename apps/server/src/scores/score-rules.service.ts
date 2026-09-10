@@ -61,7 +61,8 @@ export class ScoreRulesService {
           group,
           delta: dto.delta,
           description: dto.description,
-          systemPolicyKey: dto.systemPolicyKey === undefined ? undefined : dto.systemPolicyKey?.trim() || null,
+          systemPolicyKey:
+            dto.systemPolicyKey === undefined ? undefined : dto.systemPolicyKey?.trim() || null,
           enabled: dto.enabled,
         },
       });

@@ -117,7 +117,9 @@ describe('DisplaysService', () => {
     redis.client.expire.mockResolvedValue(1);
     redis.client.set.mockResolvedValue('OK');
     prisma.displayDevice.count = jest.fn().mockResolvedValue(0);
-    prisma.classroom.findUnique = jest.fn().mockResolvedValue({ id: 'class-1', name: '一年级一班' });
+    prisma.classroom.findUnique = jest
+      .fn()
+      .mockResolvedValue({ id: 'class-1', name: '一年级一班' });
 
     const created = await service.createClassroomBindingCode('class-1', { name: '前黑板大屏' });
     expect(created.code).toMatch(/^\d{6}$/);

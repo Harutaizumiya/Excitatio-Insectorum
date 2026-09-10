@@ -445,7 +445,8 @@ export class SeatingService {
       rowIndex: seat.row,
       colIndex: seat.col,
       cellType: seat.cellType ? this.toPersistenceCellType(seat.cellType) : SeatCellType.SEAT,
-      studentId: seat.cellType && seat.cellType !== seatCellTypeValues[0] ? null : seat.studentId ?? null,
+      studentId:
+        seat.cellType && seat.cellType !== seatCellTypeValues[0] ? null : (seat.studentId ?? null),
     }));
   }
 
@@ -563,7 +564,7 @@ export class SeatingService {
         id: seat.id,
         row: seat.rowIndex,
         col: seat.colIndex,
-        cellType: seat.cellType?.toLowerCase() ?? "seat",
+        cellType: seat.cellType?.toLowerCase() ?? 'seat',
         student: seat.student ? { id: seat.student.id, name: seat.student.name } : null,
       })),
     };

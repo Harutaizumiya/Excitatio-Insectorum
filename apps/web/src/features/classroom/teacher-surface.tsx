@@ -31,8 +31,7 @@ import {
   Typography,
 } from "antd";
 import { AnimatePresence, motion } from "motion/react";
-import Image from "next/image";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import {
   useEffect,
   useMemo,
@@ -322,13 +321,12 @@ function TeacherMainContent(): ReactElement {
             className="teacher-surface__header-main"
             style={{ display: "flex", alignItems: "center", gap: 10 }}
           >
-            <Image
+            <img
               src="/logo.png"
               alt="课序"
               width={36}
               height={36}
               className="rounded-xl shadow-sm"
-              priority
             />
             <div className="teacher-surface__header-copy">
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -357,7 +355,7 @@ function TeacherMainContent(): ReactElement {
             </div>
           </div>
 
-          <Link href="/teacher/history">
+          <Link to="/teacher/history">
             <Button
               size="small"
               icon={<HistoryOutlined />}
@@ -1305,7 +1303,7 @@ export function TeacherHistorySurface(): ReactElement {
             marginBottom: 16,
           }}
         >
-          <Link href="/teacher">
+          <Link to="/teacher">
             <Button shape="circle" icon={<ArrowLeftOutlined />} />
           </Link>
           <div>

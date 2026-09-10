@@ -19,7 +19,7 @@ Elysia + Vite 可以作为后续目标，但目前没有证据证明 NestJS 是�
 | 主要业务数据来自浏览器调用独立 API                  | `ClassroomSystemProvider` 固定注入 `apiClassroomService` 与 `SocketIoRealtimeClient`                             | React 页面、service、hooks 与大部分 UI 可以保留                        |
 | Next 专属依赖范围有限                               | 扫描 `apps/web/src`：11 个文件直接引用 `next` / `next/*`，主要为导航、图片及元数据；另需改页面壳、布局与构建配置 | Vite 迁移主要集中在入口、路由和少量框架 API，11 个文件并非全部改动量   |
 | 未发现业务依赖 Server Actions / Next Route Handlers | 源码扫描未发现 `use server`、`next/headers`、`next/server`；app 下无 `route.ts`                                  | 未发现必须保留 Next 服务端的业务数据链路；仍需浏览器回归确认           |
-| 有动态邀请页与 Next 图片组件                        | `/invite/[token]` 的服务端页面读取 params；多处 `next/image`；首页调用 redirect                                  | 静态模式需固定邀请入口、客户端跳转和无优化图片；兼容支路已实现           |
+| 有动态邀请页与 Next 图片组件                        | `/invite/[token]` 的服务端页面读取 params；多处 `next/image`；首页调用 redirect                                  | 静态模式需固定邀请入口、客户端跳转和无优化图片；兼容支路已实现         |
 | 后端已有完整领域行为                                | 14 个 Controller 文件、55 个 HTTP 方法装饰器、31 个 DTO 文件、21 个 Service 文件、4 个 Guard 文件                | 整体换后端涉及协议、权限、校验和生命周期，不只是改路由语法             |
 | 当前部署使用 SQLite                                 | `deploy/docker-compose.yml` 挂载 SQLite 文件并运行 SQLite 迁移；根 compose 仍提供 PostgreSQL / Redis 开发服务    | 不应把删除 PostgreSQL 计入当前部署必然获得的收益；实际生产状态尚未检查 |
 | Redis 有实际业务用途                                | `AuthService` 限流；`DisplaysService` 读写、原子消费绑定码和短期会话                                             | 不能直接删除依赖或以普通 Map 替代                                      |
