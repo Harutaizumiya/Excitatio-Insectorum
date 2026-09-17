@@ -1,10 +1,10 @@
-import type { RefObject } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { Seat } from "../admin-data";
-import { gridToCanvas, hitTestGridCell, screenToCanvas } from "./grid-coordinates";
-import { applyMoveResult, calculateMove, getSeatKey } from "./seat-occupancy";
-import type { SeatingViewportHandle } from "./seating-viewport";
-import type { DragSource, DragState, DropTarget, GridConfig, Point } from "./types";
+import type { RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Seat } from '../admin-data';
+import { gridToCanvas, hitTestGridCell, screenToCanvas } from './grid-coordinates';
+import { applyMoveResult, calculateMove, getSeatKey } from './seat-occupancy';
+import type { SeatingViewportHandle } from './seating-viewport';
+import type { DragSource, DragState, DropTarget, GridConfig, Point } from './types';
 
 interface UseStudentDragOptions {
   viewportHandleRef: RefObject<SeatingViewportHandle | null>;
@@ -77,7 +77,7 @@ export function useStudentDrag({
       pointer.y >= unseatedRect.top &&
       pointer.y <= unseatedRect.bottom
     ) {
-      target = { type: "unseated" };
+      target = { type: 'unseated' };
     } else {
       const viewportRect = cachedViewportRectRef.current;
       if (viewportRect && viewportHandle) {
@@ -86,7 +86,7 @@ export function useStudentDrag({
         const canvasPoint = screenToCanvas(pointer.x, pointer.y, viewportRect, pan, scale);
         const gridPos = hitTestGridCell(canvasPoint, config);
         if (gridPos) {
-          target = { type: "grid", row: gridPos.row, col: gridPos.col };
+          target = { type: 'grid', row: gridPos.row, col: gridPos.col };
         }
       }
     }
@@ -95,34 +95,34 @@ export function useStudentDrag({
 
     // Update DropIndicator directly in DOM
     if (indicatorEl) {
-      if (target?.type === "grid") {
+      if (target?.type === 'grid') {
         const targetKey = getSeatKey(target.row, target.col);
         const targetSeat = currentSeatsMap.get(targetKey);
-        const isValidSeat = targetSeat && targetSeat.cellType === "seat";
+        const isValidSeat = targetSeat && targetSeat.cellType === 'seat';
 
         if (!isValidSeat) {
-          indicatorEl.style.display = "none";
+          indicatorEl.style.display = 'none';
         } else {
           const cellBox = gridToCanvas(target.row, target.col, config);
-          indicatorEl.style.display = "block";
+          indicatorEl.style.display = 'block';
           indicatorEl.style.transform = `translate3d(${cellBox.x}px, ${cellBox.y}px, 0)`;
           indicatorEl.style.width = `${cellBox.width}px`;
           indicatorEl.style.height = `${cellBox.height}px`;
 
           if (targetSeat.studentId) {
             // Swap indicator (accent)
-            indicatorEl.style.borderColor = "#fa8c16";
-            indicatorEl.style.backgroundColor = "rgba(250, 140, 22, 0.12)";
-            indicatorEl.style.boxShadow = "0 0 0 3px rgba(250, 140, 22, 0.2)";
+            indicatorEl.style.borderColor = '#fa8c16';
+            indicatorEl.style.backgroundColor = 'rgba(250, 140, 22, 0.12)';
+            indicatorEl.style.boxShadow = '0 0 0 3px rgba(250, 140, 22, 0.2)';
           } else {
             // Normal placement indicator (blue)
-            indicatorEl.style.borderColor = "#0a59f7";
-            indicatorEl.style.backgroundColor = "rgba(10, 89, 247, 0.08)";
-            indicatorEl.style.boxShadow = "0 0 0 3px rgba(10, 89, 247, 0.15)";
+            indicatorEl.style.borderColor = '#0a59f7';
+            indicatorEl.style.backgroundColor = 'rgba(10, 89, 247, 0.08)';
+            indicatorEl.style.boxShadow = '0 0 0 3px rgba(10, 89, 247, 0.15)';
           }
         }
       } else {
-        indicatorEl.style.display = "none";
+        indicatorEl.style.display = 'none';
       }
     }
   }, [viewportHandleRef, dragPreviewRef, dropIndicatorRef]);
@@ -134,10 +134,10 @@ export function useStudentDrag({
     }
 
     if (dragPreviewRef.current) {
-      dragPreviewRef.current.style.display = "none";
+      dragPreviewRef.current.style.display = 'none';
     }
     if (dropIndicatorRef.current) {
-      dropIndicatorRef.current.style.display = "none";
+      dropIndicatorRef.current.style.display = 'none';
     }
 
     const active = activeDragRef.current;
@@ -145,7 +145,7 @@ export function useStudentDrag({
 
     if (active && target) {
       const move = calculateMove(active.studentId, active.source, target, seatsRef.current);
-      if (move.type !== "invalid") {
+      if (move.type !== 'invalid') {
         const nextSeats = applyMoveResult(seatsRef.current, move);
         onCommitSeats(nextSeats);
       }
@@ -175,14 +175,14 @@ export function useStudentDrag({
       endDrag();
     };
 
-    window.addEventListener("pointermove", handleWindowPointerMove, { passive: true });
-    window.addEventListener("pointerup", handleWindowPointerUp);
-    window.addEventListener("pointercancel", handleWindowPointerCancel);
+    window.addEventListener('pointermove', handleWindowPointerMove, { passive: true });
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerCancel);
 
     return () => {
-      window.removeEventListener("pointermove", handleWindowPointerMove);
-      window.removeEventListener("pointerup", handleWindowPointerUp);
-      window.removeEventListener("pointercancel", handleWindowPointerCancel);
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('pointercancel', handleWindowPointerCancel);
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
       }
@@ -202,13 +202,13 @@ export function useStudentDrag({
       cachedUnseatedRectRef.current = unseatedPanelRef.current?.getBoundingClientRect() ?? null;
 
       if (dragPreviewRef.current) {
-        dragPreviewRef.current.style.display = "flex";
+        dragPreviewRef.current.style.display = 'flex';
         dragPreviewRef.current.style.transform = `translate3d(${e.clientX - 60}px, ${e.clientY - 25}px, 0)`;
       }
 
       setDragState({ studentId, source });
     },
-    [viewportHandleRef, unseatedPanelRef, dragPreviewRef]
+    [viewportHandleRef, unseatedPanelRef, dragPreviewRef],
   );
 
   return {

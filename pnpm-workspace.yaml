@@ -1,11 +1,13 @@
 packages:
-  - 'apps/*'
+  - 'apps/web'
+  - 'apps/server-elysia'
   - 'packages/*'
 
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
   '@scarf/scarf': true
+  esbuild: true
   micromark: false
   node-pty: false
   prisma: true
@@ -17,3 +19,4 @@ onlyBuiltDependencies:
   - '@scarf/scarf'
   - 'bcryptjs'
   - 'micromark'
+  - 'esbuild'

@@ -1,4 +1,4 @@
-import type { GridConfig, GridPosition, Point } from "./types";
+import type { GridConfig, GridPosition, Point } from './types';
 
 /**
  * screen coordinates
@@ -14,7 +14,7 @@ export function screenToCanvas(
   clientY: number,
   viewportRect: { left: number; top: number },
   pan: Point,
-  scale: number
+  scale: number,
 ): Point {
   if (scale === 0) return { x: 0, y: 0 };
   return {
@@ -27,10 +27,7 @@ export function screenToCanvas(
  * Hit tests a canvas-local point against the uniform grid.
  * Accurately determines (row, col) and ensures the point does not lie in gap areas or out of bounds.
  */
-export function hitTestGridCell(
-  canvasPoint: Point,
-  config: GridConfig
-): GridPosition | null {
+export function hitTestGridCell(canvasPoint: Point, config: GridConfig): GridPosition | null {
   const { rows, cols, cellWidth, cellHeight, columnGap, rowGap, offsetX, offsetY } = config;
 
   const relX = canvasPoint.x - offsetX;
@@ -70,7 +67,7 @@ export function hitTestGridCell(
 export function gridToCanvas(
   row: number,
   col: number,
-  config: GridConfig
+  config: GridConfig,
 ): { x: number; y: number; width: number; height: number } {
   const stepX = config.cellWidth + config.columnGap;
   const stepY = config.cellHeight + config.rowGap;

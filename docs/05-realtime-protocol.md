@@ -3,7 +3,7 @@
 ## 1. 技术
 
 ```text
-NestJS WebSocketGateway
+Elysia HTTP server
 Socket.IO
 Redis Adapter（多实例时启用）
 ```
@@ -151,17 +151,17 @@ RANDOM_PICKED
   "occurredAt": "...",
   "payload": {
     "studentId": "...",
-    "direction": "INCREASE"
+    "direction": "INCREASE",
+    "delta": 2
   }
 }
 ```
 
-隐私考虑：
+说明：
 
-- 大屏无需收到具体 delta。
-- 大屏无需收到总积分。
+- `delta` 用于大屏展示对应座位的增减反馈。
+- 当前积分周期总分由大屏重新请求 `/display/bootstrap` 获取。
 - `direction` 可用于播放正向或负向轻量反馈。
-- 如果希望负向行为不公开，可进一步只发送 `SCORE_ACTIVITY`，由产品层决定动画。
 
 推荐大屏行为：
 
@@ -180,15 +180,16 @@ RANDOM_PICKED
   "occurredAt": "...",
   "payload": {
     "studentId": "...",
-    "recordId": "..."
+    "recordId": "...",
+    "delta": -2
   }
 }
 ```
 
 大屏：
 
-- 不需要展示“撤销”文字。
-- 重新请求 ranking。
+- 不需要展示“撤销”文字，直接展示对应分值的负向或正向变动。
+- 重新请求 bootstrap。
 
 ---
 
@@ -445,6 +446,7 @@ this.realtime.publishClassEvent(classId, {
   payload: {
     studentId,
     direction: delta > 0 ? 'INCREASE' : 'DECREASE',
+    delta,
   },
 })
 ```
@@ -478,7 +480,7 @@ MVP 不需要引入可靠消息队列。
 
 ## 20. Redis Adapter
 
-单 NestJS 实例：
+单 Elysia 实例：
 
 ```text
 Socket.IO Memory Adapter

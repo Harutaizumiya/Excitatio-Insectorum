@@ -606,8 +606,7 @@ Response：
 
 注意：
 
-- 大屏专用接口不返回 score。
-- 管理端未来如需具体 score，可建立单独管理接口。
+- 班级排行榜接口不返回 score；大屏专用 bootstrap 接口按只读设备权限返回当前积分周期总分，供座位角标和 Top3 展示。
 
 ---
 
@@ -768,7 +767,8 @@ Response：
           "col": 0,
           "student": {
             "id": "...",
-            "name": "张三"
+            "name": "张三",
+            "score": 8
           }
         }
       ]
@@ -778,7 +778,8 @@ Response：
         {
           "studentId": "...",
           "name": "张三",
-          "rank": 1
+          "rank": 1,
+          "score": 8
         }
       ],
       "progress": [
@@ -795,7 +796,7 @@ Response：
 
 隐私：
 
-- 不返回学生具体积分。
+- 仅返回当前积分周期总分；不返回跨周期累计总分、负分次数或倒数排名。
 
 ---
 
@@ -846,4 +847,4 @@ baseVersion
 
 本文件描述业务边界。
 
-具体 DTO、Schema 和 Response 以 NestJS Swagger / OpenAPI 为最终事实来源。
+具体 Schema 和 Response 以 Elysia Swagger / OpenAPI 为最终事实来源。

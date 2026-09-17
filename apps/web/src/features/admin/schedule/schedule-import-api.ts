@@ -1,25 +1,25 @@
-import type { SaveClassScheduleInput, Weekday } from "@/lib";
+import type { SaveClassScheduleInput, Weekday } from '@/lib';
 
-import { parseFileContent } from "../student-import/student-import-api";
+import { parseFileContent } from '../student-import/student-import-api';
 
 export interface ScheduleImportResult {
-  entries: SaveClassScheduleInput["entries"];
+  entries: SaveClassScheduleInput['entries'];
   maxPeriodNo: number;
 }
 
 const WEEKDAY_HEADERS: Array<{ weekday: Weekday; labels: string[] }> = [
-  { weekday: 1, labels: ["星期一", "周一"] },
-  { weekday: 2, labels: ["星期二", "周二"] },
-  { weekday: 3, labels: ["星期三", "周三"] },
-  { weekday: 4, labels: ["星期四", "周四"] },
-  { weekday: 5, labels: ["星期五", "周五"] },
-  { weekday: 6, labels: ["星期六", "周六"] },
-  { weekday: 7, labels: ["星期日", "星期天", "周日"] },
+  { weekday: 1, labels: ['星期一', '周一'] },
+  { weekday: 2, labels: ['星期二', '周二'] },
+  { weekday: 3, labels: ['星期三', '周三'] },
+  { weekday: 4, labels: ['星期四', '周四'] },
+  { weekday: 5, labels: ['星期五', '周五'] },
+  { weekday: 6, labels: ['星期六', '周六'] },
+  { weekday: 7, labels: ['星期日', '星期天', '周日'] },
 ];
 
 function normalizeCell(value: string | undefined): string {
-  return String(value ?? "")
-    .replace(/\s+/g, " ")
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -41,43 +41,43 @@ function findWeekdayColumns(header: string[]): Map<Weekday, number> {
 
 export async function parseScheduleFile(file: File): Promise<ScheduleImportResult> {
   const fileName = file.name.toLocaleLowerCase();
-  if (!fileName.endsWith(".xlsx") && !fileName.endsWith(".xls") && !fileName.endsWith(".csv")) {
-    throw new Error("仅支持 .xlsx、.xls 和 .csv 文件");
+  if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls') && !fileName.endsWith('.csv')) {
+    throw new Error('仅支持 .xlsx、.xls 和 .csv 文件');
   }
 
   let content: Awaited<ReturnType<typeof parseFileContent>>;
   try {
     content = await parseFileContent(file);
   } catch {
-    throw new Error("课表解析失败，请检查文件格式");
+    throw new Error('课表解析失败，请检查文件格式');
   }
 
   const headerIndex = content.grid.findIndex((row) => findWeekdayColumns(row).size > 0);
-  if (headerIndex < 0) throw new Error("未识别课表表头");
+  if (headerIndex < 0) throw new Error('未识别课表表头');
 
   const weekdayColumns = findWeekdayColumns(content.grid[headerIndex]);
-  if (weekdayColumns.size === 0) throw new Error("未识别课表星期列");
+  if (weekdayColumns.size === 0) throw new Error('未识别课表星期列');
 
-  const entries: ScheduleImportResult["entries"] = [];
+  const entries: ScheduleImportResult['entries'] = [];
   const entryKeys = new Set<string>();
   let maxPeriodNo = 0;
 
   for (const row of content.grid.slice(headerIndex + 1)) {
     const periodNo = periodNumber(row[0]);
     if (periodNo === null) continue;
-    if (periodNo < 1 || periodNo > 12) throw new Error("课表节次必须在 1 至 12 节之间");
+    if (periodNo < 1 || periodNo > 12) throw new Error('课表节次必须在 1 至 12 节之间');
     maxPeriodNo = Math.max(maxPeriodNo, periodNo);
 
     weekdayColumns.forEach((column, weekday) => {
       const courseName = normalizeCell(row[column]);
       if (!courseName) return;
-      const key = String(weekday) + "-" + String(periodNo);
-      if (entryKeys.has(key)) throw new Error("课表存在重复课程格子");
+      const key = String(weekday) + '-' + String(periodNo);
+      if (entryKeys.has(key)) throw new Error('课表存在重复课程格子');
       entryKeys.add(key);
       entries.push({ weekday, periodNo, courseName, classTeacherId: null });
     });
   }
 
-  if (entries.length === 0) throw new Error("未读取到课程内容");
+  if (entries.length === 0) throw new Error('未读取到课程内容');
   return { entries, maxPeriodNo };
 }

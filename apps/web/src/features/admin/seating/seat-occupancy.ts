@@ -1,5 +1,5 @@
-import type { Seat } from "../admin-data";
-import type { DragSource, DropTarget, GridPosition, MoveResult } from "./types";
+import type { Seat } from '../admin-data';
+import type { DragSource, DropTarget, GridPosition, MoveResult } from './types';
 
 export function getSeatKey(row: number, col: number): string {
   return `${row}:${col}`;
@@ -30,25 +30,25 @@ export function calculateMove(
   studentId: string,
   source: DragSource,
   target: DropTarget,
-  seats: Seat[]
+  seats: Seat[],
 ): MoveResult {
   if (!target) {
-    return { type: "invalid", reason: "no target" };
+    return { type: 'invalid', reason: 'no target' };
   }
 
-  const isSourceUnseated = "type" in source && source.type === "unseated";
+  const isSourceUnseated = 'type' in source && source.type === 'unseated';
   const seatMap = buildSeatMap(seats);
 
   // Case 1: Drop onto unseated panel
-  if (target.type === "unseated") {
+  if (target.type === 'unseated') {
     if (isSourceUnseated) {
-      return { type: "invalid", reason: "already unseated" };
+      return { type: 'invalid', reason: 'already unseated' };
     }
     return {
-      type: "move",
+      type: 'move',
       studentId,
       from: source,
-      to: { type: "unseated" },
+      to: { type: 'unseated' },
     };
   }
 
@@ -57,15 +57,15 @@ export function calculateMove(
   const targetSeat = seatMap.get(targetKey);
 
   // Target must be a configured "seat" cell! (Not empty/blank, not aisle, not podium)
-  if (!targetSeat || targetSeat.cellType !== "seat") {
-    return { type: "invalid", reason: "not a configured seat" };
+  if (!targetSeat || targetSeat.cellType !== 'seat') {
+    return { type: 'invalid', reason: 'not a configured seat' };
   }
 
   // If dropped on the same seat
   if (!isSourceUnseated) {
     const sourcePos = source as GridPosition;
     if (sourcePos.row === target.row && sourcePos.col === target.col) {
-      return { type: "invalid", reason: "same position" };
+      return { type: 'invalid', reason: 'same position' };
     }
   }
 
@@ -76,7 +76,7 @@ export function calculateMove(
     if (isSourceUnseated) {
       // Unseated student replaces target student (target student returns to unseated list)
       return {
-        type: "move",
+        type: 'move',
         studentId,
         from: source,
         to: { row: target.row, col: target.col },
@@ -84,7 +84,7 @@ export function calculateMove(
     } else {
       // Seated student swaps with target student
       return {
-        type: "swap",
+        type: 'swap',
         studentAId: studentId,
         studentBId: targetStudentId,
         from: source as GridPosition,
@@ -95,7 +95,7 @@ export function calculateMove(
 
   // Target seat is empty
   return {
-    type: "move",
+    type: 'move',
     studentId,
     from: source,
     to: { row: target.row, col: target.col },
@@ -106,22 +106,20 @@ export function calculateMove(
  * Pure function to apply a MoveResult to a Seat array.
  */
 export function applyMoveResult(seats: Seat[], move: MoveResult): Seat[] {
-  if (move.type === "invalid") {
+  if (move.type === 'invalid') {
     return seats;
   }
 
-  if (move.type === "move") {
+  if (move.type === 'move') {
     const { studentId, from, to } = move;
-    const isFromUnseated = "type" in from && from.type === "unseated";
-    const isToUnseated = "type" in to && to.type === "unseated";
+    const isFromUnseated = 'type' in from && from.type === 'unseated';
+    const isToUnseated = 'type' in to && to.type === 'unseated';
 
     if (isToUnseated) {
       if (isFromUnseated) return seats;
       const fromPos = from as GridPosition;
       return seats.map((seat) =>
-        seat.row === fromPos.row && seat.col === fromPos.col
-          ? { ...seat, studentId: null }
-          : seat
+        seat.row === fromPos.row && seat.col === fromPos.col ? { ...seat, studentId: null } : seat,
       );
     }
 
@@ -134,23 +132,19 @@ export function applyMoveResult(seats: Seat[], move: MoveResult): Seat[] {
     if (!isFromUnseated) {
       const fromPos = from as GridPosition;
       nextSeats = nextSeats.map((seat) =>
-        seat.row === fromPos.row && seat.col === fromPos.col
-          ? { ...seat, studentId: null }
-          : seat
+        seat.row === fromPos.row && seat.col === fromPos.col ? { ...seat, studentId: null } : seat,
       );
     }
 
     // Set target seat (must be an existing configured seat)
     nextSeats = nextSeats.map((seat) =>
-      getSeatKey(seat.row, seat.col) === targetKey
-        ? { ...seat, studentId }
-        : seat
+      getSeatKey(seat.row, seat.col) === targetKey ? { ...seat, studentId } : seat,
     );
 
     return nextSeats;
   }
 
-  if (move.type === "swap") {
+  if (move.type === 'swap') {
     const { studentAId, studentBId, from, to } = move;
     const fromKey = getSeatKey(from.row, from.col);
     const toKey = getSeatKey(to.row, to.col);

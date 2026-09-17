@@ -19,33 +19,30 @@ export type GridConfig = {
   offsetY: number;
 };
 
-export type DragSource = GridPosition | { type: "unseated" };
+export type DragSource = GridPosition | { type: 'unseated' };
 
 export type DragState = {
   studentId: string;
   source: DragSource;
 } | null;
 
-export type DropTarget =
-  | { type: "grid"; row: number; col: number }
-  | { type: "unseated" }
-  | null;
+export type DropTarget = { type: 'grid'; row: number; col: number } | { type: 'unseated' } | null;
 
 export type MoveResult =
   | {
-      type: "move";
+      type: 'move';
       studentId: string;
       from: DragSource;
-      to: GridPosition | { type: "unseated" };
+      to: GridPosition | { type: 'unseated' };
     }
   | {
-      type: "swap";
+      type: 'swap';
       studentAId: string;
       studentBId: string;
       from: GridPosition;
       to: GridPosition;
     }
   | {
-      type: "invalid";
+      type: 'invalid';
       reason?: string;
     };

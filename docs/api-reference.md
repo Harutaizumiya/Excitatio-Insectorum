@@ -106,14 +106,14 @@
 
 ### 4.3 Teachers
 
-| 方法  | 路径                                                     | 权限 | 请求                   | 用途                     |
-| ----- | -------------------------------------------------------- | ---- | ---------------------- | ------------------------ |
-| GET   | `/classes/:classId/teachers`                             | HEAD | 无                     | 查询班级教师关系         |
-| POST  | `/classes/:classId/teachers`                             | HEAD | `CreateTeacherRequest` | 创建任课教师             |
-| PATCH | `/classes/:classId/teachers/:classTeacherId`             | HEAD | `UpdateTeacherRequest` | 更新教师姓名或科目       |
-| POST  | `/classes/:classId/teachers/:classTeacherId/revoke`      | HEAD | 无                     | 撤销教师关系、邀请和会话 |
+| 方法   | 路径                                                     | 权限 | 请求                   | 用途                         |
+| ------ | -------------------------------------------------------- | ---- | ---------------------- | ---------------------------- |
+| GET    | `/classes/:classId/teachers`                             | HEAD | 无                     | 查询班级教师关系             |
+| POST   | `/classes/:classId/teachers`                             | HEAD | `CreateTeacherRequest` | 创建任课教师                 |
+| PATCH  | `/classes/:classId/teachers/:classTeacherId`             | HEAD | `UpdateTeacherRequest` | 更新教师姓名或科目           |
+| POST   | `/classes/:classId/teachers/:classTeacherId/revoke`      | HEAD | 无                     | 撤销教师关系、邀请和会话     |
 | DELETE | `/classes/:classId/teachers/:classTeacherId`             | HEAD | 无                     | 删除教师关系、邀请和课表关联 |
-| POST  | `/classes/:classId/teachers/:classTeacherId/invitations` | HEAD | 无                     | 创建一次性邀请           |
+| POST   | `/classes/:classId/teachers/:classTeacherId/invitations` | HEAD | 无                     | 创建一次性邀请               |
 
 ### 4.4 Students
 
@@ -123,8 +123,8 @@
 | POST  | `/classes/:classId/students`                       | HEAD           | `CreateStudentRequest`  | 新增学生                  |
 | PATCH | `/classes/:classId/students/:studentId`            | HEAD           | `UpdateStudentRequest`  | 更新学生                  |
 | POST  | `/classes/:classId/students/:studentId/deactivate` | HEAD           | 无                      | 停用学生并从当前布局解除  |
-| POST  | `/classes/:classId/students/:studentId/restore`    | HEAD           | 无                      | 恢复学生                 |
-| POST  | `/classes/:classId/students/:studentId/delete`     | HEAD           | 无                      | 软删除学生并保留积分记录 |
+| POST  | `/classes/:classId/students/:studentId/restore`    | HEAD           | 无                      | 恢复学生                  |
+| POST  | `/classes/:classId/students/:studentId/delete`     | HEAD           | 无                      | 软删除学生并保留积分记录  |
 | POST  | `/classes/:classId/students/import/parse`          | HEAD           | multipart `file`        | 解析 Excel/CSV 并返回预览 |
 | POST  | `/classes/:classId/students/import`                | HEAD           | `ImportStudentsRequest` | 批量创建学生              |
 
@@ -138,13 +138,13 @@
 
 学生查询参数：
 
-| 参数       | 类型               | 默认值 | 说明           |
-| ---------- | ------------------ | ------ | -------------- |
-| `status`   | `ACTIVE\|INACTIVE` | 无     | 状态过滤       |
-| `includeDeleted` | boolean | false | 仅 HEAD 可用；是否包含软删除学生 |
-| `keyword`  | string，最长 100   | 无     | 姓名或学号搜索 |
-| `page`     | integer >= 1       | 1      | 页码           |
-| `pageSize` | integer 1..100     | 20     | 每页数量       |
+| 参数             | 类型               | 默认值 | 说明                             |
+| ---------------- | ------------------ | ------ | -------------------------------- |
+| `status`         | `ACTIVE\|INACTIVE` | 无     | 状态过滤                         |
+| `includeDeleted` | boolean            | false  | 仅 HEAD 可用；是否包含软删除学生 |
+| `keyword`        | string，最长 100   | 无     | 姓名或学号搜索                   |
+| `page`           | integer >= 1       | 1      | 页码                             |
+| `pageSize`       | integer 1..100     | 20     | 每页数量                         |
 
 ### 4.5 Seat Layout
 
@@ -160,10 +160,10 @@
 
 ### 4.6 Schedule
 
-| 方法 | 路径 | 权限 | 请求 | 用途 |
-| ---- | ---- | ---- | ---- | ---- |
-| GET | `/classes/:classId/schedule` | HEAD / SUBJECT | 无 | 获取周课表与作息模板 |
-| PUT | `/classes/:classId/schedule` | HEAD | `SaveScheduleRequest` | 事务保存模板、当前模板和课程 |
+| 方法 | 路径                         | 权限           | 请求                  | 用途                         |
+| ---- | ---------------------------- | -------------- | --------------------- | ---------------------------- |
+| GET  | `/classes/:classId/schedule` | HEAD / SUBJECT | 无                    | 获取周课表与作息模板         |
+| PUT  | `/classes/:classId/schedule` | HEAD           | `SaveScheduleRequest` | 事务保存模板、当前模板和课程 |
 
 `SaveScheduleRequest` 的模板节次使用 `periodNo`、`startTime`、`endTime`；时间格式为 `HH:mm`，模板最多 12 节且节次集合一致。课程名称必填，`classTeacherId` 只能引用本班 ACTIVE 任课教师。
 
@@ -380,8 +380,18 @@ interface ClassroomSummary {
 
 interface ClassSchedule {
   activeTemplateId: string | null;
-  templates: Array<{ id: string; name: string; periods: Array<{ periodNo: number; startTime: string; endTime: string }> }>;
-  entries: Array<{ weekday: number; periodNo: number; courseName: string; classTeacherId: string | null; teacher: { id: string; name: string } | null }>;
+  templates: Array<{
+    id: string;
+    name: string;
+    periods: Array<{ periodNo: number; startTime: string; endTime: string }>;
+  }>;
+  entries: Array<{
+    weekday: number;
+    periodNo: number;
+    courseName: string;
+    classTeacherId: string | null;
+    teacher: { id: string; name: string } | null;
+  }>;
 }
 
 interface Student {
@@ -480,7 +490,7 @@ interface WeeklyRanking {
 }
 ```
 
-`change = previousRank - currentRank`。排行榜和大屏响应不会返回 score。
+`change = previousRank - currentRank`。班级排行榜接口不返回 score；大屏 bootstrap 按显示需求返回本周 score。
 
 ### 6.5 Display Binding
 
@@ -623,7 +633,7 @@ interface ClassRealtimeEvent<T> {
 | `RANKING_CHANGED`     | `{ period: "WEEK" }`                                         |
 | `SEAT_LAYOUT_CHANGED` | `{ version }`                                                |
 | `STUDENT_CHANGED`     | `{ studentId, action: "CREATED"\|"UPDATED"\|"DEACTIVATED" }` |
-| `SCHEDULE_CHANGED`    | `{ activeTemplateId }`                                      |
+| `SCHEDULE_CHANGED`    | `{ activeTemplateId }`                                       |
 | `RANDOM_PICKED`       | `{ studentId, name, displayDurationMs: 8000 }`               |
 
 客户端首次连接和每次重连后都应调用 `GET /display/bootstrap`，以 REST/数据库

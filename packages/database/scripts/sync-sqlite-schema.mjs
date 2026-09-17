@@ -11,4 +11,7 @@ const sqliteSchema = postgresSchema
   .replace('provider = "postgresql"', 'provider = "sqlite"')
   .replace(/\s+@db\.[A-Za-z]+(?:\([^)]*\))?/g, '');
 
-await writeFile(sqliteSchemaPath, sqliteSchema, 'utf8');
+const currentSqliteSchema = await readFile(sqliteSchemaPath, 'utf8').catch(() => null);
+if (currentSqliteSchema !== sqliteSchema) {
+  await writeFile(sqliteSchemaPath, sqliteSchema, 'utf8');
+}
