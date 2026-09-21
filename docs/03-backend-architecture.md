@@ -5,7 +5,7 @@
 ```text
 Node.js
 TypeScript
-NestJS
+Elysia
 Prisma
 SQLite（当前默认）/ PostgreSQL（可选兼容）
 Passport / JWT
@@ -24,7 +24,7 @@ MVP 采用模块化单体。
 
 ### 模块化单体
 
-所有后端功能部署为一个 NestJS Application。
+所有后端功能部署为一个 Elysia Application。
 
 优势：
 
@@ -59,7 +59,7 @@ Socket.IO = 状态变化通知
 
 ---
 
-## 3. NestJS Module
+## 3. Elysia Module
 
 推荐：
 
@@ -638,7 +638,7 @@ value：
 使用：
 
 ```text
-@nestjs/config
+src/config.ts
 ```
 
 环境变量：
@@ -666,7 +666,7 @@ LOG_LEVEL
 
 ## 16. Swagger / OpenAPI
 
-NestJS 使用 `@nestjs/swagger`。
+Elysia 使用 `@elysiajs/swagger`。
 
 要求：
 
@@ -684,7 +684,7 @@ OpenAPI 是接口结构的唯一事实来源。
 
 ### Phase 1：基础工程
 
-- NestJS 初始化。
+- Elysia 初始化。
 - Prisma。
 - SQLite（默认）/ PostgreSQL（可选兼容）。
 - Redis。

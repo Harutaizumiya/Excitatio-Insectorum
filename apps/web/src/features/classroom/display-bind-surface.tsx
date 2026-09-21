@@ -18,7 +18,7 @@ import {
   Result,
   Typography,
 } from "antd";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 import { useClassroomService } from "@/components/providers/classroom-system-provider";
@@ -51,7 +51,7 @@ export function DisplayBindSurface(): ReactElement {
 }
 
 function DisplayBindContent(): ReactElement {
-  const router = useRouter();
+  const navigate = useNavigate();
   const service = useClassroomService();
   const { message } = AntApp.useApp();
   const [code, setCode] = useState("");
@@ -114,8 +114,8 @@ function DisplayBindContent(): ReactElement {
   }, [status]);
 
   useEffect(() => {
-    if (status === "READY" && redirectSeconds === 0) router.push("/display");
-  }, [redirectSeconds, router, status]);
+    if (status === "READY" && redirectSeconds === 0) navigate("/display");
+  }, [navigate, redirectSeconds, status]);
 
   return (
     <main
@@ -131,41 +131,36 @@ function DisplayBindContent(): ReactElement {
       <Card
         style={{
           width: "100%",
-          maxWidth: 520,
+          maxWidth: 440,
+          boxShadow: "0 18px 48px rgba(15, 35, 75, 0.08)",
           borderRadius: 20,
           border: "1px solid #e7edf5",
-          boxShadow: "0 14px 36px rgba(33, 61, 102, 0.06)",
-          textAlign: "center",
         }}
-        styles={{
-          body: { padding: "36px 28px" },
-        }}
+        styles={{ body: { padding: 32 } }}
       >
-        <div
-          style={{
-            width: 52,
-            height: 52,
-            borderRadius: 16,
-            background: "#edf4ff",
-            color: "#0a59f7",
-            display: "grid",
-            placeItems: "center",
-            fontSize: 26,
-            margin: "0 auto 16px",
-          }}
-        >
-          <DesktopOutlined />
-        </div>
-
-        <Typography.Title
-          level={3}
-          style={{ margin: "0 0 6px", color: "#172b4d" }}
-        >
-          大屏设备绑定
-        </Typography.Title>
-        <Typography.Text type="secondary" style={{ fontSize: 14 }}>
-          请输入班主任管理端生成的 6 位绑定码
-        </Typography.Text>
+        <Flex vertical align="center" gap={12} style={{ marginBottom: 24 }}>
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 16,
+              background: "#edf3ff",
+              color: "#0a59f7",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 26,
+            }}
+          >
+            <DesktopOutlined />
+          </div>
+          <Typography.Title level={3} style={{ margin: 0 }}>
+            大屏设备绑定
+          </Typography.Title>
+          <Typography.Text type="secondary" style={{ textAlign: "center", fontSize: 13 }}>
+            输入班级管理后台生成的 6 位数字绑定码即可完成设备配对
+          </Typography.Text>
+        </Flex>
 
         {status === "READY" ? (
           <Result
@@ -176,7 +171,7 @@ function DisplayBindContent(): ReactElement {
               <Button
                 type="primary"
                 icon={<ArrowRightOutlined />}
-                onClick={() => router.push("/display")}
+                onClick={() => navigate("/display")}
                 style={{ minWidth: 160, fontWeight: 600 }}
               >
                 进入大屏 ({redirectSeconds}s)

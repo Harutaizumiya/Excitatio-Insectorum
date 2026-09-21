@@ -7,6 +7,9 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "dev:web": "pnpm --filter @repo/web dev",
+    "dev:server": "pnpm --filter @repo/server-elysia dev:node",
+    "dev:fullstack": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-dev.ps1",
     "lint": "turbo run lint",
     "lint:fix": "turbo run lint:fix",
     "typecheck": "turbo run typecheck",
@@ -23,9 +26,29 @@
     "db:push": "turbo run db:push",
     "db:push:postgresql": "pnpm --filter @repo/database db:push:postgresql",
     "format": "prettier --write \"**/*.{ts,js,cjs,mjs,json,yml,yaml,md}\"",
-    "format:check": "prettier --check \"**/*.{ts,js,cjs,mjs,json,yml,yaml,md}\""
+    "format:check": "prettier --check \"**/*.{ts,js,cjs,mjs,json,yml,yaml,md}\"",
+    "commit": "czg",
+    "commit:ai": "czg ai",
+    "prepare": "husky"
+  },
+  "trustedDependencies": [
+    "@prisma/client",
+    "@prisma/engines",
+    "prisma",
+    "bcryptjs",
+    "esbuild"
+  ],
+  "config": {
+    "commitizen": {
+      "path": "node_modules/cz-git"
+    }
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "cz-git": "^1.14.0",
+    "czg": "^1.14.0",
+    "husky": "^9.1.7",
     "prettier": "^3.6.2",
     "turbo": "^2.4.4",
     "typescript": "^5.9.2"

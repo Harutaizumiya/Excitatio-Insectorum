@@ -1,8 +1,8 @@
-export type ImportStep = "upload" | "preview" | "result";
+export type ImportStep = 'upload' | 'preview' | 'result';
 
-export type GenderEnum = "MALE" | "FEMALE" | "UNKNOWN";
+export type GenderEnum = 'MALE' | 'FEMALE' | 'UNKNOWN';
 
-export type RowValidationStatus = "NORMAL" | "WARNING" | "ERROR";
+export type RowValidationStatus = 'NORMAL' | 'WARNING' | 'ERROR';
 
 export interface ParsedStudent {
   sourceRow: number;
@@ -48,7 +48,7 @@ export interface ImportStudentPayload {
 }
 
 export const GENDER_LABEL_MAP: Record<GenderEnum, string> = {
-  MALE: "男",
-  FEMALE: "女",
-  UNKNOWN: "未知",
+  MALE: '男',
+  FEMALE: '女',
+  UNKNOWN: '未知',
 };

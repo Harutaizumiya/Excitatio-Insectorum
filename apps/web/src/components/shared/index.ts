@@ -1,2 +1,2 @@
-export * from "./async-state"
-export * from "./student-avatar"
+export * from './async-state';
+export * from './student-avatar';
