@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import * as XLSX from 'xlsx';
 import type {
   GenderEnum,
   ImportMapping,
@@ -7,18 +7,27 @@ import type {
   ParsedStudent,
   ParseResult,
   SkippedStudent,
-} from "./student-import-types";
+} from './student-import-types';
 
-function normalizeGender(rawVal: string | undefined | null): { gender: GenderEnum; isExplicit: boolean } {
-  if (!rawVal) return { gender: "UNKNOWN", isExplicit: false };
+function normalizeGender(rawVal: string | undefined | null): {
+  gender: GenderEnum;
+  isExplicit: boolean;
+} {
+  if (!rawVal) return { gender: 'UNKNOWN', isExplicit: false };
   const trimmed = rawVal.trim().toLowerCase();
-  if (trimmed === "男" || trimmed === "male" || trimmed === "m" || trimmed === "1") {
-    return { gender: "MALE", isExplicit: true };
+  if (trimmed === '男' || trimmed === 'male' || trimmed === 'm' || trimmed === '1') {
+    return { gender: 'MALE', isExplicit: true };
   }
-  if (trimmed === "女" || trimmed === "female" || trimmed === "f" || trimmed === "0" || trimmed === "2") {
-    return { gender: "FEMALE", isExplicit: true };
+  if (
+    trimmed === '女' ||
+    trimmed === 'female' ||
+    trimmed === 'f' ||
+    trimmed === '0' ||
+    trimmed === '2'
+  ) {
+    return { gender: 'FEMALE', isExplicit: true };
   }
-  return { gender: "UNKNOWN", isExplicit: false };
+  return { gender: 'UNKNOWN', isExplicit: false };
 }
 
 function detectDefaultMapping(columns: string[]): ImportMapping {
@@ -28,14 +37,25 @@ function detectDefaultMapping(columns: string[]): ImportMapping {
 
   for (const col of columns) {
     const lower = col.toLowerCase();
-    if (!nameCol && (lower.includes("姓名") || lower.includes("名字") || lower === "name" || lower === "student_name")) {
+    if (
+      !nameCol &&
+      (lower.includes('姓名') ||
+        lower.includes('名字') ||
+        lower === 'name' ||
+        lower === 'student_name')
+    ) {
       nameCol = col;
     } else if (
       !noCol &&
-      (lower.includes("学号") || lower.includes("学籍") || lower.includes("编号") || lower === "student_no" || lower === "studentno" || lower === "id")
+      (lower.includes('学号') ||
+        lower.includes('学籍') ||
+        lower.includes('编号') ||
+        lower === 'student_no' ||
+        lower === 'studentno' ||
+        lower === 'id')
     ) {
       noCol = col;
-    } else if (!genderCol && (lower.includes("性别") || lower === "gender" || lower === "sex")) {
+    } else if (!genderCol && (lower.includes('性别') || lower === 'gender' || lower === 'sex')) {
       genderCol = col;
     }
   }
@@ -47,13 +67,16 @@ function detectDefaultMapping(columns: string[]): ImportMapping {
   };
 }
 
-export function evaluateRows(rawRows: Record<string, string>[], mapping: ImportMapping): ParsedStudent[] {
+export function evaluateRows(
+  rawRows: Record<string, string>[],
+  mapping: ImportMapping,
+): ParsedStudent[] {
   const seenNos = new Set<string>();
   const duplicateNos = new Set<string>();
 
   if (mapping.studentNoColumn) {
     rawRows.forEach((row) => {
-      const no = mapping.studentNoColumn ? row[mapping.studentNoColumn]?.trim() : "";
+      const no = mapping.studentNoColumn ? row[mapping.studentNoColumn]?.trim() : '';
       if (no) {
         if (seenNos.has(no)) {
           duplicateNos.add(no);
@@ -66,7 +89,7 @@ export function evaluateRows(rawRows: Record<string, string>[], mapping: ImportM
 
   return rawRows.map((row, index) => {
     const sourceRow = index + 1;
-    const name = mapping.nameColumn ? row[mapping.nameColumn]?.trim() ?? "" : "";
+    const name = mapping.nameColumn ? (row[mapping.nameColumn]?.trim() ?? '') : '';
     const studentNo = mapping.studentNoColumn ? row[mapping.studentNoColumn]?.trim() || null : null;
     const rawGender = mapping.genderColumn ? row[mapping.genderColumn]?.trim() : null;
     const { gender, isExplicit } = normalizeGender(rawGender);
@@ -75,22 +98,22 @@ export function evaluateRows(rawRows: Record<string, string>[], mapping: ImportM
     const warnings: string[] = [];
 
     if (!name) {
-      errors.push("姓名为空");
+      errors.push('姓名为空');
     }
 
     if (studentNo && duplicateNos.has(studentNo)) {
-      warnings.push("表格内存在重复学号");
+      warnings.push('表格内存在重复学号');
     }
 
     if (mapping.genderColumn && rawGender && !isExplicit) {
-      warnings.push("未识别性别");
+      warnings.push('未识别性别');
     }
 
-    let status: ParsedStudent["status"] = "NORMAL";
+    let status: ParsedStudent['status'] = 'NORMAL';
     if (errors.length > 0) {
-      status = "ERROR";
+      status = 'ERROR';
     } else if (warnings.length > 0) {
-      status = "WARNING";
+      status = 'WARNING';
     }
 
     return {
@@ -113,7 +136,7 @@ export interface ParsedFileContent {
 
 export async function parseFileContent(file: File): Promise<ParsedFileContent> {
   const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: "array", raw: false });
+  const workbook = XLSX.read(buffer, { type: 'array', raw: false });
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) {
     return { columns: [], rows: [], grid: [] };
@@ -126,7 +149,7 @@ export async function parseFileContent(file: File): Promise<ParsedFileContent> {
 
   const rawGrid = XLSX.utils.sheet_to_json<string[]>(worksheet, {
     header: 1,
-    defval: "",
+    defval: '',
     raw: false,
   });
 
@@ -135,7 +158,7 @@ export async function parseFileContent(file: File): Promise<ParsedFileContent> {
   }
 
   const normalizedGrid = rawGrid.map((row) =>
-    (row as unknown[]).map((cell) => String(cell ?? "").trim()),
+    (row as unknown[]).map((cell) => String(cell ?? '').trim()),
   );
 
   // Locate the header row (first non-empty row)
@@ -152,7 +175,7 @@ export async function parseFileContent(file: File): Promise<ParsedFileContent> {
   }
 
   const rawHeaders = (rawGrid[headerRowIndex] as unknown[]).map((cell, idx) => {
-    const val = String(cell ?? "").trim();
+    const val = String(cell ?? '').trim();
     return val || `列 ${idx + 1}`;
   });
 
@@ -166,7 +189,7 @@ export async function parseFileContent(file: File): Promise<ParsedFileContent> {
 
     const rowObj: Record<string, string> = {};
     columns.forEach((col, idx) => {
-      rowObj[col] = rowValues[idx] ?? "";
+      rowObj[col] = rowValues[idx] ?? '';
     });
     rows.push(rowObj);
   }
@@ -176,28 +199,29 @@ export async function parseFileContent(file: File): Promise<ParsedFileContent> {
 
 export async function parseStudentImportApi(file: File): Promise<ParseResult> {
   const fileName = file.name;
-  const isCsv = fileName.toLowerCase().endsWith(".csv");
-  const isXlsx = fileName.toLowerCase().endsWith(".xlsx") || fileName.toLowerCase().endsWith(".xls");
+  const isCsv = fileName.toLowerCase().endsWith('.csv');
+  const isXlsx =
+    fileName.toLowerCase().endsWith('.xlsx') || fileName.toLowerCase().endsWith('.xls');
 
   if (!isCsv && !isXlsx) {
-    throw new Error("仅支持 .xlsx 和 .csv 文件");
+    throw new Error('仅支持 .xlsx 和 .csv 文件');
   }
 
   let parsed: { columns: string[]; rows: Record<string, string>[] };
   try {
     parsed = await parseFileContent(file);
   } catch {
-    throw new Error("名单解析失败，请检查文件格式后重试");
+    throw new Error('名单解析失败，请检查文件格式后重试');
   }
 
   const { columns, rows } = parsed;
 
   if (rows.length === 0) {
-    throw new Error("文件中没有可导入的学生数据");
+    throw new Error('文件中没有可导入的学生数据');
   }
 
   if (rows.length > 500) {
-    throw new Error("单次最多导入 500 名学生");
+    throw new Error('单次最多导入 500 名学生');
   }
 
   const mapping = detectDefaultMapping(columns);
@@ -215,14 +239,14 @@ export async function parseStudentImportApi(file: File): Promise<ParseResult> {
 
 export async function remapStudentImportApi(
   rawRows: Record<string, string>[],
-  mapping: ImportMapping
+  mapping: ImportMapping,
 ): Promise<ParsedStudent[]> {
   return evaluateRows(rawRows, mapping);
 }
 
 export async function importStudentsApi(
   students: ImportStudentPayload[],
-  existingStudentNos: Set<string>
+  existingStudentNos: Set<string>,
 ): Promise<ImportResultData> {
   const skippedStudents: SkippedStudent[] = [];
   let importedCount = 0;
@@ -232,7 +256,7 @@ export async function importStudentsApi(
       skippedStudents.push({
         name: student.name,
         studentNo: student.studentNo,
-        reason: "学号已存在于班级中",
+        reason: '学号已存在于班级中',
       });
     } else {
       importedCount++;

@@ -1,14 +1,10 @@
-"use client";
+import { Navigate } from "react-router-dom";
+import { getUserSession } from "@/lib/session";
 
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-
-export function HomeRedirect(): React.ReactElement | null {
-  const router = useRouter();
-
-  useEffect(() => {
-    router.replace("/login");
-  }, [router]);
-
-  return null;
+export function HomeRedirect(): React.ReactElement {
+  const session = getUserSession();
+  if (!session) {
+    return <Navigate to="/login" replace />;
+  }
+  return <Navigate to="/admin" replace />;
 }

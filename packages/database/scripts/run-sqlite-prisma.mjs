@@ -1,11 +1,23 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, open } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const packageRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const sqliteSchemaDirectory = resolve(packageRoot, 'prisma/sqlite');
-const prismaCommand = process.platform === 'win32' ? 'prisma.cmd' : 'prisma';
+const localBinPrismaExe = resolve(packageRoot, 'node_modules/.bin/prisma.exe');
+const localBinPrismaCmd = resolve(packageRoot, 'node_modules/.bin/prisma.cmd');
+const localBinPrisma = resolve(packageRoot, 'node_modules/.bin/prisma');
+const prismaCommand = existsSync(localBinPrismaExe)
+  ? localBinPrismaExe
+  : existsSync(localBinPrismaCmd)
+    ? localBinPrismaCmd
+    : existsSync(localBinPrisma)
+      ? localBinPrisma
+      : process.platform === 'win32'
+        ? 'prisma.cmd'
+        : 'prisma';
 const databaseUrl = process.env.DATABASE_URL?.startsWith('file:')
   ? process.env.DATABASE_URL
   : 'file:./dev.db';

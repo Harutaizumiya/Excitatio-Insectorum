@@ -2,7 +2,7 @@
 
 import { Alert } from "antd"
 import { useEffect, useState } from "react"
-import { BACKEND_UNAVAILABLE_EVENT } from "@/lib/api-error"
+import { BACKEND_AVAILABLE_EVENT, BACKEND_UNAVAILABLE_EVENT } from "@/lib/api-error"
 
 interface BackendUnavailableDetail {
   message?: string
@@ -18,7 +18,12 @@ export function BackendUnavailableAlert() {
     }
 
     window.addEventListener(BACKEND_UNAVAILABLE_EVENT, handleBackendUnavailable)
-    return () => window.removeEventListener(BACKEND_UNAVAILABLE_EVENT, handleBackendUnavailable)
+    const handleBackendAvailable = () => setMessage(null)
+    window.addEventListener(BACKEND_AVAILABLE_EVENT, handleBackendAvailable)
+    return () => {
+      window.removeEventListener(BACKEND_UNAVAILABLE_EVENT, handleBackendUnavailable)
+      window.removeEventListener(BACKEND_AVAILABLE_EVENT, handleBackendAvailable)
+    }
   }, [])
 
   if (!message) return null

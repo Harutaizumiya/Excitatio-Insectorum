@@ -91,6 +91,7 @@ interface SeatCellProps {
   emphasized?: boolean;
   height?: number | string;
   studentContent?: React.ReactNode;
+  showSeatNumber?: boolean;
   isDraggingThis?: boolean;
   onCellClick?: (row: number, col: number) => void;
   onUnseat?: (seatId: string) => void;
@@ -111,6 +112,7 @@ export const SeatCell = memo(function SeatCell({
   emphasized = false,
   height = 80,
   studentContent,
+  showSeatNumber = true,
   isDraggingThis = false,
   onCellClick,
   onUnseat,
@@ -266,9 +268,11 @@ export const SeatCell = memo(function SeatCell({
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
-        <span style={{ fontSize: 10, fontWeight: 600, color: occupied ? "#64748b" : "#94a3b8", pointerEvents: "none" }}>
-          {formatSeat(row, col)}
-        </span>
+        {showSeatNumber ? (
+          <span style={{ fontSize: 10, fontWeight: 600, color: occupied ? "#64748b" : "#94a3b8", pointerEvents: "none" }}>
+            {formatSeat(row, col)}
+          </span>
+        ) : <span aria-hidden="true" />}
         {occupied && !readOnly ? (
           <Button
             type="text"
@@ -296,6 +300,21 @@ export const SeatCell = memo(function SeatCell({
             onPointerDown={(e) => onStudentPointerDown?.(student.id, { row, col }, e)}
           />
         )
+      ) : studentContent ? (
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#94a3b8",
+            fontSize: 12,
+            fontWeight: 500,
+            pointerEvents: "none",
+          }}
+        >
+          {studentContent}
+        </div>
       ) : (
         <div
           style={{

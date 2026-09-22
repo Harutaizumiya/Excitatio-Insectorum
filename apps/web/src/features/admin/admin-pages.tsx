@@ -58,10 +58,11 @@ import { App as AntApp } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import {
   defaultRuleGroups,
   formatDateTime,
+  formatScoreRecordSource,
   navItems,
   type ActivityItem,
   type AdminBindingSession,
@@ -108,6 +109,8 @@ export function AdminPage({ route }: AdminPageProps) {
   switch (route) {
     case "students":
       return <StudentsPage />;
+    case "students-committee":
+      return <StudentCommitteePage />;
     case "seating":
       return <SeatingPage />;
     case "schedule":
@@ -267,7 +270,7 @@ function OverviewPage() {
   const recentActivities: ActivityItem[] = records.slice(0, 4).map((record) => ({
     id: record.id,
     title: `${record.operatorName}新增积分`,
-    description: `${record.studentName} · ${record.ruleName ?? "自定义积分"} · ${record.delta > 0 ? "+" : ""}${record.delta}`,
+    description: `${record.studentName} · ${formatScoreRecordSource(record)} · ${record.delta > 0 ? "+" : ""}${record.delta}`,
     time: formatDateTime(record.occurredAt),
     tone: record.delta > 0 ? "blue" : "orange",
   }));
@@ -351,7 +354,7 @@ function OverviewPage() {
             <Row gutter={[12, 12]} style={{ flex: 1 }}>
               {quickLinks.map((item) => (
                 <Col key={item.key} xs={24} sm={12} lg={8}>
-                  <Link href={item.href} style={{ textDecoration: "none", display: "block", height: "100%" }}>
+                  <Link to={item.href} style={{ textDecoration: "none", display: "block", height: "100%" }}>
                     <div
                       className="transition-all duration-200 hover:border-[#0a59f7] hover:shadow-sm"
                       style={{
@@ -487,7 +490,7 @@ function MetricCard({
 
   if (href) {
     return (
-      <Link href={href} style={{ textDecoration: "none", display: "block", height: "100%" }}>
+      <Link to={href} style={{ textDecoration: "none", display: "block", height: "100%" }}>
         {cardElement}
       </Link>
     );
@@ -709,6 +712,9 @@ function StudentsPage() {
         description={`管理 ${classroomName} 的学生资料、状态与座位安排。共 ${students.length} 名学生。`}
         action={
           <Space>
+            <Link to="/admin/students/committee">
+              <Button icon={<TeamOutlined />}>班委设置</Button>
+            </Link>
             <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
               批量导入
             </Button>
@@ -814,13 +820,6 @@ function HistoryEvent({ title, time }: { title: string; time: string }) {
 function TeachersPage() {
   const { notification } = AntApp.useApp();
   const { data: classroom } = useAdminClassroom();
-  const { students } = useAdminStudents();
-  const {
-    assignments,
-    updateCommittee,
-    isLoading: committeeLoading,
-    isSaving: committeeSaving,
-  } = useAdminCommittee();
   const {
     teachers,
     createTeacher: persistTeacher,
@@ -832,44 +831,7 @@ function TeachersPage() {
   const [invite, setInvite] = useState<{ teacher: Teacher; url: string } | null>(null);
   const [detail, setDetail] = useState<Teacher | null>(null);
   const [form] = Form.useForm<TeacherFormValues>();
-  const [committeeOpen, setCommitteeOpen] = useState(false);
-  const [committeeForm] = Form.useForm<CommitteeFormValues>();
   const classroomName = classroom?.name ?? "当前班级";
-
-  useEffect(() => {
-    if (!committeeOpen) return;
-    committeeForm.setFieldsValue({
-      assignments: assignments.map((assignment) => ({
-        key: assignment.id,
-        studentId: assignment.studentId,
-        role: assignment.role,
-        subject: assignment.subject,
-        termStartAt: assignment.termStartAt,
-        termEndAt: assignment.termEndAt,
-        trialEndsAt: assignment.trialEndsAt,
-      })),
-    });
-  }, [assignments, committeeForm, committeeOpen]);
-
-  const openCommittee = () => {
-    setCommitteeOpen(true);
-  };
-
-  const saveCommittee = async (values: CommitteeFormValues) => {
-    const input: UpdateCommitteeInput = {
-      assignments: values.assignments.map((assignment) => ({
-        studentId: assignment.studentId,
-        role: assignment.role,
-        subject: assignment.subject?.trim() || null,
-        termStartAt: assignment.termStartAt ?? new Date().toISOString(),
-        termEndAt: assignment.termEndAt ?? null,
-        trialEndsAt: assignment.trialEndsAt ?? null,
-      })),
-    };
-    await updateCommittee(input);
-    setCommitteeOpen(false);
-    notification.success({ title: "班委已更新" });
-  };
 
   const generateInvitation = async (teacherId: string) => {
     const result = await persistInvitation(teacherId);
@@ -1015,14 +977,6 @@ function TeachersPage() {
     },
   ];
 
-  const committeeColumns: ColumnsType<CommitteeAssignment> = [
-    { title: "学生", dataIndex: "studentName" },
-    { title: "班委角色", dataIndex: "role" },
-    { title: "科目", dataIndex: "subject", render: (value: string | null) => value ?? "—" },
-    { title: "试用截止", dataIndex: "trialEndsAt", render: (value: string | null) => value ? formatDateTime(value) : "—" },
-    { title: "状态", dataIndex: "status", render: (value: CommitteeAssignment["status"]) => <Tag color={value === "ACTIVE" ? "success" : "default"}>{value === "ACTIVE" ? "有效" : "已撤销"}</Tag> },
-  ];
-
   return (
     <div>
       <PageHeader
@@ -1049,22 +1003,6 @@ function TeachersPage() {
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有任课教师" /> }}
         />
       </Card>
-      <Card
-        title="班委"
-        style={{ ...cardStyle, marginTop: 16 }}
-        extra={<Button onClick={openCommittee}>编辑</Button>}
-        styles={{ body: { padding: 0 } }}
-      >
-        <Table
-          rowKey="id"
-          columns={committeeColumns}
-          dataSource={assignments}
-          loading={committeeLoading}
-          pagination={false}
-          scroll={{ x: 720 }}
-          locale={{ emptyText: "暂无班委" }}
-        />
-      </Card>
       <Modal
         title="创建任课教师"
         open={createOpen}
@@ -1080,50 +1018,6 @@ function TeachersPage() {
           <Form.Item name="subject" label="任教科目" rules={[{ required: true, message: "请输入任教科目" }]}>
             <Input placeholder="例如：英語" />
           </Form.Item>
-        </Form>
-      </Modal>
-      <Modal
-        title="班委"
-        open={committeeOpen}
-        onCancel={() => setCommitteeOpen(false)}
-        onOk={() => void committeeForm.submit()}
-        okText="保存"
-        cancelText="取消"
-        confirmLoading={committeeSaving}
-        destroyOnHidden
-      >
-        <Form
-          form={committeeForm}
-          layout="vertical"
-          onFinish={saveCommittee}
-          initialValues={{ assignments: [] }}
-        >
-          <Form.List name="assignments">
-            {(fields, { add, remove }) => (
-              <Space orientation="vertical" size={12} style={{ display: "flex" }}>
-                {fields.map((field) => (
-                  <Space key={field.key} align="start" style={{ display: "flex" }}>
-                    <Form.Item name={[field.name, "studentId"]} rules={[{ required: true, message: "请选择学生" }]}>
-                      <Select placeholder="学生" style={{ width: 140 }} options={students.filter((student) => student.status === "ACTIVE").map((student) => ({ value: student.id, label: student.name }))} />
-                    </Form.Item>
-                    <Form.Item name={[field.name, "role"]} rules={[{ required: true, message: "请选择角色" }]}>
-                      <Select placeholder="角色" style={{ width: 130 }} options={COMMITTEE_ROLE_OPTIONS} />
-                    </Form.Item>
-                    <Form.Item name={[field.name, "subject"]}>
-                      <Input placeholder="科目" style={{ width: 100 }} />
-                    </Form.Item>
-                    <Button type="link" danger onClick={() => remove(field.name)}>删除</Button>
-                    <Form.Item name={[field.name, "termStartAt"]} hidden><Input /></Form.Item>
-                    <Form.Item name={[field.name, "termEndAt"]} hidden><Input /></Form.Item>
-                    <Form.Item name={[field.name, "trialEndsAt"]} hidden><Input /></Form.Item>
-                  </Space>
-                ))}
-                <Button type="dashed" onClick={() => add({ termStartAt: new Date().toISOString() })} block>
-                  添加班委
-                </Button>
-              </Space>
-            )}
-          </Form.List>
         </Form>
       </Modal>
       <Modal title="邀请链接已生成" open={invite !== null} onCancel={() => setInvite(null)} footer={null}>
@@ -1601,17 +1495,6 @@ function ScoreRecordsPage() {
           </Button>
         }
       />
-      <Card title="本月积分" style={{ ...cardStyle, marginBottom: 16 }}>
-        <Table
-          rowKey="studentId"
-          columns={scoreColumns}
-          dataSource={summary?.students ?? []}
-          loading={!summary}
-          pagination={false}
-          size="small"
-          locale={{ emptyText: "暂无积分" }}
-        />
-      </Card>
       <Card style={cardStyle} styles={{ body: { padding: 0 } }}>
         <div style={{ padding: 18, borderBottom: "1px solid #eef2f7" }}>
           <Space wrap size={10}>
@@ -1623,6 +1506,17 @@ function ScoreRecordsPage() {
           </Space>
         </div>
         <Table rowKey="id" columns={columns} dataSource={filteredRecords} scroll={{ x: 980 }} pagination={{ pageSize: 8, showSizeChanger: false }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无积分流水" /> }} />
+      </Card>
+      <Card title="本月积分" style={{ ...cardStyle, marginTop: 16 }}>
+        <Table
+          rowKey="studentId"
+          columns={scoreColumns}
+          dataSource={summary?.students ?? []}
+          loading={!summary}
+          pagination={false}
+          size="small"
+          locale={{ emptyText: "暂无积分" }}
+        />
       </Card>
       <Drawer title="积分记录详情" open={detail !== null} onClose={() => setDetail(null)} size={430}>
         {detail && (
@@ -1638,8 +1532,7 @@ function ScoreRecordsPage() {
               <Descriptions.Item label="记录类型">{detail.recordType === "REVERT" ? "撤销流水" : detail.eventId ? "事件积分" : detail.ruleName ? "规则积分" : "自定义积分"}</Descriptions.Item>
               <Descriptions.Item label="教师">{detail.operatorName}</Descriptions.Item>
               <Descriptions.Item label="科目">{detail.subject}</Descriptions.Item>
-              <Descriptions.Item label="规则">{detail.ruleName ?? "自定义积分"}</Descriptions.Item>
-              <Descriptions.Item label="周期">{detail.periodId ?? "未关联"}</Descriptions.Item>
+              <Descriptions.Item label="规则">{formatScoreRecordSource(detail)}</Descriptions.Item>
               <Descriptions.Item label="状态">{detail.reverted ? <Tag color="default">已撤销</Tag> : <Tag color="success">有效</Tag>}</Descriptions.Item>
               <Descriptions.Item label="原因">{detail.reason ?? "未填写"}</Descriptions.Item>
             </Descriptions>
@@ -2067,3 +1960,126 @@ function ReadIcon() { return <ReadOutlined />; }
 function BookIcon() { return <BookOutlined />; }
 function FileIcon() { return <FileTextOutlined />; }
 function DesktopIcon() { return <DesktopOutlined />; }
+
+function StudentCommitteePage() {
+  const { notification } = AntApp.useApp();
+  const { data: classroom } = useAdminClassroom();
+  const { students } = useAdminStudents();
+  const {
+    assignments,
+    updateCommittee,
+    isLoading: committeeLoading,
+    isSaving: committeeSaving,
+  } = useAdminCommittee();
+  const [committeeOpen, setCommitteeOpen] = useState(false);
+  const [committeeForm] = Form.useForm<CommitteeFormValues>();
+  const classroomName = classroom?.name ?? "当前班级";
+
+  useEffect(() => {
+    if (!committeeOpen) return;
+    committeeForm.setFieldsValue({
+      assignments: assignments.map((assignment) => ({
+        key: assignment.id,
+        studentId: assignment.studentId,
+        role: assignment.role,
+        subject: assignment.subject,
+        termStartAt: assignment.termStartAt,
+        termEndAt: assignment.termEndAt,
+        trialEndsAt: assignment.trialEndsAt,
+      })),
+    });
+  }, [assignments, committeeForm, committeeOpen]);
+
+  const saveCommittee = async (values: CommitteeFormValues) => {
+    const input: UpdateCommitteeInput = {
+      assignments: values.assignments.map((assignment) => ({
+        studentId: assignment.studentId,
+        role: assignment.role,
+        subject: assignment.subject?.trim() || null,
+        termStartAt: assignment.termStartAt ?? new Date().toISOString(),
+        termEndAt: assignment.termEndAt ?? null,
+        trialEndsAt: assignment.trialEndsAt ?? null,
+      })),
+    };
+    await updateCommittee(input);
+    setCommitteeOpen(false);
+    notification.success({ title: "班委已更新" });
+  };
+
+  const committeeColumns: ColumnsType<CommitteeAssignment> = [
+    { title: "学生", dataIndex: "studentName" },
+    { title: "班委角色", dataIndex: "role" },
+    { title: "科目", dataIndex: "subject", render: (value: string | null) => value ?? "—" },
+    { title: "试用截止", dataIndex: "trialEndsAt", render: (value: string | null) => value ? formatDateTime(value) : "—" },
+    { title: "状态", dataIndex: "status", render: (value: CommitteeAssignment["status"]) => <Tag color={value === "ACTIVE" ? "success" : "default"}>{value === "ACTIVE" ? "有效" : "已撤销"}</Tag> },
+  ];
+
+  return (
+    <div>
+      <PageHeader
+        title="班委设置"
+        description={`配置 ${classroomName} 的班委角色、科目和试用期限。`}
+        action={
+          <Button type="primary" style={primaryButtonStyle} onClick={() => setCommitteeOpen(true)}>
+            编辑班委
+          </Button>
+        }
+      />
+      <Card style={cardStyle} styles={{ body: { padding: 0 } }}>
+        <Table
+          rowKey="id"
+          columns={committeeColumns}
+          dataSource={assignments}
+          loading={committeeLoading}
+          pagination={false}
+          scroll={{ x: 720 }}
+          locale={{ emptyText: "暂无班委" }}
+        />
+      </Card>
+      <Modal
+        title="班委"
+        open={committeeOpen}
+        onCancel={() => setCommitteeOpen(false)}
+        onOk={() => void committeeForm.submit()}
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={committeeSaving}
+        destroyOnHidden
+      >
+        <Form
+          form={committeeForm}
+          layout="vertical"
+          onFinish={saveCommittee}
+          initialValues={{ assignments: [] }}
+        >
+          <Form.List name="assignments">
+            {(fields, { add, remove }) => (
+              <Space orientation="vertical" size={12} style={{ display: "flex" }}>
+                {fields.map((field) => (
+                  <Space key={field.key} align="start" style={{ display: "flex" }}>
+                    <Form.Item name={[field.name, "studentId"]} rules={[{ required: true, message: "请选择学生" }]}>
+                      <Select placeholder="学生" style={{ width: 140 }} options={students.filter((student) => student.status === "ACTIVE").map((student) => ({ value: student.id, label: student.name }))} />
+                    </Form.Item>
+                    <Form.Item name={[field.name, "role"]} rules={[{ required: true, message: "请选择角色" }]}>
+                      <Select placeholder="角色" style={{ width: 130 }} options={COMMITTEE_ROLE_OPTIONS} />
+                    </Form.Item>
+                    <Form.Item name={[field.name, "subject"]}>
+                      <Input placeholder="科目" style={{ width: 100 }} />
+                    </Form.Item>
+                    <Button type="link" danger onClick={() => remove(field.name)}>删除</Button>
+                    <Form.Item name={[field.name, "termStartAt"]} hidden><Input /></Form.Item>
+                    <Form.Item name={[field.name, "termEndAt"]} hidden><Input /></Form.Item>
+                    <Form.Item name={[field.name, "trialEndsAt"]} hidden><Input /></Form.Item>
+                  </Space>
+                ))}
+                <Button type="dashed" onClick={() => add({ termStartAt: new Date().toISOString() })} block>
+                  添加班委
+                </Button>
+              </Space>
+            )}
+          </Form.List>
+        </Form>
+      </Modal>
+    </div>
+  );
+}

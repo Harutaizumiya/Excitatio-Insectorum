@@ -9,7 +9,6 @@ import {
   ThunderboltFilled,
   ThunderboltOutlined,
   UndoOutlined,
-  UserOutlined,
 } from "@ant-design/icons";
 import {
   App as AntApp,
@@ -31,15 +30,13 @@ import {
   Typography,
 } from "antd";
 import { AnimatePresence, motion } from "motion/react";
-import Image from "next/image";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import {
   useEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
-  type CSSProperties,
   type ReactElement,
 } from "react";
 import {
@@ -53,6 +50,15 @@ import {
 } from "@/components/providers/query-hooks";
 import { useRealtimeClient } from "@/components/providers/classroom-system-provider";
 import { useRealtimeStatus } from "@/components/providers/realtime-hooks";
+import {
+  SeatingViewport,
+  suppressCellClick,
+} from "@/features/admin/seating/seating-viewport";
+import {
+  RANDOM_PICK_ANIMATION_DURATION_MS,
+  RANDOM_PICK_HOP_COUNT,
+  RANDOM_PICK_HOP_INTERVAL_MS,
+} from "@/features/classroom/random-pick-animation";
 import type { CreateScoreEventInput, ScoreRecord, Seat, Student } from "@/lib";
 import { getActiveClassId, getUserSession } from "@/lib/session";
 
@@ -209,8 +215,8 @@ function TeacherMainContent(): ReactElement {
       .map((seat) => seat.id);
 
     let hopCount = 0;
-    const maxHops = 18;
-    const intervalMs = 90;
+    const maxHops = RANDOM_PICK_HOP_COUNT;
+    const intervalMs = RANDOM_PICK_HOP_INTERVAL_MS;
 
     marqueeTimerRef.current = setInterval(() => {
       hopCount += 1;
@@ -232,7 +238,7 @@ function TeacherMainContent(): ReactElement {
       if (!chosenStudent) throw new Error("点名结果中的学生不在当前班级数据中");
 
       // Wait until marquee finishes
-      await new Promise((r) => setTimeout(r, maxHops * intervalMs + 80));
+      await new Promise((r) => setTimeout(r, RANDOM_PICK_ANIMATION_DURATION_MS));
 
       // Find matching seat
       const matchedSeat = gridSeats.find(
@@ -268,7 +274,7 @@ function TeacherMainContent(): ReactElement {
   };
 
   const handleSeatClick = (seat: Seat) => {
-    if (pickState === "running") return;
+    if (suppressCellClick.current || pickState === "running") return;
     if (!seat.student) return;
 
     const matched = students.find((s) => s.id === seat.student?.id);
@@ -281,10 +287,7 @@ function TeacherMainContent(): ReactElement {
   const classroomName = classroomQuery.data?.name ?? "";
   const subjectName = classroomQuery.data?.subject ?? "";
   const seatColumnCount = layout?.cols ?? 0;
-  const seatGridMinWidth = `${Math.max(
-    0,
-    seatColumnCount * 56 + (seatColumnCount - 1) * 8,
-  )}px`;
+  const seatRowCount = layout?.rows ?? 0;
 
   return (
     <main
@@ -322,14 +325,6 @@ function TeacherMainContent(): ReactElement {
             className="teacher-surface__header-main"
             style={{ display: "flex", alignItems: "center", gap: 10 }}
           >
-            <Image
-              src="/logo.png"
-              alt="课序"
-              width={36}
-              height={36}
-              className="rounded-xl shadow-sm"
-              priority
-            />
             <div className="teacher-surface__header-copy">
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <Typography.Text
@@ -357,7 +352,7 @@ function TeacherMainContent(): ReactElement {
             </div>
           </div>
 
-          <Link href="/teacher/history">
+          <Link to="/teacher/history">
             <Button
               size="small"
               icon={<HistoryOutlined />}
@@ -488,30 +483,6 @@ function TeacherMainContent(): ReactElement {
             marginBottom: 16,
           }}
         >
-          {/* Podium */}
-          <div
-            style={{
-              background: "#f0f4fa",
-              borderRadius: 10,
-              padding: "7px 0",
-              textAlign: "center",
-              marginBottom: 16,
-              border: "1px solid #e1e9f4",
-            }}
-          >
-            <Typography.Text
-              type="secondary"
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                letterSpacing: 2,
-                color: "#6b7d96",
-              }}
-            >
-              讲 台 · 黑 板 方 向
-            </Typography.Text>
-          </div>
-
           {/* Seat Grid */}
           {studentsQuery.isLoading ? (
             <div style={{ textAlign: "center", padding: "48px 0" }}>
@@ -523,26 +494,34 @@ function TeacherMainContent(): ReactElement {
               description="班级暂无学生"
             />
           ) : (
-            <div className="teacher-seat-grid-scroll">
+            <SeatingViewport>
               <div
                 className="teacher-seat-grid"
+                data-teacher-seat-grid
                 style={{
                   display: "grid",
-                  gridTemplateColumns: `repeat(${seatColumnCount}, minmax(0, 1fr))`,
+                  gridTemplateColumns: `repeat(${seatColumnCount}, 76px)`,
+                  gridTemplateRows: `repeat(${seatRowCount}, 64px)`,
                   gap: 8,
-                  "--teacher-seat-grid-min-width": seatGridMinWidth,
-                } as CSSProperties}
+                }}
               >
               {gridSeats.map((seat) => {
                 const hasStudent = Boolean(seat.student);
                 const isHighlighted = highlightSeatId === seat.id;
                 const isSelected = selectedStudent?.id === seat.student?.id;
+                const mirroredPosition = {
+                  gridColumn: seatColumnCount - seat.col,
+                  gridRow: seatRowCount - seat.row,
+                };
 
                 if (seat.cellType === "aisle") {
                   return (
                     <div
                       key={seat.id}
+                      data-seat-row={seat.row}
+                      data-seat-col={seat.col}
                       style={{
+                        ...mirroredPosition,
                         minHeight: 56,
                         display: "grid",
                         placeItems: "center",
@@ -564,7 +543,10 @@ function TeacherMainContent(): ReactElement {
                   return (
                     <div
                       key={seat.id}
+                      data-seat-row={seat.row}
+                      data-seat-col={seat.col}
                       style={{
+                        ...mirroredPosition,
                         minHeight: 56,
                         borderRadius: 12,
                         border: "1px dashed #e2e8f0",
@@ -590,6 +572,8 @@ function TeacherMainContent(): ReactElement {
                 return (
                   <motion.div
                     key={seat.id}
+                    data-seat-row={seat.row}
+                    data-seat-col={seat.col}
                     whileTap={{ scale: 0.95 }}
                     animate={{
                       scale: isHighlighted ? 1.08 : isSelected ? 1.04 : 1,
@@ -597,6 +581,7 @@ function TeacherMainContent(): ReactElement {
                     transition={{ type: "spring", stiffness: 400, damping: 25 }}
                     onClick={() => handleSeatClick(seat)}
                     style={{
+                      ...mirroredPosition,
                       minHeight: 58,
                       borderRadius: 12,
                       padding: "8px 6px",
@@ -641,144 +626,35 @@ function TeacherMainContent(): ReactElement {
                     >
                       {seat.student?.name}
                     </Typography.Text>
-                    <Typography.Text
-                      style={{
-                        fontSize: 10,
-                        color: isHighlighted
-                          ? "rgba(255, 255, 255, 0.8)"
-                          : "#94a3b8",
-                        marginTop: 2,
-                      }}
-                    >
-                      {seat.student?.id.slice(-3) ?? ""}
-                    </Typography.Text>
                   </motion.div>
                 );
               })}
               </div>
-              {seatColumnCount > 4 ? (
-                <p className="teacher-seat-grid-hint">左右滑动查看完整座位表</p>
-              ) : null}
-            </div>
+            </SeatingViewport>
           )}
-        </section>
 
-        <section
-          className="teacher-mobile-students"
-          aria-label="学生列表"
-          style={{
-            background: "#ffffff",
-            borderRadius: 20,
-            padding: 16,
-            border: "1px solid #e7edf5",
-            boxShadow: "0 8px 24px rgba(28, 52, 92, 0.04)",
-            marginBottom: 16,
-          }}
-        >
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              marginBottom: 12,
+              background: "#f0f4fa",
+              borderRadius: 10,
+              padding: "7px 0",
+              textAlign: "center",
+              marginTop: 16,
+              border: "1px solid #e1e9f4",
             }}
           >
-            <div>
-              <Typography.Text strong style={{ fontSize: 16, color: "#14233c" }}>
-                选择学生
-              </Typography.Text>
-              <Typography.Text
-                type="secondary"
-                style={{ display: "block", fontSize: 12, marginTop: 2 }}
-              >
-                点选学生快速评价
-              </Typography.Text>
-            </div>
-            <Tag color="blue" style={{ margin: 0, borderRadius: 999 }}>
-              {students.length} 人
-            </Tag>
-          </div>
-
-          {studentsQuery.isLoading ? (
-            <div style={{ textAlign: "center", padding: "32px 0" }}>
-              <Spin />
-            </div>
-          ) : students.length === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="班级暂无学生"
-            />
-          ) : (
-            <div
+            <Typography.Text
+              type="secondary"
               style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 8,
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: 2,
+                color: "#6b7d96",
               }}
             >
-              {students.map((student) => {
-                const isSelected = selectedStudent?.id === student.id;
-                return (
-                  <button
-                    key={student.id}
-                    type="button"
-                    onClick={() => openEvaluationDrawer(student)}
-                    style={{
-                      minWidth: 0,
-                      minHeight: 64,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 9,
-                      padding: "10px 11px",
-                      borderRadius: 14,
-                      border: isSelected
-                        ? "1px solid #0a59f7"
-                        : "1px solid #e4ebf4",
-                      background: isSelected ? "#edf4ff" : "#ffffff",
-                      textAlign: "left",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 34,
-                        height: 34,
-                        flexShrink: 0,
-                        display: "grid",
-                        placeItems: "center",
-                        borderRadius: 10,
-                        background: isSelected ? "#0a59f7" : "#f0f4fa",
-                        color: isSelected ? "#ffffff" : "#55709b",
-                        fontSize: 14,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {student.name.slice(0, 1)}
-                    </span>
-                    <span style={{ minWidth: 0 }}>
-                      <span
-                        style={{
-                          display: "block",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          color: "#213758",
-                          fontSize: 13,
-                          fontWeight: 600,
-                        }}
-                      >
-                        {student.name}
-                      </span>
-                      <span style={{ color: "#8b9ab0", fontSize: 11 }}>
-                        {student.studentNo}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+              讲 台 · 黑 板 方 向
+            </Typography.Text>
+          </div>
         </section>
 
         {/* Bottom CTA Bar */}
@@ -872,34 +748,9 @@ function TeacherMainContent(): ReactElement {
                 border: "1px solid #e7edf5",
               }}
             >
-              <div
-                style={{
-                  width: 76,
-                  height: 76,
-                  borderRadius: 22,
-                  background:
-                    "linear-gradient(135deg, #0a59f7 0%, #2f7bff 100%)",
-                  color: "#ffffff",
-                  fontSize: 32,
-                  display: "grid",
-                  placeItems: "center",
-                  margin: "0 auto 16px",
-                  boxShadow: "0 10px 24px rgba(10, 89, 247, 0.28)",
-                }}
-              >
-                <UserOutlined />
-              </div>
-
-              <Tag
-                color="blue"
-                style={{ borderRadius: 999, padding: "2px 10px", fontSize: 12 }}
-              >
-                随机点名命中
-              </Tag>
-
               <Typography.Title
                 level={2}
-                style={{ margin: "10px 0 4px", color: "#14233c" }}
+                style={{ margin: "0 0 4px", color: "#14233c" }}
               >
                 {pickedStudent.name}
               </Typography.Title>
@@ -1305,7 +1156,7 @@ export function TeacherHistorySurface(): ReactElement {
             marginBottom: 16,
           }}
         >
-          <Link href="/teacher">
+          <Link to="/teacher">
             <Button shape="circle" icon={<ArrowLeftOutlined />} />
           </Link>
           <div>

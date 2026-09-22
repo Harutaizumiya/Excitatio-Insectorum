@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 课序 · 前端 Web 应用 (@repo/web)
 
-## Getting Started
+本应用是基于 **Vite 8 + React 19 + React Router 7** 构建的高性能单页应用（SPA / CSR）。
 
-First, run the development server:
+## 技术栈
+
+- **构建与打包**：Vite 8 (`v8.2.x`) + `@vitejs/plugin-react` (Oxc Fast Refresh)
+- **UI 框架与样式**：React 19, Tailwind CSS v4 (`@tailwindcss/vite`), Ant Design 6, shadcn/ui, Lucide Icons
+- **后台管理**：Refine (`@refinedev/antd`, `@refinedev/react-router`)
+- **路由**：React Router 7 (`react-router-dom`)
+- **状态与实时**：TanStack React Query, Socket.IO Client
+
+## 路由结构
+
+- `/`：首页智能重定向
+- `/login`：班主任登录面板
+- `/admin/*`：班主任管理后台（班级概览、学生、座位、课表、教师、积分规则、流水与设备）
+- `/teacher`：任课教师移动优先课堂操作面板
+- `/display`：班级大屏展示面板
+- `/display/bind`：大屏设备 PIN 码绑定面板
+- `/invite/:token`：任课教师邀请激活面板
+
+## 开发与构建
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+# 启动本地开发服务 (端口 3001，自动反代后端 /api 与 /socket.io)
 pnpm dev
-# or
-bun dev
+
+# 生产环境打包 (输出至 dist/)
+pnpm build
+
+# 本地预览构建产物
+pnpm preview
+
+# 类型检查与代码规范
+pnpm typecheck
+pnpm lint
 ```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
