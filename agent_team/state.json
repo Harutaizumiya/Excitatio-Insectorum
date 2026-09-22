@@ -1,0 +1,66 @@
+{
+  "objective": "根据 docs/课序：使用状况分析与用户反馈功能 PRD.md 实现第一阶段 MVP",
+  "mode": "durable",
+  "projectId": "efe87eb3-b7f3-418e-aadb-553d4b60736f",
+  "plannedWorkers": 3,
+  "createdCount": 4,
+  "runningCount": 0,
+  "reservedSlots": 1,
+  "stageGate": "complete",
+  "threads": [
+    {
+      "threadId": "01a08c31-5c99-7002-8ba9-5d7019d1cc10",
+      "role": "backend-contract",
+      "model": "gpt-5.6-sol",
+      "thinking": "high",
+      "ownership": ["packages/database/**", "apps/server-elysia/**"],
+      "status": "verified_adopted",
+      "attempt": 1,
+      "output": "packages/database Prisma schemas and migrations; apps/server-elysia analytics, feedback, telemetry modules and tests",
+      "adopted": true,
+      "archived": true
+    },
+    {
+      "threadId": "01a08c41-db7f-7182-a997-a8850bf97ec2",
+      "role": "admin-ui",
+      "model": "gpt-5.6-luna",
+      "thinking": "xhigh",
+      "ownership": ["apps/web/src/features/admin/**", "apps/web/src/App.tsx"],
+      "status": "verified_adopted",
+      "attempt": 1,
+      "output": "admin feedback submission drawer, feedback center, usage analytics page, routes and navigation",
+      "adopted": true,
+      "archived": true
+    },
+    {
+      "threadId": "01a08c42-8172-7683-881d-bcd2cba3f59a",
+      "role": "web-service-contract",
+      "model": "gpt-5.6-luna",
+      "thinking": "xhigh",
+      "ownership": ["apps/web/src/lib/**"],
+      "status": "verified_adopted",
+      "attempt": 1,
+      "output": "apps/web domain types, ClassroomService/API methods, request IDs, usage-telemetry best-effort helper",
+      "adopted": true,
+      "archived": true
+    },
+    {
+      "threadId": "01a08c57-66e1-7780-91b1-d27adf81287c",
+      "role": "verifier",
+      "model": "gpt-5.6-luna",
+      "thinking": "xhigh",
+      "ownership": [],
+      "status": "completed_adopted",
+      "attempt": 2,
+      "output": "只读审查轨迹定位跨班级查询缓存和大屏在线口径风险；主 Agent 已修复并补充运行时验收与回归测试",
+      "adopted": true,
+      "archived": true
+    }
+  ],
+  "constraints": [
+    "保留用户已有未提交修改",
+    "不发布、不提交、不推送、不执行数据库迁移",
+    "当前权限体系没有明确的全局产品管理员时，不擅自扩展角色模型",
+    "独立复核首次因用量门槛中止，Luna 重试完成审查但未生成汇总消息；采用可审计的审查轨迹并由主 Agent 复核修正"
+  ]
+}

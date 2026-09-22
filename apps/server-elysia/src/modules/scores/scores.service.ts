@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   type Prisma,
   RelationStatus,
@@ -9,6 +10,20 @@ import { prisma } from '../../plugins/prisma';
 import { BusinessError } from '../../plugins/error-handler';
 import { ClassEventType } from '../realtime/realtime.types';
 import { realtimeService } from '../realtime/realtime.service';
+import { scorePeriodsService } from './score-periods.service';
+import { summarizeScoreEvent } from './score-event-summary';
+
+const scoreRecordInclude = {
+  student: { select: { id: true, name: true } },
+  operator: { select: { id: true, name: true } },
+  rule: { select: { id: true, name: true } },
+  event: { select: { type: true, parameters: true } },
+  reversion: { select: { id: true } },
+} satisfies Prisma.ScoreRecordInclude;
+
+type ScoreRecordWithRelations = Prisma.ScoreRecordGetPayload<{
+  include: typeof scoreRecordInclude;
+}>;
 
 export class ScoresService {
   async assertClassAccess(userId: string, classId: string, roles?: TeacherRole[]) {
@@ -127,6 +142,7 @@ export class ScoresService {
     dto: { studentId: string; ruleId: string },
   ) {
     const access = await this.assertClassAccess(operatorId, classId);
+    const period = await scorePeriodsService.ensureCurrentPeriod(classId, operatorId);
 
     const record = await prisma.$transaction(async (tx) => {
       const [student, rule] = await Promise.all([
@@ -151,32 +167,18 @@ export class ScoresService {
           operatorId,
           subject: access.subject,
           ruleId: rule.id,
+          periodId: period.id,
           delta: rule.delta,
           recordType: ScoreRecordType.NORMAL,
           occurredAt: new Date(),
           violation: rule.delta < 0,
         },
-        include: {
-          student: { select: { id: true, name: true } },
-          operator: { select: { id: true, name: true } },
-          rule: { select: { id: true, name: true } },
-          reversion: { select: { id: true } },
-        },
+        include: scoreRecordInclude,
       });
     });
 
-    realtimeService.publishClassEvent(classId, {
-      id: `${classId}-${record.id}-${Date.now()}`,
-      type: ClassEventType.SCORE_CHANGED,
-      classId,
-      occurredAt: new Date().toISOString(),
-      payload: {
-        studentId: record.studentId,
-        direction: record.delta > 0 ? 'INCREASE' : 'DECREASE',
-      },
-    });
-
-    return record;
+    this.publishScoreChanged(classId, record.studentId, record.delta);
+    return this.toResponse(record);
   }
 
   async createCustom(
@@ -193,6 +195,7 @@ export class ScoresService {
     }
 
     const access = await this.assertClassAccess(operatorId, classId);
+    const period = await scorePeriodsService.ensureCurrentPeriod(classId, operatorId);
 
     const record = await prisma.$transaction(async (tx) => {
       const student = await tx.student.findFirst({
@@ -207,33 +210,37 @@ export class ScoresService {
           studentId: student.id,
           operatorId,
           subject: access.subject,
+          periodId: period.id,
           delta: dto.delta,
           reason,
           recordType: ScoreRecordType.NORMAL,
           occurredAt: new Date(),
           violation: dto.delta < 0,
         },
-        include: {
-          student: { select: { id: true, name: true } },
-          operator: { select: { id: true, name: true } },
-          rule: { select: { id: true, name: true } },
-          reversion: { select: { id: true } },
-        },
+        include: scoreRecordInclude,
       });
     });
 
+    this.publishScoreChanged(classId, record.studentId, record.delta);
+    return this.toResponse(record);
+  }
+
+  private publishScoreChanged(classId: string, studentId: string, delta: number): void {
+    const occurredAt = new Date().toISOString();
     realtimeService.publishClassEvent(classId, {
-      id: `${classId}-${record.id}-${Date.now()}`,
+      id: randomUUID(),
       type: ClassEventType.SCORE_CHANGED,
       classId,
-      occurredAt: new Date().toISOString(),
-      payload: {
-        studentId: record.studentId,
-        direction: record.delta > 0 ? 'INCREASE' : 'DECREASE',
-      },
+      occurredAt,
+      payload: { studentId, direction: delta > 0 ? 'INCREASE' : 'DECREASE', delta },
     });
-
-    return record;
+    realtimeService.publishClassEvent(classId, {
+      id: `${classId}-ranking-${Date.now()}`,
+      type: ClassEventType.RANKING_CHANGED,
+      classId,
+      occurredAt,
+      payload: { period: 'MONTH' },
+    });
   }
 
   async listRecords(
@@ -266,23 +273,31 @@ export class ScoresService {
         : {}),
     };
 
+    if (query.from && Number.isNaN(new Date(query.from).getTime())) {
+      throw new BusinessError('INVALID_SCORE_DATE_RANGE', '积分流水时间范围无效');
+    }
+    if (query.to && Number.isNaN(new Date(query.to).getTime())) {
+      throw new BusinessError('INVALID_SCORE_DATE_RANGE', '积分流水时间范围无效');
+    }
+    if (query.from && query.to && new Date(query.from) > new Date(query.to)) {
+      throw new BusinessError('INVALID_SCORE_DATE_RANGE', '开始时间不能晚于结束时间');
+    }
+
     const [records, total] = await prisma.$transaction([
       prisma.scoreRecord.findMany({
         where,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: {
-          student: { select: { id: true, name: true } },
-          operator: { select: { id: true, name: true } },
-          rule: { select: { id: true, name: true } },
-          reversion: { select: { id: true } },
-        },
+        include: scoreRecordInclude,
       }),
       prisma.scoreRecord.count({ where }),
     ]);
 
-    return { data: records, meta: { page, pageSize, total } };
+    return {
+      data: records.map((record) => this.toResponse(record)),
+      meta: { page, pageSize, total },
+    };
   }
 
   async revertRecord(classId: string, recordId: string, operatorId: string) {
@@ -315,33 +330,60 @@ export class ScoresService {
           studentId: original.studentId,
           operatorId,
           subject: access.subject,
+          ruleId: original.ruleId,
+          periodId: original.periodId,
+          eventId: original.eventId,
           delta: -original.delta,
           reason: `撤销记录 ${original.id}`,
           recordType: ScoreRecordType.REVERT,
           revertedRecordId: original.id,
           occurredAt: new Date(),
+          violation: false,
         },
-        include: {
-          student: { select: { id: true, name: true } },
-          operator: { select: { id: true, name: true } },
-          rule: { select: { id: true, name: true } },
-          reversion: { select: { id: true } },
-        },
+        include: scoreRecordInclude,
       });
     });
 
     realtimeService.publishClassEvent(classId, {
-      id: `${classId}-${record.id}-${Date.now()}`,
+      id: randomUUID(),
       type: ClassEventType.SCORE_REVERTED,
       classId,
       occurredAt: new Date().toISOString(),
       payload: {
         studentId: record.studentId,
         recordId,
+        delta: record.delta,
       },
     });
+    realtimeService.publishClassEvent(classId, {
+      id: randomUUID(),
+      type: ClassEventType.RANKING_CHANGED,
+      classId,
+      occurredAt: new Date().toISOString(),
+      payload: { period: 'MONTH' },
+    });
 
-    return record;
+    return this.toResponse(record);
+  }
+
+  private toResponse(record: ScoreRecordWithRelations) {
+    return {
+      id: record.id,
+      student: record.student,
+      operator: record.operator,
+      periodId: record.periodId ?? null,
+      eventId: record.eventId ?? null,
+      event: summarizeScoreEvent(record.event),
+      subject: record.subject,
+      rule: record.rule,
+      delta: record.delta,
+      reason: record.reason,
+      recordType: record.recordType,
+      reverted: record.reversion !== null,
+      violation: record.violation,
+      occurredAt: record.occurredAt ?? record.createdAt,
+      createdAt: record.createdAt,
+    };
   }
 
   // --- Committee ---
@@ -379,6 +421,17 @@ export class ScoresService {
     await this.assertClassAccess(operatorId, classId, [TeacherRole.HEAD_TEACHER]);
 
     await prisma.$transaction(async (tx) => {
+      const studentIds = [...new Set(assignments.map((assignment) => assignment.studentId))];
+      if (studentIds.length > 0) {
+        const students = await tx.student.findMany({
+          where: { classId, id: { in: studentIds }, status: StudentStatus.ACTIVE, deletedAt: null },
+          select: { id: true },
+        });
+        if (students.length !== studentIds.length) {
+          throw new BusinessError('INVALID_COMMITTEE_STUDENT', '班委必须是本班在班学生', 400);
+        }
+      }
+
       await tx.classCommitteeAssignment.updateMany({
         where: { classId, status: RelationStatus.ACTIVE },
         data: { status: RelationStatus.REVOKED },

@@ -117,16 +117,17 @@
 
 ### 4.4 Students
 
-| 方法  | 路径                                               | 权限           | 请求                    | 用途                      |
-| ----- | -------------------------------------------------- | -------------- | ----------------------- | ------------------------- |
-| GET   | `/classes/:classId/students`                       | HEAD / SUBJECT | Query                   | 分页查询学生              |
-| POST  | `/classes/:classId/students`                       | HEAD           | `CreateStudentRequest`  | 新增学生                  |
-| PATCH | `/classes/:classId/students/:studentId`            | HEAD           | `UpdateStudentRequest`  | 更新学生                  |
-| POST  | `/classes/:classId/students/:studentId/deactivate` | HEAD           | 无                      | 停用学生并从当前布局解除  |
-| POST  | `/classes/:classId/students/:studentId/restore`    | HEAD           | 无                      | 恢复学生                  |
-| POST  | `/classes/:classId/students/:studentId/delete`     | HEAD           | 无                      | 软删除学生并保留积分记录  |
-| POST  | `/classes/:classId/students/import/parse`          | HEAD           | multipart `file`        | 解析 Excel/CSV 并返回预览 |
-| POST  | `/classes/:classId/students/import`                | HEAD           | `ImportStudentsRequest` | 批量创建学生              |
+| 方法  | 路径                                                     | 权限           | 请求                    | 用途                      |
+| ----- | -------------------------------------------------------- | -------------- | ----------------------- | ------------------------- |
+| GET   | `/classes/:classId/students`                             | HEAD / SUBJECT | Query                   | 分页查询学生              |
+| POST  | `/classes/:classId/students`                             | HEAD           | `CreateStudentRequest`  | 新增学生                  |
+| PATCH | `/classes/:classId/students/:studentId`                  | HEAD           | `UpdateStudentRequest`  | 更新学生                  |
+| POST  | `/classes/:classId/students/:studentId/deactivate`       | HEAD           | 无                      | 停用学生并从当前布局解除  |
+| POST  | `/classes/:classId/students/:studentId/restore`          | HEAD           | 无                      | 恢复学生                  |
+| POST  | `/classes/:classId/students/:studentId/delete`           | HEAD           | 无                      | 软删除学生并保留积分记录  |
+| GET   | `/classes/:classId/students/:studentId/behavior-summary` | HEAD / SUBJECT | `month?: YYYY-MM`       | 查询学生月度行为总结      |
+| POST  | `/classes/:classId/students/import/parse`                | HEAD           | multipart `file`        | 解析 Excel/CSV 并返回预览 |
+| POST  | `/classes/:classId/students/import`                      | HEAD           | `ImportStudentsRequest` | 批量创建学生              |
 
 批量解析仅支持 `.xlsx` 和 `.csv`，文件最大 5MB，最多识别 500 条数据记录。解析接口只读文件，不写数据库；可在 multipart 字段 `mapping` 中传入 JSON 以覆盖自动映射，例如：
 
@@ -145,6 +146,8 @@
 | `keyword`        | string，最长 100   | 无     | 姓名或学号搜索                   |
 | `page`           | integer >= 1       | 1      | 页码                             |
 | `pageSize`       | integer 1..100     | 20     | 每页数量                         |
+
+行为总结按 Asia/Taipei 自然月查询，`month` 省略时使用当前月份；仅统计该学生未撤销的普通积分记录，优先按事件类型、其次按规则分组归类。响应包含 `metrics`、`dimensions` 和确定性生成的 `reports.teacher`、`reports.family`；历史月份按当前流水即时计算，不另存报告。学生家长版不含具体分值与次数。
 
 ### 4.5 Seat Layout
 
@@ -490,7 +493,7 @@ interface WeeklyRanking {
 }
 ```
 
-`change = previousRank - currentRank`。排行榜和大屏响应不会返回 score。
+`change = previousRank - currentRank`。班级排行榜接口不返回 score；大屏 bootstrap 按显示需求返回本周 score。
 
 ### 6.5 Display Binding
 

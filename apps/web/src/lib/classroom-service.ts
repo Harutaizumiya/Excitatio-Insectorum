@@ -7,6 +7,7 @@ import type {
   ClassroomSummary,
   ClassTeacher,
   ConsumeInvitationInput,
+  CreateFeedbackInput,
   CreateBindingCodeResult,
   CreateClassroomBindingCodeResult,
   CreateCustomScoreInput,
@@ -21,6 +22,11 @@ import type {
   DeviceTokenResult,
   DisplayBootstrap,
   DisplayDevice,
+  FeedbackCreateResult,
+  FeedbackDetail,
+  FeedbackListItem,
+  FeedbackListQuery,
+  InvitationPreview,
   InvitationConsumeResult,
   ImportedStudentInput,
   LoginInput,
@@ -31,6 +37,7 @@ import type {
   PollBindingSessionResult,
   RandomPickInput,
   RandomPickResult,
+  ReportUsageEventOptions,
   RefreshInput,
   SaveSeatLayoutInput,
   SaveClassScheduleInput,
@@ -45,6 +52,7 @@ import type {
   SeatLayoutMutation,
   SeatLayoutVersionSummary,
   Student,
+  StudentBehaviorSummary,
   StudentImportResult,
   StudentListQuery,
   TeacherInvitation,
@@ -53,6 +61,11 @@ import type {
   UpdateScoreRuleInput,
   UpdateStudentInput,
   UpdateTeacherInput,
+  UpdateFeedbackInput,
+  UsageAnalyticsQuery,
+  UsageAnalyticsSummary,
+  UsageEventInput,
+  UsageEventResponse,
   WeeklyRanking,
   IsoDateTime,
 } from './domain';
@@ -74,6 +87,11 @@ export interface ClassroomService {
   updateClassroom(classId: string, input: UpdateClassroomInput): Promise<Classroom>;
 
   listStudents(classId: string, query?: StudentListQuery): Promise<PaginatedEnvelope<Student>>;
+  getStudentBehaviorSummary(
+    classId: string,
+    studentId: string,
+    month: string,
+  ): Promise<StudentBehaviorSummary>;
   createStudent(classId: string, input: CreateStudentInput): Promise<Student>;
   updateStudent(classId: string, studentId: string, input: UpdateStudentInput): Promise<Student>;
   deactivateStudent(classId: string, studentId: string): Promise<Student>;
@@ -153,5 +171,23 @@ export interface ClassroomService {
   login(input: LoginInput): Promise<LoginResult>;
   logout(): Promise<LogoutResult>;
   refresh(input: RefreshInput): Promise<TokenPair>;
+  getInvitationPreview(token: string): Promise<InvitationPreview>;
   consumeInvitation(token: string, input: ConsumeInvitationInput): Promise<InvitationConsumeResult>;
+
+  reportUsageEvent(
+    input: UsageEventInput,
+    options?: ReportUsageEventOptions,
+  ): Promise<UsageEventResponse>;
+  createFeedback(classId: string, input: CreateFeedbackInput): Promise<FeedbackCreateResult>;
+  listFeedback(
+    classId: string,
+    query?: FeedbackListQuery,
+  ): Promise<PaginatedEnvelope<FeedbackListItem>>;
+  getFeedback(classId: string, feedbackId: string): Promise<FeedbackDetail>;
+  updateFeedback(
+    classId: string,
+    feedbackId: string,
+    input: UpdateFeedbackInput,
+  ): Promise<FeedbackDetail>;
+  getUsageAnalytics(classId: string, query?: UsageAnalyticsQuery): Promise<UsageAnalyticsSummary>;
 }

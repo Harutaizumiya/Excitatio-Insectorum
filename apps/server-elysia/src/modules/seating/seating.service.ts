@@ -5,14 +5,17 @@ import { ClassEventType } from '../realtime/realtime.types';
 import { realtimeService } from '../realtime/realtime.service';
 
 export interface SeatLayoutSeatInput {
-  rowIndex: number;
-  colIndex: number;
+  row: number;
+  col: number;
   studentId?: string | null;
-  cellType?: SeatCellType;
+  cellType?: 'seat' | 'aisle' | 'podium' | 'empty';
 }
 
 export interface SaveSeatLayoutInput {
   seats: SeatLayoutSeatInput[];
+  gridRows?: number;
+  gridCols?: number;
+  baseVersion?: number;
 }
 
 export class SeatingService {
@@ -60,7 +63,7 @@ export class SeatingService {
         row: s.rowIndex,
         col: s.colIndex,
         student: s.student,
-        cellType: s.cellType,
+        cellType: s.cellType.toLowerCase(),
       })),
     };
   }
@@ -68,7 +71,7 @@ export class SeatingService {
   async saveLayout(classId: string, userId: string, dto: SaveSeatLayoutInput) {
     const classroom = await prisma.classroom.findUnique({
       where: { id: classId },
-      select: { gridRows: true, gridCols: true },
+      select: { gridRows: true, gridCols: true, currentLayoutVersionId: true },
     });
     if (!classroom) {
       throw new BusinessError('CLASSROOM_NOT_FOUND', '班级不存在', 404);
@@ -76,14 +79,28 @@ export class SeatingService {
 
     const studentIds = dto.seats.map((s) => s.studentId).filter((id): id is string => Boolean(id));
 
+    const gridRows = dto.gridRows ?? classroom.gridRows;
+    const gridCols = dto.gridCols ?? classroom.gridCols;
+    if (!Number.isInteger(gridRows) || gridRows < 1 || gridRows > 20) {
+      throw new BusinessError('SEAT_LAYOUT_GRID_INVALID', 'gridRows 必须是 1-20 的整数', 400);
+    }
+    if (!Number.isInteger(gridCols) || gridCols < 1 || gridCols > 20) {
+      throw new BusinessError('SEAT_LAYOUT_GRID_INVALID', 'gridCols 必须是 1-20 的整数', 400);
+    }
+    if (
+      dto.baseVersion !== undefined &&
+      (!Number.isInteger(dto.baseVersion) || dto.baseVersion < 0)
+    ) {
+      throw new BusinessError(
+        'SEAT_LAYOUT_BASE_VERSION_INVALID',
+        'baseVersion 必须是非负整数',
+        400,
+      );
+    }
+
     // Check bounds
     for (const seat of dto.seats) {
-      if (
-        seat.rowIndex < 0 ||
-        seat.rowIndex >= classroom.gridRows ||
-        seat.colIndex < 0 ||
-        seat.colIndex >= classroom.gridCols
-      ) {
+      if (seat.row < 0 || seat.row >= gridRows || seat.col < 0 || seat.col >= gridCols) {
         throw new BusinessError('SEAT_POSITION_OUT_OF_BOUNDS', '座位坐标超出班级网格范围', 400);
       }
     }
@@ -91,7 +108,7 @@ export class SeatingService {
     // Check duplicate positions
     const posKeys = new Set<string>();
     for (const seat of dto.seats) {
-      const key = `${seat.rowIndex}:${seat.colIndex}`;
+      const key = `${seat.row}:${seat.col}`;
       if (posKeys.has(key)) {
         throw new BusinessError('DUPLICATE_SEAT_POSITION', '网格中存在重复位置的座位', 400);
       }
@@ -124,6 +141,21 @@ export class SeatingService {
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      const current = classroom.currentLayoutVersionId
+        ? await tx.seatLayoutVersion.findUnique({
+            where: { id: classroom.currentLayoutVersionId },
+            select: { version: true },
+          })
+        : null;
+      const currentVersion = current?.version ?? 0;
+      if (dto.baseVersion !== undefined && dto.baseVersion !== currentVersion) {
+        throw new BusinessError(
+          'SEAT_LAYOUT_VERSION_CONFLICT',
+          '座位布局版本已发生变化，请重新加载后再保存',
+          409,
+        );
+      }
+
       const latest = await tx.seatLayoutVersion.findFirst({
         where: { classId },
         orderBy: { version: 'desc' },
@@ -143,17 +175,17 @@ export class SeatingService {
         await tx.seat.createMany({
           data: dto.seats.map((seat) => ({
             layoutVersionId: layout.id,
-            rowIndex: seat.rowIndex,
-            colIndex: seat.colIndex,
+            rowIndex: seat.row,
+            colIndex: seat.col,
             studentId: seat.studentId || null,
-            cellType: seat.cellType || SeatCellType.SEAT,
+            cellType: this.toPrismaCellType(seat.cellType),
           })),
         });
       }
 
       await tx.classroom.update({
         where: { id: classId },
-        data: { currentLayoutVersionId: layout.id },
+        data: { currentLayoutVersionId: layout.id, gridRows, gridCols },
       });
 
       return { versionId: layout.id, version: nextVersion };
@@ -244,7 +276,7 @@ export class SeatingService {
         row: s.rowIndex,
         col: s.colIndex,
         student: s.student,
-        cellType: s.cellType,
+        cellType: s.cellType.toLowerCase(),
       })),
     };
   }
@@ -310,6 +342,19 @@ export class SeatingService {
     });
 
     return result;
+  }
+
+  private toPrismaCellType(value?: 'seat' | 'aisle' | 'podium' | 'empty'): SeatCellType {
+    switch (value) {
+      case 'aisle':
+        return SeatCellType.AISLE;
+      case 'podium':
+        return SeatCellType.PODIUM;
+      case 'empty':
+        return SeatCellType.EMPTY;
+      default:
+        return SeatCellType.SEAT;
+    }
   }
 }
 

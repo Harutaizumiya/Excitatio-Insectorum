@@ -10,7 +10,7 @@ export default defineConfig({
       '@': path.resolve(import.meta.dirname, './src'),
     },
   },
-  envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
+  envPrefix: 'VITE_',
   server: {
     port: 3001,
     proxy: {

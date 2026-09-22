@@ -116,7 +116,15 @@ export const authPlugin = new Elysia({ name: 'plugin.auth' })
     requireAuth(required: boolean = true) {
       if (!required) return;
       return {
-        beforeHandle({ user, displayDevice, status, request }) {
+        beforeHandle({ user, displayDevice, authError, status, request }) {
+          if (authError) {
+            const requestId = request.headers.get('x-request-id') || randomUUID();
+            return status(authError.status, {
+              code: authError.code,
+              message: authError.message,
+              requestId,
+            });
+          }
           if (!user && !displayDevice) {
             const requestId = request.headers.get('x-request-id') || randomUUID();
             return status(401, {
@@ -131,7 +139,15 @@ export const authPlugin = new Elysia({ name: 'plugin.auth' })
     requireUser(required: boolean = true) {
       if (!required) return;
       return {
-        beforeHandle({ user, status, request }) {
+        beforeHandle({ user, authError, status, request }) {
+          if (authError) {
+            const requestId = request.headers.get('x-request-id') || randomUUID();
+            return status(authError.status, {
+              code: authError.code,
+              message: authError.message,
+              requestId,
+            });
+          }
           if (!user) {
             const requestId = request.headers.get('x-request-id') || randomUUID();
             return status(401, {
@@ -146,7 +162,15 @@ export const authPlugin = new Elysia({ name: 'plugin.auth' })
     requireDisplayDevice(required: boolean = true) {
       if (!required) return;
       return {
-        beforeHandle({ displayDevice, status, request }) {
+        beforeHandle({ displayDevice, authError, status, request }) {
+          if (authError) {
+            const requestId = request.headers.get('x-request-id') || randomUUID();
+            return status(authError.status, {
+              code: authError.code,
+              message: authError.message,
+              requestId,
+            });
+          }
           if (!displayDevice) {
             const requestId = request.headers.get('x-request-id') || randomUUID();
             return status(401, {

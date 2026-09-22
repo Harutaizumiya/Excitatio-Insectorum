@@ -1,9 +1,11 @@
 import type { ReactElement } from "react";
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Route, Routes, useParams } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { App as AntApp, Spin } from "antd";
 import { ClassroomSystemProvider } from "@/components/providers/classroom-system-provider";
+import { UsageTelemetryObserver } from "@/components/providers/usage-telemetry-observer";
 import { Toaster } from "@/components/ui/sonner";
+import { getActiveClassId, getUserSession } from "@/lib/session";
 
 // Lazy-loaded Pages & Layouts
 const HomeRedirect = lazy(() => import("@/features/classroom/home-redirect").then((m) => ({ default: m.HomeRedirect })));
@@ -31,25 +33,44 @@ function InviteParamRoute(): ReactElement {
   return <InviteSurface token={token ?? ""} />;
 }
 
+function RequireAdminSession({ children }: { children: ReactElement }): ReactElement {
+  if (!getUserSession() || !getActiveClassId()) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+}
+
+function AdminRoute({ children }: { children: ReactElement }): ReactElement {
+  return (
+    <RequireAdminSession>
+      <AdminShell>{children}</AdminShell>
+    </RequireAdminSession>
+  );
+}
+
 export function App(): ReactElement {
   return (
     <BrowserRouter>
       <AntApp>
         <ClassroomSystemProvider>
+          <UsageTelemetryObserver />
           <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route path="/" element={<HomeRedirect />} />
               <Route path="/login" element={<LoginPage />} />
 
               {/* Admin Shell Routes */}
-              <Route path="/admin" element={<AdminShell><AdminPage route="overview" /></AdminShell>} />
-              <Route path="/admin/students" element={<AdminShell><AdminPage route="students" /></AdminShell>} />
-              <Route path="/admin/seating" element={<AdminShell><AdminPage route="seating" /></AdminShell>} />
-              <Route path="/admin/schedule" element={<AdminShell><AdminPage route="schedule" /></AdminShell>} />
-              <Route path="/admin/teachers" element={<AdminShell><AdminPage route="teachers" /></AdminShell>} />
-              <Route path="/admin/score-rules" element={<AdminShell><AdminPage route="score-rules" /></AdminShell>} />
-              <Route path="/admin/score-records" element={<AdminShell><AdminPage route="score-records" /></AdminShell>} />
-              <Route path="/admin/display-devices" element={<AdminShell><AdminPage route="display-devices" /></AdminShell>} />
+              <Route path="/admin" element={<AdminRoute><AdminPage route="overview" /></AdminRoute>} />
+              <Route path="/admin/students/committee" element={<AdminRoute><AdminPage route="students-committee" /></AdminRoute>} />
+              <Route path="/admin/students" element={<AdminRoute><AdminPage route="students" /></AdminRoute>} />
+              <Route path="/admin/seating" element={<AdminRoute><AdminPage route="seating" /></AdminRoute>} />
+              <Route path="/admin/schedule" element={<AdminRoute><AdminPage route="schedule" /></AdminRoute>} />
+              <Route path="/admin/teachers" element={<AdminRoute><AdminPage route="teachers" /></AdminRoute>} />
+              <Route path="/admin/score-rules" element={<AdminRoute><AdminPage route="score-rules" /></AdminRoute>} />
+              <Route path="/admin/score-records" element={<AdminRoute><AdminPage route="score-records" /></AdminRoute>} />
+              <Route path="/admin/display-devices" element={<AdminRoute><AdminPage route="display-devices" /></AdminRoute>} />
+              <Route path="/admin/feedback" element={<RequireAdminSession><Navigate to="/admin" replace /></RequireAdminSession>} />
+              <Route path="/admin/analytics" element={<RequireAdminSession><Navigate to="/admin" replace /></RequireAdminSession>} />
 
               {/* Teacher Routes */}
               <Route path="/teacher" element={<TeacherSurface />} />

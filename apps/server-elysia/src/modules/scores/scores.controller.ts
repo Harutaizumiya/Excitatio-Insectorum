@@ -1,10 +1,77 @@
 import { Elysia, t } from 'elysia';
-import { ScoreRecordType } from '@prisma/client';
+import { ScoreEventType, ScoreRecordType, StudentStatus, TeacherRole } from '@prisma/client';
 import { scoresService } from './scores.service';
 import { authPlugin } from '../../plugins/auth';
+import { scoreEventsService, type CreateScoreEventInput } from './score-events.service';
+import { scorePeriodsService } from './score-periods.service';
+import { behaviorSummaryService } from './behavior-summary.service';
+
+const behaviorSummaryMetricsSchema = t.Object({
+  effectiveRecordCount: t.Integer(),
+  positiveCount: t.Integer(),
+  negativeCount: t.Integer(),
+  positiveDelta: t.Integer(),
+  negativeDelta: t.Integer(),
+  netDelta: t.Integer(),
+});
+
+const behaviorSummaryResponseSchema = t.Object({
+  data: t.Object({
+    student: t.Object({
+      id: t.String(),
+      name: t.String(),
+      studentNo: t.Union([t.String(), t.Null()]),
+      status: t.Enum(StudentStatus),
+      deletedAt: t.Union([t.String(), t.Null()]),
+    }),
+    period: t.Object({
+      month: t.String(),
+      timeZone: t.Literal('Asia/Taipei'),
+      startAt: t.String(),
+      endAt: t.String(),
+    }),
+    metrics: behaviorSummaryMetricsSchema,
+    dimensions: t.Array(
+      t.Intersect([
+        t.Object({ key: t.String(), label: t.String() }),
+        behaviorSummaryMetricsSchema,
+      ]),
+    ),
+    reports: t.Object({ teacher: t.String(), family: t.String() }),
+  }),
+});
 
 export const scoresController = new Elysia({ prefix: '/classes/:classId' })
   .use(authPlugin)
+  .post(
+    '/score-events',
+    async ({ user, params: { classId }, body }) => {
+      const data = await scoreEventsService.create(
+        classId,
+        user!.sub,
+        body as CreateScoreEventInput,
+      );
+      return { data };
+    },
+    {
+      requireUser: true,
+      params: t.Object({ classId: t.String() }),
+      body: t.Object({
+        type: t.Enum(ScoreEventType),
+        studentIds: t.Array(t.String(), { minItems: 1, uniqueItems: true }),
+        occurredAt: t.Optional(t.String()),
+        minutesLate: t.Optional(t.Integer({ minimum: 1 })),
+        rank: t.Optional(t.Integer({ minimum: 1, maximum: 10 })),
+        manualDelta: t.Optional(t.Integer({ minimum: -10000, maximum: 10000 })),
+        isOrganizer: t.Optional(t.Boolean()),
+        specialContribution: t.Optional(t.Boolean()),
+        subject: t.Optional(t.String({ maxLength: 100 })),
+        reason: t.Optional(t.String({ maxLength: 200 })),
+        businessKey: t.Optional(t.String({ minLength: 1, maxLength: 255 })),
+      }),
+      detail: { summary: '登记结构化积分事件', tags: ['Score Periods'] },
+    },
+  )
   // Score Rules
   .get(
     '/score-rules',
@@ -150,6 +217,21 @@ export const scoresController = new Elysia({ prefix: '/classes/:classId' })
       detail: { summary: '撤销积分记录', tags: ['Scores'] },
     },
   )
+  .get(
+    '/students/:studentId/behavior-summary',
+    async ({ user, params: { classId, studentId }, query }) => {
+      await scoresService.assertClassAccess(user!.sub, classId);
+      const data = await behaviorSummaryService.getSummary(classId, studentId, query.month);
+      return { data };
+    },
+    {
+      requireUser: true,
+      params: t.Object({ classId: t.String(), studentId: t.String() }),
+      query: t.Object({ month: t.Optional(t.String()) }),
+      response: { 200: behaviorSummaryResponseSchema },
+      detail: { summary: '查询学生月度行为总结', tags: ['Scores'] },
+    },
+  )
   // Committee
   .get(
     '/committee',
@@ -193,7 +275,7 @@ export const scoresController = new Elysia({ prefix: '/classes/:classId' })
     '/score-periods/current/summary',
     async ({ user, params: { classId } }) => {
       await scoresService.assertClassAccess(user!.sub, classId);
-      const data = await scoresService.getPeriodsSummary(classId);
+      const data = await scorePeriodsService.getCurrentSummary(classId, user!.sub);
       return { data };
     },
     {
@@ -206,7 +288,7 @@ export const scoresController = new Elysia({ prefix: '/classes/:classId' })
     '/score-periods/summary',
     async ({ user, params: { classId }, query }) => {
       await scoresService.assertClassAccess(user!.sub, classId);
-      const data = await scoresService.getPeriodsSummary(classId, query.from, query.to);
+      const data = await scorePeriodsService.getSummary(classId, user!.sub, query.from, query.to);
       return { data };
     },
     {
@@ -217,5 +299,20 @@ export const scoresController = new Elysia({ prefix: '/classes/:classId' })
         to: t.Optional(t.String()),
       }),
       detail: { summary: '查询积分周期或日期范围汇总', tags: ['Scores'] },
+    },
+  )
+  .post(
+    '/score-periods/settle',
+    async ({ user, params: { classId }, body }) => {
+      await scoresService.assertClassAccess(user!.sub, classId, [TeacherRole.HEAD_TEACHER]);
+      if (body.periodId) await scorePeriodsService.settlePeriod(classId, body.periodId, user!.sub);
+      else await scorePeriodsService.settleBeforeCurrent(classId, user!.sub);
+      return { data: { settled: true } };
+    },
+    {
+      requireUser: true,
+      params: t.Object({ classId: t.String() }),
+      body: t.Object({ periodId: t.Optional(t.String()) }),
+      detail: { summary: '结算积分周期', tags: ['Score Periods'] },
     },
   );

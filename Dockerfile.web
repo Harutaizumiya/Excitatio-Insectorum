@@ -10,9 +10,7 @@ COPY packages ./packages
 COPY apps/web/package.json ./apps/web/package.json
 RUN pnpm --filter @repo/web install
 COPY apps/web ./apps/web
-ARG NEXT_PUBLIC_API_ORIGIN=""
 ARG VITE_API_ORIGIN=""
-ENV NEXT_PUBLIC_API_ORIGIN=$NEXT_PUBLIC_API_ORIGIN
 ENV VITE_API_ORIGIN=$VITE_API_ORIGIN
 RUN pnpm --filter @repo/web build
 

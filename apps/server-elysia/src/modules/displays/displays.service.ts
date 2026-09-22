@@ -18,6 +18,7 @@ import { config } from '../../config';
 import { rankingService } from '../ranking/ranking.service';
 import { schedulesService } from '../schedules/schedules.service';
 import { realtimeService } from '../realtime/realtime.service';
+import { scorePeriodsService } from '../scores/score-periods.service';
 
 const BINDING_TTL_SECONDS = 10 * 60;
 const BINDING_RATE_WINDOW_SECONDS = 60;
@@ -293,7 +294,7 @@ export class DisplaysService {
   }
 
   async getBootstrap(deviceId: string, classId: string) {
-    const [device, classroom, weeklyRanking, schedule] = await Promise.all([
+    const [device, classroom] = await Promise.all([
       prisma.displayDevice.findFirst({
         where: { id: deviceId, classId, status: DeviceStatus.ACTIVE },
         select: { id: true },
@@ -321,8 +322,6 @@ export class DisplaysService {
           },
         },
       }),
-      rankingService.getWeeklyRanking(classId),
-      schedulesService.getForDisplay(classId),
     ]);
 
     if (!device) {
@@ -331,6 +330,16 @@ export class DisplaysService {
     if (!classroom) {
       throw new BusinessError('CLASS_NOT_FOUND', '班级不存在', 404);
     }
+
+    const [scoreSummary, weeklyRanking, schedule] = await Promise.all([
+      scorePeriodsService.getCurrentSummaryForDisplay(classId),
+      rankingService.getWeeklyRanking(classId),
+      schedulesService.getForDisplay(classId),
+    ]);
+
+    const scoreByStudentId = new Map(
+      scoreSummary.students.map(({ studentId, score }) => [studentId, score]),
+    );
 
     return {
       classroom: {
@@ -348,12 +357,16 @@ export class DisplaysService {
             cellType: seat.cellType?.toLowerCase() ?? 'seat',
             student:
               seat.student?.status === StudentStatus.ACTIVE
-                ? { id: seat.student.id, name: seat.student.name }
+                ? {
+                    id: seat.student.id,
+                    name: seat.student.name,
+                    score: scoreByStudentId.get(seat.student.id) ?? 0,
+                  }
                 : null,
           })) ?? [],
       },
       ranking: {
-        top3: weeklyRanking.top3,
+        top3: scoreSummary.top3,
         progress: weeklyRanking.progress.map(({ studentId, name, change }) => ({
           studentId,
           name,

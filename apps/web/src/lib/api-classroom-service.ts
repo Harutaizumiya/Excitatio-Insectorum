@@ -9,6 +9,7 @@ import type {
   ClassroomSummary,
   ClassTeacher,
   ConsumeInvitationInput,
+  CreateFeedbackInput,
   CreateBindingCodeResult,
   CreateClassroomBindingCodeResult,
   CreateCustomScoreInput,
@@ -22,7 +23,12 @@ import type {
   DeviceTokenResult,
   DisplayBootstrap,
   DisplayDevice,
+  FeedbackCreateResult,
+  FeedbackDetail,
+  FeedbackListItem,
+  FeedbackListQuery,
   ImportedStudentInput,
+  InvitationPreview,
   InvitationConsumeResult,
   LoginInput,
   LoginResult,
@@ -32,6 +38,7 @@ import type {
   PollBindingSessionResult,
   RandomPickInput,
   RandomPickResult,
+  ReportUsageEventOptions,
   RefreshInput,
   SaveSeatLayoutInput,
   SaveClassScheduleInput,
@@ -47,14 +54,20 @@ import type {
   SeatLayoutVersion,
   SeatLayoutVersionSummary,
   Student,
+  StudentBehaviorSummary,
   StudentImportResult,
   StudentListQuery,
   TeacherInvitation,
   TokenPair,
   UpdateClassroomInput,
+  UpdateFeedbackInput,
   UpdateScoreRuleInput,
   UpdateStudentInput,
   UpdateTeacherInput,
+  UsageAnalyticsQuery,
+  UsageAnalyticsSummary,
+  UsageEventInput,
+  UsageEventResponse,
   WeeklyRanking,
   IsoDateTime,
 } from './domain';
@@ -68,12 +81,19 @@ import {
 } from './session';
 import { reportBackendUnavailable } from './api-error';
 import { getApiOrigin } from './utils';
+import {
+  createTraceId,
+  reportUsageEventBestEffort,
+  sanitizeUsageEventProperties,
+} from './usage-telemetry';
 
 const API_ORIGIN = getApiOrigin();
 
 interface RequestOptions {
   auth?: 'user' | 'display' | 'none';
   retry?: boolean;
+  requestId?: string;
+  suppressBackendUnavailable?: boolean;
 }
 
 interface ApiErrorPayload {
@@ -111,6 +131,90 @@ function jsonBody(body: unknown): BodyInit {
   return JSON.stringify(body);
 }
 
+interface RequestUsageDescriptor {
+  classId: string;
+  eventName: string;
+  module: string;
+}
+
+function requestUsageDescriptor(path: string, method: string): RequestUsageDescriptor | null {
+  const pathname = path.split('?', 1)[0] ?? path;
+  const match = /^\/classes\/([^/]+)(?:\/(.*))?$/.exec(pathname);
+  if (!match) return null;
+
+  const classId = decodeURIComponent(match[1] ?? '');
+  const resource = match[2] ?? '';
+  const operation = method.toUpperCase();
+  const descriptor = (eventName: string, module: string): RequestUsageDescriptor => ({
+    classId,
+    eventName,
+    module,
+  });
+
+  if (!resource && operation === 'PATCH') return descriptor('classroom.settings_updated', 'classroom');
+  if (resource === 'students/import' && operation === 'POST') {
+    return descriptor('students.imported', 'students');
+  }
+  if (resource === 'students' && operation === 'POST') return descriptor('students.created', 'students');
+  if (/^students\/[^/]+$/.test(resource) && operation === 'PATCH') {
+    return descriptor('students.updated', 'students');
+  }
+  if (/^students\/[^/]+\/(deactivate|restore|delete)$/.test(resource) && operation === 'POST') {
+    return descriptor(`students.${resource.split('/').at(-1)}d`, 'students');
+  }
+  if (resource === 'teachers' && operation === 'POST') return descriptor('teachers.created', 'teachers');
+  if (/^teachers\/[^/]+\/invitations$/.test(resource) && operation === 'POST') {
+    return descriptor('teachers.invitation_created', 'teachers');
+  }
+  if (/^teachers\/[^/]+$/.test(resource) && ['PATCH', 'DELETE'].includes(operation)) {
+    return descriptor(operation === 'DELETE' ? 'teachers.deleted' : 'teachers.updated', 'teachers');
+  }
+  if (/^teachers\/[^/]+\/(revoke|restore)$/.test(resource) && operation === 'POST') {
+    return descriptor(`teachers.${resource.split('/').at(-1)}d`, 'teachers');
+  }
+  if (resource === 'score-rules' && operation === 'POST') {
+    return descriptor('score_rules.created', 'score_rules');
+  }
+  if (/^score-rules\/[^/]+$/.test(resource) && operation === 'PATCH') {
+    return descriptor('score_rules.updated', 'score_rules');
+  }
+  if (/^score-rules\/[^/]+\/disable$/.test(resource) && operation === 'POST') {
+    return descriptor('score_rules.disabled', 'score_rules');
+  }
+  if (/^(scores\/(rule|custom)|score-events)$/.test(resource) && operation === 'POST') {
+    return descriptor('scores.created', 'scores');
+  }
+  if (/^scores\/[^/]+\/revert$/.test(resource) && operation === 'POST') {
+    return descriptor('scores.reverted', 'scores');
+  }
+  if (resource === 'score-periods/settle' && operation === 'POST') {
+    return descriptor('scores.settled', 'scores');
+  }
+  if (resource === 'committee' && operation === 'PUT') {
+    return descriptor('students.committee_updated', 'students');
+  }
+  if (resource === 'seat-layout' && operation === 'PUT') {
+    return descriptor('seating.saved', 'seating');
+  }
+  if (/^seat-layout\/versions\/[^/]+\/restore$/.test(resource) && operation === 'POST') {
+    return descriptor('seating.restored', 'seating');
+  }
+  if (resource === 'schedule' && operation === 'PUT') {
+    return descriptor('schedule.saved', 'schedule');
+  }
+  if (resource === 'ranking' && operation === 'GET') return descriptor('ranking.viewed', 'ranking');
+  if (resource === 'random-pick' && operation === 'POST') {
+    return descriptor('random_pick.completed', 'random_pick');
+  }
+  if (resource === 'feedback' && operation === 'POST') {
+    return descriptor('feedback.submitted', 'feedback');
+  }
+  if (/^display-devices(?:\/.*)?$/.test(resource) && operation === 'POST') {
+    return descriptor('display_devices.updated', 'display_devices');
+  }
+  return null;
+}
+
 export class ApiClassroomService implements ClassroomService {
   private userRefreshPromise: Promise<boolean> | null = null;
   private displayRefreshPromise: Promise<boolean> | null = null;
@@ -122,6 +226,10 @@ export class ApiClassroomService implements ClassroomService {
   ): Promise<T> {
     const auth = options.auth ?? 'user';
     const headers = new Headers(init.headers);
+    const requestId = options.requestId ?? headers.get('x-request-id') ?? createTraceId();
+    const requestStartedAt = Date.now();
+    const usageDescriptor = requestUsageDescriptor(path, init.method ?? 'GET');
+    headers.set('x-request-id', requestId);
     if (init.body !== undefined && !(init.body instanceof FormData)) {
       headers.set('content-type', 'application/json');
     }
@@ -143,28 +251,67 @@ export class ApiClassroomService implements ClassroomService {
         '无法连接到后端服务，请确认服务已启动',
         503,
       );
-      reportBackendUnavailable(error.message);
+      this.reportRequestUsage(usageDescriptor, requestId, requestStartedAt, 'FAILURE', error.code);
+      if (!options.suppressBackendUnavailable) reportBackendUnavailable(error.message);
       throw error;
     }
 
     if (response.status === 401 && options.retry !== false && auth !== 'none') {
       const refreshed =
-        auth === 'user' ? await this.refreshUserSession() : await this.refreshDisplaySession();
+        auth === 'user'
+          ? await this.refreshUserSession(options.suppressBackendUnavailable)
+          : await this.refreshDisplaySession(options.suppressBackendUnavailable);
       if (refreshed) {
-        return this.request<T>(path, init, { ...options, retry: false });
+        return this.request<T>(path, init, { ...options, requestId, retry: false });
       }
     }
 
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
       const error = errorPayload(payload, response.status);
-      if (response.status >= 500) reportBackendUnavailable(error.message);
+      this.reportRequestUsage(usageDescriptor, requestId, requestStartedAt, 'FAILURE', error.code);
+      if (response.status >= 500 && !options.suppressBackendUnavailable) {
+        reportBackendUnavailable(error.message);
+      }
       throw error;
     }
+    this.reportRequestUsage(usageDescriptor, requestId, requestStartedAt, 'SUCCESS');
     return (isEnvelope(payload) && !isPaginatedPayload(payload) ? payload.data : payload) as T;
   }
 
-  private refreshUserSession(): Promise<boolean> {
+  private reportRequestUsage(
+    descriptor: RequestUsageDescriptor | null,
+    traceId: string,
+    startedAt: number,
+    result: 'SUCCESS' | 'FAILURE',
+    errorCode?: string,
+  ): void {
+    if (!descriptor) return;
+    const clientType =
+      typeof window !== 'undefined' && window.location.pathname.startsWith('/teacher')
+        ? 'TEACHER_MOBILE'
+        : 'ADMIN_WEB';
+    void reportUsageEventBestEffort(
+      (input, options) => this.reportUsageEvent(input, options),
+      {
+        eventName: descriptor.eventName,
+        clientType,
+        classId: descriptor.classId,
+        result,
+        module: descriptor.module,
+        page: typeof window === 'undefined' ? undefined : window.location.pathname,
+        appVersion: import.meta.env.VITE_APP_VERSION || 'web',
+        browser:
+          typeof navigator === 'undefined' ? undefined : navigator.userAgent.slice(0, 255),
+        traceId,
+        errorCode,
+        properties: { durationMs: Math.max(0, Date.now() - startedAt) },
+      },
+      { auth: 'user' },
+    );
+  }
+
+  private refreshUserSession(suppressBackendUnavailable = false): Promise<boolean> {
     if (this.userRefreshPromise) return this.userRefreshPromise;
     this.userRefreshPromise = (async () => {
       const session = getUserSession();
@@ -173,7 +320,7 @@ export class ApiClassroomService implements ClassroomService {
         const tokens = await this.request<TokenPair>(
           '/auth/refresh',
           { method: 'POST', body: jsonBody({ refreshToken: session.refreshToken }) },
-          { auth: 'none', retry: false },
+          { auth: 'none', retry: false, suppressBackendUnavailable },
         );
         setUserSession({ ...session, ...tokens });
         return true;
@@ -186,7 +333,7 @@ export class ApiClassroomService implements ClassroomService {
     return this.userRefreshPromise;
   }
 
-  private refreshDisplaySession(): Promise<boolean> {
+  private refreshDisplaySession(suppressBackendUnavailable = false): Promise<boolean> {
     if (this.displayRefreshPromise) return this.displayRefreshPromise;
     this.displayRefreshPromise = (async () => {
       const session = getDisplaySession();
@@ -198,7 +345,7 @@ export class ApiClassroomService implements ClassroomService {
             method: 'POST',
             body: jsonBody({ deviceId: session.deviceId, credential: session.credential }),
           },
-          { auth: 'none', retry: false },
+          { auth: 'none', retry: false, suppressBackendUnavailable },
         );
         setDisplaySession({
           ...session,
@@ -223,6 +370,82 @@ export class ApiClassroomService implements ClassroomService {
     return this.request<Classroom>(`/classes/${encodeURIComponent(classId)}`);
   }
 
+  async reportUsageEvent(
+    input: UsageEventInput,
+    options: ReportUsageEventOptions = {},
+  ): Promise<UsageEventResponse> {
+    const traceId = input.traceId || createTraceId();
+    return this.request<UsageEventResponse>(
+      '/telemetry/events',
+      {
+        method: 'POST',
+        body: jsonBody({
+          ...input,
+          traceId,
+          properties: sanitizeUsageEventProperties(input.properties),
+        }),
+      },
+      {
+        auth: options.auth ?? (input.clientType === 'DISPLAY' ? 'display' : 'user'),
+        requestId: traceId,
+        suppressBackendUnavailable: true,
+      },
+    );
+  }
+
+  async createFeedback(
+    classId: string,
+    input: CreateFeedbackInput,
+  ): Promise<FeedbackCreateResult> {
+    const traceId = input.traceId || createTraceId();
+    return this.request<FeedbackCreateResult>(
+      `/classes/${encodeURIComponent(classId)}/feedback`,
+      {
+        method: 'POST',
+        body: jsonBody({ ...input, traceId }),
+      },
+      { requestId: traceId },
+    );
+  }
+
+  async listFeedback(
+    classId: string,
+    query: FeedbackListQuery = {},
+  ): Promise<PaginatedEnvelope<FeedbackListItem>> {
+    return this.request<PaginatedEnvelope<FeedbackListItem>>(
+      `/classes/${encodeURIComponent(classId)}/feedback${queryString(query)}`,
+    );
+  }
+
+  async getFeedback(classId: string, feedbackId: string): Promise<FeedbackDetail> {
+    return this.request<FeedbackDetail>(
+      `/classes/${encodeURIComponent(classId)}/feedback/${encodeURIComponent(feedbackId)}`,
+    );
+  }
+
+  async updateFeedback(
+    classId: string,
+    feedbackId: string,
+    input: UpdateFeedbackInput,
+  ): Promise<FeedbackDetail> {
+    return this.request<FeedbackDetail>(
+      `/classes/${encodeURIComponent(classId)}/feedback/${encodeURIComponent(feedbackId)}`,
+      {
+        method: 'PATCH',
+        body: jsonBody(input),
+      },
+    );
+  }
+
+  async getUsageAnalytics(
+    classId: string,
+    query: UsageAnalyticsQuery = {},
+  ): Promise<UsageAnalyticsSummary> {
+    return this.request<UsageAnalyticsSummary>(
+      `/classes/${encodeURIComponent(classId)}/analytics/summary${queryString(query)}`,
+    );
+  }
+
   async updateClassroom(classId: string, input: UpdateClassroomInput): Promise<Classroom> {
     return this.request<Classroom>(`/classes/${encodeURIComponent(classId)}`, {
       method: 'PATCH',
@@ -236,6 +459,16 @@ export class ApiClassroomService implements ClassroomService {
   ): Promise<PaginatedEnvelope<Student>> {
     return this.request<PaginatedEnvelope<Student>>(
       `/classes/${encodeURIComponent(classId)}/students${queryString(query)}`,
+    );
+  }
+
+  async getStudentBehaviorSummary(
+    classId: string,
+    studentId: string,
+    month: string,
+  ): Promise<StudentBehaviorSummary> {
+    return this.request<StudentBehaviorSummary>(
+      `/classes/${encodeURIComponent(classId)}/students/${encodeURIComponent(studentId)}/behavior-summary${queryString({ month })}`,
     );
   }
 
@@ -653,7 +886,19 @@ export class ApiClassroomService implements ClassroomService {
     if (!session || session.deviceId !== deviceId) {
       throw new ClassroomServiceError('DISPLAY_SESSION_MISSING', '请先完成大屏绑定', 401);
     }
-    return this.request<DisplayBootstrap>('/display/bootstrap', undefined, { auth: 'display' });
+    const bootstrap = await this.request<DisplayBootstrap>('/display/bootstrap', undefined, {
+      auth: 'display',
+    });
+
+    // Older display sessions did not persist classId. REST bootstrap still works
+    // for those sessions, but realtime cannot join the class room without it.
+    // Repair the local session from the authenticated server response so the
+    // existing auth-change listener reconnects Socket.IO immediately.
+    if (session.classId !== bootstrap.classroom.id) {
+      setDisplaySession({ ...session, classId: bootstrap.classroom.id });
+    }
+
+    return bootstrap;
   }
 
   async login(input: LoginInput): Promise<LoginResult> {
@@ -687,6 +932,11 @@ export class ApiClassroomService implements ClassroomService {
     const current = getUserSession();
     if (current) setUserSession({ ...current, ...tokens });
     return tokens;
+  }
+
+  async getInvitationPreview(token: string): Promise<InvitationPreview> {
+    const path = '/auth/invitations/' + encodeURIComponent(token) + '/preview';
+    return this.request<InvitationPreview>(path, undefined, { auth: 'none' });
   }
 
   async consumeInvitation(

@@ -34,9 +34,10 @@ export const schedulesController = new Elysia({ prefix: '/classes/:classId/sched
       requireUser: true,
       params: t.Object({ classId: t.String() }),
       body: t.Object({
-        activeTemplateId: t.Optional(t.Union([t.String(), t.Null()])),
+        activeTemplateKey: t.String({ minLength: 1, maxLength: 100 }),
         templates: t.Array(
           t.Object({
+            clientKey: t.String({ minLength: 1, maxLength: 100 }),
             id: t.Optional(t.String()),
             name: t.String(),
             periods: t.Array(

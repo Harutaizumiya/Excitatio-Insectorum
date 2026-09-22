@@ -10,6 +10,7 @@ export interface SchedulePeriodInput {
 }
 
 export interface ScheduleTemplateInput {
+  clientKey: string;
   id?: string;
   name: string;
   periods: SchedulePeriodInput[];
@@ -23,7 +24,7 @@ export interface ScheduleEntryInput {
 }
 
 export interface SaveScheduleInput {
-  activeTemplateId?: string | null;
+  activeTemplateKey: string;
   templates: ScheduleTemplateInput[];
   entries: ScheduleEntryInput[];
 }
@@ -83,6 +84,27 @@ export class SchedulesService {
     }
 
     const saved = await prisma.$transaction(async (tx) => {
+      const classTeacherIds = [
+        ...new Set(
+          dto.entries
+            .map((entry) => entry.classTeacherId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+      if (classTeacherIds.length > 0) {
+        const classTeachers = await tx.classTeacher.findMany({
+          where: { classId, id: { in: classTeacherIds } },
+          select: { id: true },
+        });
+        if (classTeachers.length !== classTeacherIds.length) {
+          throw new BusinessError(
+            'INVALID_CLASS_TEACHER',
+            '课表中包含不属于当前班级的教师关系',
+            400,
+          );
+        }
+      }
+
       // Clean old entries & templates
       await tx.scheduleEntry.deleteMany({ where: { classId } });
       await tx.scheduleTemplatePeriod.deleteMany({
@@ -106,15 +128,12 @@ export class SchedulesService {
             },
           },
         });
-        if (tpl.id) {
-          templateIdMap.set(tpl.id, created.id);
-        }
+        templateIdMap.set(tpl.clientKey, created.id);
+        if (tpl.id) templateIdMap.set(tpl.id, created.id);
       }
 
       let activeTemplateId: string | null = null;
-      if (dto.activeTemplateId) {
-        activeTemplateId = templateIdMap.get(dto.activeTemplateId) || dto.activeTemplateId;
-      }
+      activeTemplateId = templateIdMap.get(dto.activeTemplateKey) || dto.activeTemplateKey;
 
       await tx.classroom.update({
         where: { id: classId },

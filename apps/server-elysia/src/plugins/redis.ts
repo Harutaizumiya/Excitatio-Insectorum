@@ -65,6 +65,7 @@ export class RedisService {
   private redis: Redis | null = null;
   private readonly memory = new InMemoryRedis();
   private usingMemory = false;
+  private unavailableError: Error | null = null;
 
   constructor() {
     const redisUrl = process.env.REDIS_URL;
@@ -99,18 +100,32 @@ export class RedisService {
         }
 
         this.redis.on('error', (error: Error) => {
-          console.warn('Redis error, switching to in-memory fallback:', error.message);
-          this.usingMemory = true;
+          if (process.env.NODE_ENV === 'production') {
+            this.unavailableError = new Error(`Redis unavailable: ${error.message}`);
+            console.error(this.unavailableError.message);
+          } else {
+            console.warn('Redis error, switching to in-memory fallback:', error.message);
+            this.usingMemory = true;
+          }
         });
 
         this.redis.connect().catch((error) => {
-          this.usingMemory = true;
+          if (process.env.NODE_ENV === 'production') {
+            this.unavailableError = new Error(
+              `Redis unavailable: ${error instanceof Error ? error.message : String(error)}`,
+            );
+            console.error(this.unavailableError.message);
+          } else {
+            this.usingMemory = true;
+          }
           this.redis?.disconnect();
-          console.warn(
-            `Redis unavailable; using in-memory fallback: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
+          if (process.env.NODE_ENV !== 'production') {
+            console.warn(
+              `Redis unavailable; using in-memory fallback: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          }
         });
       } catch {
         this.usingMemory = true;
@@ -121,6 +136,7 @@ export class RedisService {
   }
 
   get client(): Redis | InMemoryRedis {
+    if (this.unavailableError) throw this.unavailableError;
     return this.usingMemory || !this.redis ? this.memory : this.redis;
   }
 

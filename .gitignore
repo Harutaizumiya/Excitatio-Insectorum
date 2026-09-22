@@ -11,5 +11,8 @@ coverage/
 *.db-journal
 .DS_Store
 .playwright-cli/
+.next/
+.trae/
 deploy/server.env
 deploy/data/
+tmp*

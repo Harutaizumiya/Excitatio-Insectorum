@@ -12,6 +12,7 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  MessageOutlined,
   ReadOutlined,
   TeamOutlined,
   UserOutlined,
@@ -23,6 +24,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { adminResources, cloneSeats, navItems, type AdminRoute } from "./admin-data";
 import { AdminNotificationDrawer } from "./admin-notification-drawer";
+import { FeedbackSubmitDrawer } from "./feedback/feedback-submit-drawer";
 import { useAdminClassroom, useAdminNotifications, useAdminSchedule, useAdminSeating } from "./admin-queries";
 import { useClassroomService } from "@/components/providers/classroom-system-provider";
 import { getUserSession, clearUserSession } from "@/lib/session";
@@ -32,6 +34,7 @@ const { Header, Sider, Content } = Layout;
 const iconByRoute: Record<AdminRoute, ReactNode> = {
   overview: <AppstoreOutlined />,
   students: <TeamOutlined />,
+  "students-committee": <TeamOutlined />,
   seating: <LayoutOutlined />,
   schedule: <CalendarOutlined />,
   teachers: <ReadOutlined />,
@@ -43,6 +46,7 @@ const iconByRoute: Record<AdminRoute, ReactNode> = {
 const pageTitleByPath: Record<string, string> = {
   "/admin": "班级概览",
   "/admin/students": "学生管理",
+  "/admin/students/committee": "班委设置",
   "/admin/seating": "座位管理",
   "/admin/schedule": "课程表",
   "/admin/teachers": "任课教师",
@@ -57,6 +61,7 @@ interface AdminShellProps {
 
 function getRouteFromPath(pathname: string): AdminRoute {
   if (pathname === "/admin") return "overview";
+  if (pathname.startsWith("/admin/students/")) return "students";
   const segment = pathname.split("/").filter(Boolean).at(-1);
   return navItems.some((item) => item.key === segment)
     ? (segment as AdminRoute)
@@ -110,6 +115,7 @@ function AdminShellContent({ children }: AdminShellProps) {
   const service = useClassroomService();
   const [collapsed, setCollapsed] = useCollapsedSider();
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
+  const [feedbackDrawerOpen, setFeedbackDrawerOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const currentRoute = getRouteFromPath(pathname);
   const title = pageTitleByPath[pathname] ?? "班级概览";
@@ -392,6 +398,14 @@ function AdminShellContent({ children }: AdminShellProps) {
               </Space>
 
               <Space size={18} align="center">
+                <Button
+                  type="text"
+                  icon={<MessageOutlined />}
+                  onClick={() => setFeedbackDrawerOpen(true)}
+                  aria-label="提交反馈"
+                >
+                  反馈
+                </Button>
                 <Badge count={unreadCount} size="small" offset={[-2, 4]} overflowCount={99}>
                   <Button
                     type="text"
@@ -434,6 +448,12 @@ function AdminShellContent({ children }: AdminShellProps) {
         <AdminNotificationDrawer
           open={notificationDrawerOpen}
           onClose={() => setNotificationDrawerOpen(false)}
+        />
+        <FeedbackSubmitDrawer
+          open={feedbackDrawerOpen}
+          onClose={() => setFeedbackDrawerOpen(false)}
+          module={currentRoute}
+          page={pathname}
         />
       </Refine>
     );

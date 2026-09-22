@@ -2,9 +2,9 @@
 
 ## Overview
 
-课序是面向班主任、任课教师和班级大屏的课堂管理应用。当前采用 pnpm workspace + Turborepo，前端为 Vite 8 + React 19 SPA，后端为 NestJS 11 模块化单体，通过 REST API 与 Socket.IO 通信，Prisma 管理持久化。
+课序是面向班主任、任课教师和班级大屏的课堂管理应用。当前采用 pnpm workspace + Turborepo，前端为 Vite 8 + React 19 SPA，后端为 Elysia 模块化服务，通过 REST API 与 Socket.IO 通信，Prisma 管理持久化。
 
-本次以 2026-09-03 工作区（基准提交 `31b3cef`）为准。生产部署启动一个 NestJS 进程，由 OpenResty / Nginx 托管 Vite 8 静态导出产物；部署数据库配置使用 SQLite，另保留 PostgreSQL schema 和命令。前端当前 Provider 固定使用 API，部分旧说明中的默认 mock 模式已不符合实现。
+生产部署启动 Elysia Node.js 进程，由 OpenResty / Nginx 托管 Vite 8 静态产物；部署数据库配置使用 SQLite，另保留 PostgreSQL schema 和命令。前端当前 Provider 固定使用 API，部分旧说明中的默认 mock 模式已不符合实现。
 
 ## Modules
 
@@ -22,7 +22,7 @@
 
 ## Data Flow
 
-浏览器页面通过 hooks / ClassroomService 调用 `/api/v1`；NestJS Guard 校验 JWT、身份类型、班级权限和角色，DTO / ValidationPipe 校验输入，Service 执行业务规则并通过 Prisma 读写数据库。成功响应通常使用 `{ data }` 或 `{ data, meta }`，错误响应使用 `{ code, message, requestId }`。
+浏览器页面通过 hooks / ClassroomService 调用 `/api/v1`；Elysia 插件和业务服务校验 JWT、身份类型、班级权限和角色，运行时 schema 校验输入，Service 执行业务规则并通过 Prisma 读写数据库。成功响应通常使用 `{ data }` 或 `{ data, meta }`，错误响应使用 `{ code, message, requestId }`。
 
 涉及积分、座位和人员等写入的业务在事务提交后向 RealtimeService 发布事件。Socket.IO 通过 `/socket.io/` 传输、使用 `/realtime` namespace，按班级房间分发。前端更新查询缓存或重新获取大屏 bootstrap，保留后端作为最终状态来源。
 

@@ -120,6 +120,43 @@ export interface StudentListQuery {
   pageSize?: number;
 }
 
+export interface StudentBehaviorSummary {
+  student: {
+    id: string;
+    name: string;
+    studentNo: string | null;
+    status: StudentStatus;
+    deletedAt: IsoDateTime | null;
+  };
+  period: {
+    month: string;
+    timeZone: string;
+    startAt: IsoDateTime;
+    endAt: IsoDateTime;
+  };
+  metrics: {
+    effectiveRecordCount: number;
+    positiveCount: number;
+    negativeCount: number;
+    positiveDelta: number;
+    negativeDelta: number;
+    netDelta: number;
+  };
+  dimensions: Array<{
+    key: string;
+    label: string;
+    positiveCount: number;
+    negativeCount: number;
+    positiveDelta: number;
+    negativeDelta: number;
+    netDelta: number;
+  }>;
+  reports: {
+    teacher: string;
+    family: string;
+  };
+}
+
 export interface CreateStudentInput {
   name: string;
   studentNo?: string;
@@ -311,6 +348,11 @@ export interface ScoreEventResult {
   records: Array<{ studentId: string; delta: number }>;
 }
 
+export interface ScoreRecordEvent {
+  type: ScoreEventType;
+  minutesLate: number | null;
+}
+
 export interface ScorePeriod {
   id: string;
   startAt: IsoDateTime;
@@ -373,6 +415,7 @@ export interface ScoreRecord {
   reverted: boolean;
   periodId: string | null;
   eventId: string | null;
+  event: ScoreRecordEvent | null;
   violation: boolean;
   occurredAt: IsoDateTime;
   createdAt: IsoDateTime;
@@ -482,10 +525,15 @@ export interface DisplayBootstrap {
   classroom: Pick<ClassroomSummary, 'id' | 'name' | 'gridRows' | 'gridCols'>;
   layout: {
     version: number | null;
-    seats: Array<Omit<Seat, 'id'>>;
+    seats: Array<{
+      row: number;
+      col: number;
+      cellType?: SeatCellType;
+      student: (NamedEntity & { score: number }) | null;
+    }>;
   };
   ranking: {
-    top3: TopRankingItem[];
+    top3: Array<TopRankingItem & { score: number }>;
     progress: Array<Pick<ProgressRankingItem, 'studentId' | 'name' | 'change'>>;
   };
   schedule: {
@@ -522,6 +570,11 @@ export interface LogoutResult {
 
 export interface ConsumeInvitationInput {
   deviceName: string;
+}
+
+export interface InvitationPreview {
+  classroom: Pick<ClassroomSummary, 'id' | 'name'>;
+  headTeacher: NamedEntity;
 }
 
 export interface InvitationConsumeResult extends TokenPair {
@@ -561,4 +614,164 @@ export interface StudentImportResult {
   skipped: number;
   duplicates: Array<{ name: string; studentNo: string | null; reason: string }>;
   errors: Array<{ name: string; studentNo: string | null; reason: string }>;
+}
+
+export type UsageClientType = 'DISPLAY' | 'ADMIN_WEB' | 'TEACHER_MOBILE' | 'OTHER';
+export type UsageEventResult = 'SUCCESS' | 'FAILURE';
+
+export type TelemetryPropertyKey =
+  | 'totalCount'
+  | 'successCount'
+  | 'failureCount'
+  | 'operationMode'
+  | 'reconnectCount'
+  | 'durationMs'
+  | 'errorCode'
+  | 'feature'
+  | 'itemCount';
+
+export type TelemetryPropertyValue = string | number | boolean;
+
+export type UsageEventProperties = Partial<Record<TelemetryPropertyKey, TelemetryPropertyValue>>;
+
+export interface UsageEventInput {
+  eventName: string;
+  clientType: UsageClientType;
+  classId?: string;
+  result?: UsageEventResult;
+  module?: string;
+  page?: string;
+  appVersion?: string;
+  browser?: string;
+  traceId?: string;
+  errorCode?: string;
+  properties?: UsageEventProperties;
+  occurredAt?: IsoDateTime;
+}
+
+export interface UsageEventResponse {
+  id: string;
+  traceId: string;
+}
+
+export interface ReportUsageEventOptions {
+  auth?: 'user' | 'display';
+}
+
+export type FeedbackType = 'BUG' | 'DIFFICULTY' | 'DATA_ISSUE' | 'FEATURE_REQUEST' | 'OTHER';
+export type FeedbackStatus = 'PENDING' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+
+export interface CreateFeedbackInput {
+  type: FeedbackType;
+  description: string;
+  screenshotUrl?: string;
+  clientType: UsageClientType;
+  module?: string;
+  page?: string;
+  appVersion?: string;
+  browser?: string;
+  traceId?: string;
+}
+
+export interface FeedbackListQuery {
+  status?: FeedbackStatus;
+  type?: FeedbackType;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface FeedbackListItem {
+  id: string;
+  code: string;
+  type: FeedbackType;
+  status: FeedbackStatus;
+  clientType: UsageClientType;
+  appVersion: string | null;
+  traceId: string;
+  createdAt: IsoDateTime;
+  classroom: Pick<ClassroomSummary, 'id' | 'name'>;
+}
+
+export interface FeedbackDetail extends FeedbackListItem {
+  description: string;
+  screenshotUrl: string | null;
+  classId: string;
+  submittedById: string;
+  module: string | null;
+  page: string | null;
+  browser: string | null;
+  processingNote: string | null;
+  processedById: string | null;
+  processedAt: IsoDateTime | null;
+  updatedAt: IsoDateTime;
+  submittedBy: NamedEntity;
+  processedBy: NamedEntity | null;
+}
+
+export interface FeedbackCreateResult {
+  id: string;
+  code: string;
+  status: FeedbackStatus;
+  traceId: string;
+  createdAt: IsoDateTime;
+}
+
+export type CreateFeedbackResult = FeedbackCreateResult;
+export type FeedbackListResult = PaginatedEnvelope<FeedbackListItem>;
+
+export interface UpdateFeedbackInput {
+  status?: FeedbackStatus;
+  processingNote?: string | null;
+}
+
+export interface UsageAnalyticsQuery {
+  from?: IsoDateTime;
+  to?: IsoDateTime;
+}
+
+export interface UsageAnalyticsDailyTrend {
+  date: string;
+  activeDevices: number;
+  onlineMinutes: number;
+}
+
+export interface UsageAnalyticsDisplaySummary {
+  configured: number;
+  currentlyOnline: number;
+  activeDevices: number;
+  averageOnlineMinutes: number;
+  realtimeConnectionErrors: number;
+  dailyTrend: UsageAnalyticsDailyTrend[];
+}
+
+export interface UsageAnalyticsFeatureUsage {
+  feature: string;
+  usageCount: number;
+  activeTeachers: number;
+  activeClassrooms: number;
+}
+
+export interface UsageAnalyticsFeedbackSummary {
+  total: number;
+  new: number;
+  pending: number;
+  resolved: number;
+  closed: number;
+}
+
+export interface UsageAnalyticsVersionUsage {
+  version: string;
+  activeClients: number;
+}
+
+export interface UsageAnalyticsSummary {
+  range: { from: IsoDateTime; to: IsoDateTime };
+  activeClassrooms: number;
+  activeTeachers: number;
+  eventCount: number;
+  errorCount: number;
+  displays: UsageAnalyticsDisplaySummary;
+  featureUsage: UsageAnalyticsFeatureUsage[];
+  feedback: UsageAnalyticsFeedbackSummary;
+  versions: UsageAnalyticsVersionUsage[];
 }

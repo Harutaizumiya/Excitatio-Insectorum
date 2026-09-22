@@ -1,17 +1,19 @@
 import type { IsoDateTime } from './domain';
 import { io, type Socket } from 'socket.io-client';
 import { getActiveClassId, getDisplaySession, getUserSession } from './session';
-import { reportBackendUnavailable } from './api-error';
+import { BACKEND_AVAILABLE_EVENT, reportBackendUnavailable } from './api-error';
 import { getApiOrigin } from './utils';
 
 export interface RealtimeEventPayloads {
   SCORE_CHANGED: {
-    studentId: string;
+    studentId?: string;
     direction: 'INCREASE' | 'DECREASE';
+    delta?: number;
   };
   SCORE_REVERTED: {
     studentId: string;
     recordId: string;
+    delta: number;
   };
   RANKING_CHANGED: {
     period: 'WEEK' | 'MONTH';
@@ -33,6 +35,10 @@ export interface RealtimeEventPayloads {
   };
   SCHEDULE_CHANGED: {
     activeTemplateId: string;
+  };
+  TEACHER_CONNECTED: {
+    teacherId: string;
+    teacherName: string;
   };
 }
 
@@ -124,6 +130,8 @@ const API_ORIGIN = getApiOrigin();
 
 export class SocketIoRealtimeClient implements ClassRealtimeClient {
   private socket: Socket | undefined;
+  private connectionToken: string | undefined;
+  private connectionClassId: string | undefined;
   private status: RealtimeConnectionStatus = 'DISCONNECTED';
   private readonly eventListeners = new Set<UntypedEventListener>();
   private readonly statusListeners = new Set<(status: RealtimeConnectionStatus) => void>();
@@ -141,6 +149,15 @@ export class SocketIoRealtimeClient implements ClassRealtimeClient {
       return;
     }
 
+    if (
+      this.socket &&
+      (this.socket.connected || this.socket.active) &&
+      this.connectionToken === token &&
+      this.connectionClassId === classId
+    ) {
+      return;
+    }
+
     this.disconnect();
     this.setStatus('CONNECTING');
     const socketOrigin =
@@ -148,12 +165,22 @@ export class SocketIoRealtimeClient implements ClassRealtimeClient {
     const socket = io(`${socketOrigin}/realtime`, {
       auth: { token, classId },
       transports: ['websocket', 'polling'],
+      tryAllTransports: true,
       reconnection: true,
     });
     this.socket = socket;
-    socket.on('connect', () => this.setStatus('CONNECTED'));
-    socket.on('disconnect', () => this.setStatus('DISCONNECTED'));
+    this.connectionToken = token;
+    this.connectionClassId = classId;
+    socket.on('connect', () => {
+      if (this.socket !== socket) return;
+      this.setStatus('CONNECTED');
+      window.dispatchEvent(new Event(BACKEND_AVAILABLE_EVENT));
+    });
+    socket.on('disconnect', () => {
+      if (this.socket === socket) this.setStatus('DISCONNECTED');
+    });
     socket.on('connect_error', () => {
+      if (this.socket !== socket) return;
       this.setStatus('DISCONNECTED');
       reportBackendUnavailable('无法连接到后端实时服务，请确认后端服务已启动。');
     });
@@ -169,6 +196,8 @@ export class SocketIoRealtimeClient implements ClassRealtimeClient {
       this.socket.disconnect();
       this.socket = undefined;
     }
+    this.connectionToken = undefined;
+    this.connectionClassId = undefined;
     this.setStatus('DISCONNECTED');
   }
 
@@ -215,6 +244,7 @@ function isClassEventType(value: string): value is ClassEventType {
       RANDOM_PICKED: true,
       DISPLAY_CONFIG_CHANGED: true,
       SCHEDULE_CHANGED: true,
+      TEACHER_CONNECTED: true,
     }
   );
 }

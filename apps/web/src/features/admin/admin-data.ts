@@ -12,6 +12,7 @@ export type SeatCellType = 'seat' | 'aisle' | 'podium' | 'empty';
 export type AdminRoute =
   | 'overview'
   | 'students'
+  | 'students-committee'
   | 'seating'
   | 'schedule'
   | 'teachers'
@@ -74,6 +75,14 @@ export interface ScoreRecord extends Omit<
   violation: boolean;
   occurredAt: string;
   createdAt: string;
+}
+
+export function formatScoreRecordSource(record: Pick<ScoreRecord, 'ruleName' | 'event'>): string {
+  if (record.ruleName) return record.ruleName;
+  if (record.event?.type === 'LATE' && record.event.minutesLate !== null) {
+    return `迟到${record.event.minutesLate}分钟`;
+  }
+  return record.event ? '事件积分' : '自定义积分';
 }
 
 export interface Seat extends Omit<ApiSeat, 'student'> {

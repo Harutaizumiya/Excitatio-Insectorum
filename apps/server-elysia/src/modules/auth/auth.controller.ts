@@ -54,6 +54,22 @@ export const authController = new Elysia({ prefix: '/auth' })
       },
     },
   )
+  .get(
+    '/invitations/:token/preview',
+    async ({ params: { token } }) => {
+      const data = await authService.getInvitationPreview(token);
+      return { data };
+    },
+    {
+      params: t.Object({
+        token: t.String(),
+      }),
+      detail: {
+        summary: '预览任课教师邀请信息',
+        tags: ['Auth'],
+      },
+    },
+  )
   .post(
     '/invitations/:token/consume',
     async ({ params: { token }, body }) => {

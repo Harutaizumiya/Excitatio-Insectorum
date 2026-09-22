@@ -6,6 +6,7 @@ import {
   Prisma,
   RelationStatus,
   SessionClientType,
+  TeacherRole,
   UserStatus,
 } from '@prisma/client';
 import { prisma } from '../../plugins/prisma';
@@ -121,6 +122,57 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
     realtimeService.disconnectSession(sessionId);
+  }
+
+  async getInvitationPreview(token: string) {
+    const invitation = await prisma.teacherInvitation.findUnique({
+      where: { tokenHash: opaqueTokenHash(token) },
+      include: {
+        classTeacher: {
+          include: { classroom: true, teacher: true },
+        },
+      },
+    });
+
+    if (!invitation) {
+      throw new BusinessError('INVITATION_NOT_FOUND', '邀请不存在', 404);
+    }
+    if (invitation.status === InvitationStatus.USED || invitation.usedAt) {
+      throw new BusinessError('INVITATION_ALREADY_USED', '邀请已经使用', 409);
+    }
+    if (invitation.status === InvitationStatus.REVOKED) {
+      throw new BusinessError('INVITATION_REVOKED', '邀请已经撤销', 410);
+    }
+    if (invitation.status === InvitationStatus.EXPIRED || invitation.expiresAt <= new Date()) {
+      throw new BusinessError('INVITATION_EXPIRED', '邀请已经过期', 410);
+    }
+    if (
+      invitation.classTeacher.status !== RelationStatus.ACTIVE ||
+      invitation.classTeacher.teacher.status !== UserStatus.ACTIVE
+    ) {
+      throw new BusinessError('INVITATION_REVOKED', '教师关系已经失效', 410);
+    }
+
+    const headTeacher = await prisma.classTeacher.findFirst({
+      where: {
+        classId: invitation.classTeacher.classId,
+        role: TeacherRole.HEAD_TEACHER,
+        status: RelationStatus.ACTIVE,
+        teacher: { status: UserStatus.ACTIVE },
+      },
+      select: { teacher: { select: { id: true, name: true } } },
+    });
+    if (!headTeacher) {
+      throw new BusinessError('INVITATION_REVOKED', '班主任关系已经失效', 410);
+    }
+
+    return {
+      classroom: {
+        id: invitation.classTeacher.classroom.id,
+        name: invitation.classTeacher.classroom.name,
+      },
+      headTeacher: headTeacher.teacher,
+    };
   }
 
   async consumeInvitation(token: string, deviceName?: string) {

@@ -7,6 +7,7 @@ export enum ClassEventType {
   RANDOM_PICKED = 'RANDOM_PICKED',
   DISPLAY_CONFIG_CHANGED = 'DISPLAY_CONFIG_CHANGED',
   SCHEDULE_CHANGED = 'SCHEDULE_CHANGED',
+  TEACHER_CONNECTED = 'TEACHER_CONNECTED',
 }
 
 export interface ClassRealtimeEvent<TPayload = unknown> {

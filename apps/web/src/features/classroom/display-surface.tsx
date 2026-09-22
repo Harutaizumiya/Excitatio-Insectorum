@@ -8,17 +8,33 @@ import { ArrowUpOutlined, CrownOutlined, MinusOutlined, PlusOutlined, ReloadOutl
 import { Button } from "@/components/motion/button";
 import { useClassroomService, useRealtimeClient } from "@/components/providers/classroom-system-provider";
 import { ClassroomServiceError } from "@/lib/classroom-service";
-import type { ClassEventType, DisplayBootstrap, Seat } from "@/lib";
+import { reportUsageEventBestEffort, type ClassEventType, type DisplayBootstrap, type Seat } from "@/lib";
 import { clearDisplaySession, getDisplaySession } from "@/lib/session";
 import { SeatCell } from "@/features/admin/seating/seat-cell";
+import {
+  RANDOM_PICK_ANIMATION_DURATION_MS,
+  RANDOM_PICK_HOP_COUNT,
+  RANDOM_PICK_HOP_INTERVAL_MS,
+} from "@/features/classroom/random-pick-animation";
 
 type Highlight = { studentId: string; name: string } | null;
 type SeatKind = "seat" | "podium" | "corridor";
 type DisplayGridCell = { row: number; col: number; rowSpan: number };
+type DisplaySeatSnapshot = DisplayBootstrap["layout"]["seats"][number];
+type ScoreFeedback = { delta: number; token: number };
 
 const SEAT_UPDATE_NOTIFICATION_KEY = "display-seat-update";
 const SEAT_UPDATE_DURATION = 1800;
 const SEAT_UPDATE_TOTAL_DURATION = 3000;
+const DISPLAY_HEARTBEAT_INTERVAL_MS = 60_000;
+
+function formatScore(score: number): string {
+  return `${score}分`;
+}
+
+function formatScoreDelta(delta: number): string {
+  return `${delta > 0 ? "+" : ""}${delta}分`;
+}
 
 function getSeatKind(row: number, col: number, rows: number, cols: number, cellType?: Seat["cellType"]): SeatKind {
   if (cellType === "aisle") return "corridor";
@@ -29,7 +45,7 @@ function getSeatKind(row: number, col: number, rows: number, cols: number, cellT
   return "seat";
 }
 
-function getSeatLabel(row: number, col: number, seat: Pick<Seat, "student" | "cellType"> | undefined, kind: SeatKind): string {
+function getSeatLabel(row: number, col: number, seat: Pick<DisplaySeatSnapshot, "student" | "cellType"> | undefined, kind: SeatKind): string {
   if (kind === "podium") return "讲台";
   if (kind === "corridor") return "走廊";
   if (seat?.student) return seat.student.name;
@@ -43,22 +59,26 @@ function FlipFlapLabel({
   trigger,
   delay = 0,
   scrambleChars,
+  active,
 }: {
   value: string;
   targetValue?: string;
   trigger: number;
   delay?: number;
   scrambleChars: string[];
+  active: boolean;
 }): React.ReactElement {
   const [displayedValue, setDisplayedValue] = useState(value);
   const [isFlipping, setIsFlipping] = useState(false);
-  const [flipTick, setFlipTick] = useState(0);
-  const currentValueRef = useRef(value);
   const handledTriggerRef = useRef(trigger);
 
   useEffect(() => {
+    if (!active) {
+      setIsFlipping(false);
+      setDisplayedValue(value);
+      return;
+    }
     if (trigger === handledTriggerRef.current) {
-      currentValueRef.current = value;
       setDisplayedValue(value);
       return;
     }
@@ -73,21 +93,22 @@ function FlipFlapLabel({
 
     const startTimer = window.setTimeout(() => {
       setIsFlipping(true);
-      scrambleTimer = window.setInterval(() => {
+      const createScrambledName = () => {
+        if (scrambleChars.length === 0) return value;
         const scrambleLength = 2 + Math.floor(Math.random() * 2);
-        const nextName = Array.from({ length: scrambleLength }, () =>
+        return Array.from({ length: scrambleLength }, () =>
           scrambleChars[Math.floor(Math.random() * scrambleChars.length)]
         ).join("");
-        setDisplayedValue(nextName);
-        setFlipTick((tick) => tick + 1);
+      };
+      setDisplayedValue(createScrambledName());
+      scrambleTimer = window.setInterval(() => {
+        setDisplayedValue(createScrambledName());
       }, scrambleInterval);
 
       targetTimer = window.setTimeout(() => {
         if (scrambleTimer !== undefined) window.clearInterval(scrambleTimer);
         scrambleTimer = undefined;
-        currentValueRef.current = nextValue;
         setDisplayedValue(nextValue);
-        setFlipTick((tick) => tick + 1);
       }, scrambleDuration / 2);
 
       finishTimer = window.setTimeout(() => {
@@ -100,17 +121,16 @@ function FlipFlapLabel({
       if (targetTimer !== undefined) window.clearTimeout(targetTimer);
       if (finishTimer !== undefined) window.clearTimeout(finishTimer);
     };
-  }, [delay, scrambleChars, targetValue, trigger, value]);
+  }, [active, delay, scrambleChars, targetValue, trigger, value]);
 
   return (
-    <motion.span
-      key={flipTick}
-      animate={isFlipping ? { rotateX: [0, -88, 0] } : { rotateX: 0 }}
-      transition={{ duration: 0.28, ease: "easeInOut" }}
-      style={{ display: "inline-block", transformOrigin: "center center", perspective: 400 }}
+    <span
+      className="display-name-flap"
+      data-display-name-flap
+      data-flipping={isFlipping ? "true" : "false"}
     >
       {displayedValue}
-    </motion.span>
+    </span>
   );
 }
 
@@ -193,18 +213,24 @@ function DisplaySeat({
   nameAnimationDelay,
   scrambleChars,
   nameAnimationTarget,
+  animateName,
   rowSpan,
+  scoreFeedback,
+  scoreFeedbackKey,
 }: {
   row: number;
   col: number;
-  seat: Pick<Seat, "student" | "cellType"> | undefined;
+  seat: DisplaySeatSnapshot | undefined;
   kind: SeatKind;
   highlighted: boolean;
   nameAnimationTrigger: number;
   nameAnimationDelay: number;
   scrambleChars: string[];
   nameAnimationTarget?: string;
+  animateName: boolean;
   rowSpan: number;
+  scoreFeedback?: number;
+  scoreFeedbackKey?: number;
 }): React.ReactElement {
   const label = getSeatLabel(row, col, seat, kind);
   const isCorridor = kind === "corridor";
@@ -226,15 +252,19 @@ function DisplaySeat({
     <motion.div
       role="img"
       aria-label={label}
+      data-display-random-highlight={highlighted ? "true" : "false"}
       initial={false}
-      animate={highlighted ? { scale: [1, 1.04, 1], boxShadow: ["0 0 0 0 rgba(22,119,255,0)", "0 0 0 6px rgba(22,119,255,0.16)", "0 0 0 0 rgba(22,119,255,0)"] } : { scale: 1 }}
-      transition={highlighted ? { duration: 1.2, ease: "easeInOut" } : { duration: 0.2 }}
+      animate={{ scale: highlighted ? 1.08 : 1 }}
+      transition={{ type: "spring", stiffness: 400, damping: 25 }}
       className={`relative ${isMergedCorridor ? "h-full" : "h-20"} ${isCorridor ? "w-16" : "w-24"} shrink-0 text-center`}
       style={{
         gridColumn: col + 1,
         gridRow: `${row + 1} / span ${rowSpan}`,
         justifySelf: isCorridor ? "center" : "stretch",
         marginInline: isCorridor ? 4 : 0,
+        boxShadow: highlighted
+          ? "0 6px 18px rgba(10, 89, 247, 0.35)"
+          : "none",
       }}
     >
       <SeatCell
@@ -246,20 +276,51 @@ function DisplaySeat({
         readOnly
         emphasized={false}
         height={isMergedCorridor ? "100%" : undefined}
+        showSeatNumber={false}
         studentContent={
-          <FlipFlapLabel
-            value={label}
-            targetValue={nameAnimationTarget ?? label}
-            trigger={nameAnimationTrigger}
-            delay={nameAnimationDelay}
-            scrambleChars={scrambleChars}
-          />
+          <div className="relative flex min-h-0 w-full flex-1 items-center justify-center px-1 pt-3 text-center">
+            <span className="max-w-full truncate text-[18px] font-extrabold leading-tight text-[#14233c]">
+              <FlipFlapLabel
+                value={label}
+                targetValue={nameAnimationTarget ?? label}
+                trigger={nameAnimationTrigger}
+                delay={nameAnimationDelay}
+                scrambleChars={scrambleChars}
+                active={animateName}
+              />
+            </span>
+            {seat?.student ? (
+              <span className="absolute right-0 top-0 rounded-full border border-[#d6e4ff] bg-[#f0f5ff] px-1.5 py-0.5 text-[10px] font-bold leading-none tabular-nums text-[#0958d9]">
+                {formatScore(seat.student.score)}
+              </span>
+            ) : null}
+            {typeof scoreFeedback === "number" ? (
+              <motion.span
+                key={scoreFeedbackKey}
+                initial={{ opacity: 0, y: 6, scale: 0.8 }}
+                animate={{ opacity: 1, y: -12, scale: 1 }}
+                transition={{ duration: 0.7, ease: "easeOut" }}
+                className={`pointer-events-none absolute right-0 -top-1 rounded-full px-1.5 py-1 text-[11px] font-extrabold leading-none shadow-sm ${
+                  scoreFeedback > 0
+                    ? "bg-[#f6ffed] text-[#389e0d]"
+                    : "bg-[#fff1f0] text-[#cf1322]"
+                }`}
+              >
+                {formatScoreDelta(scoreFeedback)}
+              </motion.span>
+            ) : null}
+          </div>
         }
       />
-      {highlighted ? (
-        <span className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-[4px] border border-[#91caff] bg-[#e6f4ff] px-1.5 py-0.5 text-[10px] font-bold text-[#1677ff]">
-          本轮点名
-        </span>
+      {highlighted && seat?.student ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[14px] border-2 border-[#0a59f7] bg-[#0a59f7] px-1.5 text-center"
+          data-display-random-highlight-card
+        >
+          <span className="max-w-full truncate text-[13px] font-bold leading-[1.2] text-white">
+            {seat.student.name}
+          </span>
+        </div>
       ) : null}
     </motion.div>
   );
@@ -276,6 +337,7 @@ function SeatMatrix({
   setIsDragging,
   nameAnimationTrigger,
   nameAnimationTargets,
+  scoreFeedbacks,
   }: {
   data: DisplayBootstrap;
   highlight: Highlight;
@@ -287,6 +349,7 @@ function SeatMatrix({
   setIsDragging: (dragging: boolean) => void;
   nameAnimationTrigger: number;
   nameAnimationTargets: Map<string, string>;
+  scoreFeedbacks: Map<string, ScoreFeedback>;
 }): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
@@ -472,7 +535,10 @@ function SeatMatrix({
                 nameAnimationDelay={cell.row * 120}
                 scrambleChars={scrambleChars}
                 nameAnimationTarget={nameAnimationTargets.get(`${cell.row}-${cell.col}`)}
+                animateName={nameAnimationTargets.has(`${cell.row}-${cell.col}`)}
                 rowSpan={cell.rowSpan}
+                scoreFeedback={studentId ? scoreFeedbacks.get(studentId)?.delta : undefined}
+                scoreFeedbackKey={studentId ? scoreFeedbacks.get(studentId)?.token : undefined}
               />
             );
           })}
@@ -541,15 +607,15 @@ function Avatar({ rank }: { rank: 1 | 2 | 3 }): React.ReactElement {
   const first = rank === 1;
   const third = rank === 3;
   const imageSize = first ? 64 : 54;
-  const imageSource = first ? "/top1.png" : third ? "/top3.png" : "/top2.png";
+  const imageSource = `${import.meta.env.BASE_URL}top${rank}.png`;
   return (
     <div
       className={
         first
-          ? "flex size-[64px] items-center justify-center overflow-hidden rounded-full border-[3px] border-[#faad14] bg-[#fffbe6] text-[#d48806] shadow-[0_4px_12px_rgba(250,173,20,0.4)]"
+          ? "flex size-[64px] shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full border-[3px] border-[#faad14] bg-[#fffbe6] text-[#d48806] shadow-[0_4px_12px_rgba(250,173,20,0.4)]"
           : third
-            ? "flex size-[54px] items-center justify-center overflow-hidden rounded-full border-[2.5px] border-[#ffbb96] bg-[#fff2e8] text-[#d4380d] shadow-[0_3px_8px_rgba(212,56,13,0.15)]"
-            : "flex size-[54px] items-center justify-center overflow-hidden rounded-full border-[2.5px] border-[#adc6ff] bg-[#f5f7fa] text-[#597ef7] shadow-[0_3px_8px_rgba(22,119,255,0.18)]"
+            ? "flex size-[54px] shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full border-[2.5px] border-[#ffbb96] bg-[#fff2e8] text-[#d4380d] shadow-[0_3px_8px_rgba(212,56,13,0.15)]"
+            : "flex size-[54px] shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full border-[2.5px] border-[#adc6ff] bg-[#f5f7fa] text-[#597ef7] shadow-[0_3px_8px_rgba(22,119,255,0.18)]"
       }
     >
       <img
@@ -557,7 +623,8 @@ function Avatar({ rank }: { rank: 1 | 2 | 3 }): React.ReactElement {
         alt=""
         width={imageSize}
         height={imageSize}
-        className="size-full rounded-full object-cover"
+        className="block size-full aspect-square rounded-full object-cover"
+        style={{ width: "100%", height: "100%" }}
       />
     </div>
   );
@@ -577,6 +644,9 @@ function TopRankPanel({ ranking }: { ranking: DisplayBootstrap["ranking"] }): Re
               <CrownOutlined className="text-[18px] text-[#faad14]" aria-hidden="true" />
               <Avatar rank={1} />
               <span className="text-sm font-bold text-[#1f1f1f]">{top3[0].name}</span>
+              <span className="rounded-full bg-[#fff7e6] px-2 py-0.5 text-[11px] font-bold tabular-nums text-[#d46b08]">
+                {formatScore(top3[0].score)}
+              </span>
             </div>
           ) : null}
           <div className="flex h-[74px] w-full items-center justify-center gap-[44px]">
@@ -584,12 +654,14 @@ function TopRankPanel({ ranking }: { ranking: DisplayBootstrap["ranking"] }): Re
               <div className="flex h-[74px] w-20 flex-col items-center gap-[2px]">
                 <Avatar rank={2} />
                 <span className="text-xs font-bold text-[#1f1f1f]">{top3[1].name}</span>
+                <span className="text-[11px] font-bold tabular-nums text-[#d46b08]">{formatScore(top3[1].score)}</span>
               </div>
             ) : <div className="w-20" />}
             {top3[2] ? (
               <div className="flex h-[74px] w-20 flex-col items-center gap-[2px]">
                 <Avatar rank={3} />
                 <span className="text-xs font-bold text-[#1f1f1f]">{top3[2].name}</span>
+                <span className="text-[11px] font-bold tabular-nums text-[#d46b08]">{formatScore(top3[2].score)}</span>
               </div>
             ) : <div className="w-20" />}
           </div>
@@ -632,14 +704,20 @@ export function DisplaySurface(): React.ReactElement {
   const [data, setData] = useState<DisplayBootstrap | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<Highlight>(null);
+  const [scoreFeedbacks, setScoreFeedbacks] = useState<Map<string, ScoreFeedback>>(new Map());
   const [zoom, setZoom] = useState(100);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [nameAnimationTrigger, setNameAnimationTrigger] = useState(0);
   const [nameAnimationTargets, setNameAnimationTargets] = useState<Map<string, string>>(new Map());
   const highlightTimer = useRef<number | null>(null);
+  const randomPickMarqueeTimer = useRef<number | null>(null);
+  const randomPickSettleTimer = useRef<number | null>(null);
   const seatUpdateTimer = useRef<number | null>(null);
+  const scoreFeedbackTimerRef = useRef<number | null>(null);
   const seatUpdatePendingRef = useRef(false);
+  const dataRef = useRef<DisplayBootstrap | null>(null);
+  dataRef.current = data;
   const { notification } = AntApp.useApp();
 
   useEffect(() => {
@@ -650,12 +728,38 @@ export function DisplaySurface(): React.ReactElement {
     }
 
     let stopped = false;
+    let startupReported = false;
+    const reportDisplayEvent = (
+      eventName: string,
+      result: "SUCCESS" | "FAILURE" = "SUCCESS",
+      module = "runtime",
+      errorCode?: string,
+    ) => {
+      void reportUsageEventBestEffort(
+        (input, options) => service.reportUsageEvent(input, options),
+        {
+          eventName,
+          clientType: "DISPLAY",
+          result,
+          module,
+          page: window.location.pathname,
+          appVersion: import.meta.env.VITE_APP_VERSION || "web",
+          browser: navigator.userAgent,
+          errorCode,
+        },
+        { auth: "display" },
+      );
+    };
     const refresh = async () => {
       try {
         const next = await service.getDisplayBootstrap(session.deviceId);
         if (!stopped) {
           setData(next);
           setLoadError(null);
+          if (!startupReported) {
+            startupReported = true;
+            reportDisplayEvent("display.started", "SUCCESS", "display");
+          }
         }
       } catch (error) {
         if (stopped) return;
@@ -664,8 +768,26 @@ export function DisplaySurface(): React.ReactElement {
           navigate("/display/bind", { replace: true });
           return;
         }
+        reportDisplayEvent(
+          "display.load_failed",
+          "FAILURE",
+          "display",
+          error instanceof ClassroomServiceError ? error.code : "DISPLAY_LOAD_FAILED",
+        );
         setLoadError(error instanceof Error ? error.message : "大屏数据加载失败");
       }
+    };
+
+    const showScoreFeedback = (studentId: string, delta: number) => {
+      const token = Date.now();
+      setScoreFeedbacks((current) => new Map(current).set(studentId, { delta, token }));
+      if (scoreFeedbackTimerRef.current !== null) {
+        window.clearTimeout(scoreFeedbackTimerRef.current);
+      }
+      scoreFeedbackTimerRef.current = window.setTimeout(() => {
+        setScoreFeedbacks(new Map());
+        scoreFeedbackTimerRef.current = null;
+      }, 1600);
     };
 
     const refreshAfterSeatAnimation = async () => {
@@ -676,11 +798,39 @@ export function DisplaySurface(): React.ReactElement {
         const next = await service.getDisplayBootstrap(session.deviceId);
         if (stopped) return;
 
-        const nextNames = new Map(
-          next.layout.seats
-            .filter((seat) => seat.student?.name)
-            .map((seat) => [String(seat.row) + "-" + String(seat.col), seat.student!.name])
+        const current = dataRef.current;
+        if (!current) return;
+        const currentSeatLookup = new Map(
+          current.layout.seats.map((seat) => [`${seat.row}-${seat.col}`, seat]),
         );
+        const nextSeatLookup = new Map(
+          next.layout.seats.map((seat) => [`${seat.row}-${seat.col}`, seat]),
+        );
+        const nextNames = new Map<string, string>();
+        for (let row = 0; row < current.classroom.gridRows; row += 1) {
+          for (let col = 0; col < current.classroom.gridCols; col += 1) {
+            const key = `${row}-${col}`;
+            const currentSeat = currentSeatLookup.get(key);
+            const nextSeat = nextSeatLookup.get(key);
+            const currentKind = getSeatKind(
+              row,
+              col,
+              current.classroom.gridRows,
+              current.classroom.gridCols,
+              currentSeat?.cellType,
+            );
+            const nextKind = getSeatKind(
+              row,
+              col,
+              next.classroom.gridRows,
+              next.classroom.gridCols,
+              nextSeat?.cellType,
+            );
+            const currentLabel = getSeatLabel(row, col, currentSeat, currentKind);
+            const nextLabel = getSeatLabel(row, col, nextSeat, nextKind);
+            if (currentLabel !== nextLabel) nextNames.set(key, nextLabel);
+          }
+        }
         seatUpdatePendingRef.current = true;
         setNameAnimationTargets(nextNames);
         setNameAnimationTrigger((trigger) => trigger + 1);
@@ -711,26 +861,125 @@ export function DisplaySurface(): React.ReactElement {
     };
 
     void refresh();
-    const subscriptions = (['SCORE_CHANGED', 'SCORE_REVERTED', 'RANKING_CHANGED', 'DISPLAY_CONFIG_CHANGED', 'SCHEDULE_CHANGED'] as ClassEventType[])
-      .map((type) => realtime.subscribe(type, session.classId, () => void refresh()));
+    const heartbeatTimer = window.setInterval(() => {
+      if (startupReported && document.visibilityState === "visible") {
+        reportDisplayEvent("display.heartbeat");
+      }
+    }, DISPLAY_HEARTBEAT_INTERVAL_MS);
+    let lastRealtimeStatus = realtime.getStatus();
+    const unsubscribeRealtimeStatus = realtime.subscribeStatus((status) => {
+      const reconnected = status === "CONNECTED" && lastRealtimeStatus !== "CONNECTED";
+      const disconnected = status === "DISCONNECTED" && lastRealtimeStatus !== "DISCONNECTED";
+      lastRealtimeStatus = status;
+      if (reconnected) void refresh();
+      if (disconnected) {
+        reportDisplayEvent(
+          "display.realtime_disconnected",
+          "FAILURE",
+          "realtime",
+          "REALTIME_DISCONNECTED",
+        );
+      }
+    });
+    const subscriptions = [
+      realtime.subscribe("SCORE_CHANGED", session.classId, (event) => {
+        if (event.payload.studentId && typeof event.payload.delta === "number" && event.payload.delta !== 0) {
+          showScoreFeedback(event.payload.studentId, event.payload.delta);
+        }
+        void refresh();
+      }),
+      realtime.subscribe("SCORE_REVERTED", session.classId, (event) => {
+        showScoreFeedback(event.payload.studentId, event.payload.delta);
+        void refresh();
+      }),
+      ...(['RANKING_CHANGED', 'DISPLAY_CONFIG_CHANGED', 'SCHEDULE_CHANGED'] as ClassEventType[])
+        .map((type) => realtime.subscribe(type, session.classId, () => void refresh())),
+    ];
     subscriptions.push(
       realtime.subscribe("SEAT_LAYOUT_CHANGED", session.classId, () => void refreshAfterSeatAnimation()),
       realtime.subscribe("STUDENT_CHANGED", session.classId, () => void refreshAfterSeatAnimation()),
     );
     subscriptions.push(
       realtime.subscribe("RANDOM_PICKED", session.classId, (event) => {
-        setHighlight({ studentId: event.payload.studentId, name: event.payload.name });
+        if (randomPickMarqueeTimer.current !== null) {
+          window.clearInterval(randomPickMarqueeTimer.current);
+          randomPickMarqueeTimer.current = null;
+        }
+        if (randomPickSettleTimer.current !== null) {
+          window.clearTimeout(randomPickSettleTimer.current);
+          randomPickSettleTimer.current = null;
+        }
         if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
-        highlightTimer.current = window.setTimeout(() => setHighlight(null), Math.max(2000, event.payload.displayDurationMs));
+
+        const occupiedStudents = (dataRef.current?.layout.seats ?? [])
+          .flatMap((seat) => (seat.student ? [seat.student] : []));
+        const selectedStudent = {
+          studentId: event.payload.studentId,
+          name: event.payload.name,
+        };
+
+        if (occupiedStudents.length === 0) {
+          setHighlight(selectedStudent);
+          highlightTimer.current = window.setTimeout(
+            () => setHighlight(null),
+            Math.max(2000, event.payload.displayDurationMs),
+          );
+          void refresh();
+          return;
+        }
+
+        let hopCount = 0;
+        randomPickMarqueeTimer.current = window.setInterval(() => {
+          hopCount += 1;
+          const student = occupiedStudents[
+            Math.floor(Math.random() * occupiedStudents.length)
+          ];
+          if (student) {
+            setHighlight({ studentId: student.id, name: student.name });
+          }
+          if (hopCount >= RANDOM_PICK_HOP_COUNT) {
+            if (randomPickMarqueeTimer.current !== null) {
+              window.clearInterval(randomPickMarqueeTimer.current);
+              randomPickMarqueeTimer.current = null;
+            }
+          }
+        }, RANDOM_PICK_HOP_INTERVAL_MS);
+
+        randomPickSettleTimer.current = window.setTimeout(() => {
+          if (stopped) return;
+          if (randomPickMarqueeTimer.current !== null) {
+            window.clearInterval(randomPickMarqueeTimer.current);
+            randomPickMarqueeTimer.current = null;
+          }
+          setHighlight(selectedStudent);
+          randomPickSettleTimer.current = null;
+          highlightTimer.current = window.setTimeout(
+            () => setHighlight(null),
+            Math.max(2000, event.payload.displayDurationMs),
+          );
+        }, RANDOM_PICK_ANIMATION_DURATION_MS);
         void refresh();
+      }),
+      realtime.subscribe("TEACHER_CONNECTED", session.classId, (event) => {
+        notification.open({
+          title: `${event.payload.teacherName}老师已连接`,
+          placement: "top",
+        });
       }),
     );
 
     return () => {
       stopped = true;
+      window.clearInterval(heartbeatTimer);
+      unsubscribeRealtimeStatus();
       subscriptions.forEach((unsubscribe) => unsubscribe());
       if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
+      if (randomPickMarqueeTimer.current !== null) window.clearInterval(randomPickMarqueeTimer.current);
+      if (randomPickSettleTimer.current !== null) window.clearTimeout(randomPickSettleTimer.current);
       if (seatUpdateTimer.current !== null) window.clearTimeout(seatUpdateTimer.current);
+      if (scoreFeedbackTimerRef.current !== null) window.clearTimeout(scoreFeedbackTimerRef.current);
+      scoreFeedbackTimerRef.current = null;
+      setScoreFeedbacks(new Map());
       seatUpdatePendingRef.current = false;
       notification.destroy(SEAT_UPDATE_NOTIFICATION_KEY);
     };
@@ -765,17 +1014,11 @@ export function DisplaySurface(): React.ReactElement {
         setIsDragging={setIsDragging}
         nameAnimationTrigger={nameAnimationTrigger}
         nameAnimationTargets={nameAnimationTargets}
+        scoreFeedbacks={scoreFeedbacks}
       />
 
       {/* 2. Floating Centered Top Header Bar */}
       <header className="display-surface__header pointer-events-auto absolute top-5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3.5 rounded-2xl border border-[#e2e4ea] bg-white/95 px-5 py-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.06)] backdrop-blur-md">
-        <img
-          src="/logo.png"
-          alt="课序 Logo"
-          width={28}
-          height={28}
-          className="size-7 rounded-lg shadow-sm"
-        />
         <h1 className="display-surface__classroom-name shrink-0 text-[18px] font-bold leading-none text-[#1f1f1f]">{data.classroom.name}</h1>
         <div className="display-surface__header-divider h-4 w-px shrink-0 bg-[#e5e8ee]" />
         <CourseTimeline schedule={data.schedule} />

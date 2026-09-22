@@ -13,9 +13,17 @@ import { prismaPlugin } from '../../plugins/prisma';
 import { authPlugin } from '../../plugins/auth';
 import { BusinessError } from '../../plugins/error-handler';
 import { realtimeService } from '../realtime/realtime.service';
+import { config } from '../../config';
 
 function invitationHash(token: string): string {
   return createHash('sha256').update(token).digest('hex');
+}
+
+export function buildInvitationUrl(
+  token: string,
+  publicWebOrigin = config.publicWebOrigin,
+): string {
+  return new URL(`/invite/${encodeURIComponent(token)}`, publicWebOrigin).toString();
 }
 
 async function assertHeadTeacher(prisma: PrismaClient, userId: string, classId: string) {
@@ -289,7 +297,7 @@ export const teachersController = new Elysia({ prefix: '/classes/:classId/teache
 
       return {
         data: {
-          inviteUrl: `/invite/${encodeURIComponent(token)}`,
+          inviteUrl: buildInvitationUrl(token),
           expiresAt: expiresAt.toISOString(),
         },
       };

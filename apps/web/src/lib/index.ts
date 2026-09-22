@@ -5,3 +5,4 @@ export * from './query-keys';
 export * from './realtime';
 export * from './session';
 export * from './utils';
+export * from './usage-telemetry';

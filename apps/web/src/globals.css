@@ -156,30 +156,6 @@
   white-space: nowrap;
 }
 
-.teacher-seat-grid-scroll {
-  min-width: 0;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  padding: 2px 2px 6px;
-  scrollbar-width: thin;
-  -webkit-overflow-scrolling: touch;
-}
-
-.teacher-seat-grid {
-  min-width: 100%;
-}
-
-.teacher-mobile-students {
-  display: none;
-}
-
-.teacher-seat-grid-hint {
-  margin: 3px 0 0;
-  color: #94a3b8;
-  font-size: 11px;
-  text-align: center;
-}
-
 .display-surface__header {
   width: max-content;
   max-width: calc(100vw - 32px);
@@ -191,6 +167,30 @@
 
 .display-surface__course-timeline::-webkit-scrollbar {
   display: none;
+}
+
+.display-name-flap {
+  display: inline-block;
+  transform-origin: center center;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+.display-name-flap[data-flipping="true"] {
+  animation: display-name-flap 288ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  will-change: transform;
+}
+
+@keyframes display-name-flap {
+  0%,
+  100% {
+    transform: perspective(400px) rotateX(0deg);
+  }
+
+  48%,
+  52% {
+    transform: perspective(400px) rotateX(-88deg);
+  }
 }
 
 @media (max-width: 640px) {
@@ -215,19 +215,5 @@
 
   .display-surface__header-divider {
     display: none;
-  }
-}
-
-@media (max-width: 480px) {
-  .teacher-seat-map {
-    display: none;
-  }
-
-  .teacher-mobile-students {
-    display: block;
-  }
-
-  .teacher-seat-grid {
-    min-width: var(--teacher-seat-grid-min-width);
   }
 }

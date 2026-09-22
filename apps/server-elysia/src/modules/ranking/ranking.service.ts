@@ -124,7 +124,7 @@ export class RankingService {
       });
   }
 
-  async getWeeklyRanking(classId: string, reference = new Date()) {
+  private async buildWeeklyRanking(classId: string, reference = new Date()) {
     const period = getUtcWeekPeriod(reference);
     const [currentRanking, progress] = await Promise.all([
       this.getRanking(classId, period.startAt, period.endAt),
@@ -137,13 +137,35 @@ export class RankingService {
         startAt: period.startAt.toISOString(),
         endAt: period.endAt.toISOString(),
       },
+      currentRanking,
+      progress,
+      strategy: WEEK_OVER_WEEK_STRATEGY,
+    };
+  }
+
+  async getWeeklyRanking(classId: string, reference = new Date()) {
+    const { currentRanking, ...ranking } = await this.buildWeeklyRanking(classId, reference);
+    return {
+      ...ranking,
       top3: currentRanking.slice(0, 3).map(({ studentId, name, rank }) => ({
         studentId,
         name,
         rank,
       })),
-      progress,
-      strategy: WEEK_OVER_WEEK_STRATEGY,
+    };
+  }
+
+  async getWeeklyRankingForDisplay(classId: string, reference = new Date()) {
+    const { currentRanking, ...ranking } = await this.buildWeeklyRanking(classId, reference);
+    return {
+      ...ranking,
+      top3: currentRanking.slice(0, 3).map(({ studentId, name, rank, score }) => ({
+        studentId,
+        name,
+        rank,
+        score,
+      })),
+      scores: currentRanking.map(({ studentId, score }) => ({ studentId, score })),
     };
   }
 }

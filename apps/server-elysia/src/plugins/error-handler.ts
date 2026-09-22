@@ -20,8 +20,8 @@ export function applyErrorHandler<T extends Elysia<any, any, any, any, any, any,
     const requestId =
       request.headers.get('x-request-id') || request.headers.get('request-id') || randomUUID();
 
-    if (error && typeof error === 'object' && 'code' in error) {
-      const biz = error as BusinessError;
+    if (error instanceof BusinessError) {
+      const biz = error;
       return Response.json(
         {
           code: biz.code,

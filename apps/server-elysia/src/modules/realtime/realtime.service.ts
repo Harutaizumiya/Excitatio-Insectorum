@@ -1,9 +1,11 @@
 import { Server as SocketIOServer, type Socket } from 'socket.io';
 import type { Server as HTTPServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import jwt from 'jsonwebtoken';
+import { SessionClientType } from '@prisma/client';
 import { prisma } from '../../plugins/prisma';
 import { config } from '../../config';
-import { classRoomName, type ClassRealtimeEvent } from './realtime.types';
+import { classRoomName, ClassEventType, type ClassRealtimeEvent } from './realtime.types';
 import { PrincipalType, type AccessTokenClaims } from '../../plugins/auth';
 
 export class RealtimeService {
@@ -78,6 +80,8 @@ export class RealtimeService {
           }
 
           socket.data.principal = decoded;
+          socket.data.clientType = session.clientType;
+          socket.data.teacherName = session.user.name;
           return next();
         }
 
@@ -95,6 +99,27 @@ export class RealtimeService {
 
       if (classId) {
         await socket.join(classRoomName(classId));
+      }
+
+      if (
+        classId &&
+        principal?.type === PrincipalType.USER &&
+        socket.data.clientType === SessionClientType.TEACHER_MOBILE
+      ) {
+        const event: ClassRealtimeEvent<{
+          teacherId: string;
+          teacherName: string;
+        }> = {
+          id: randomUUID(),
+          type: ClassEventType.TEACHER_CONNECTED,
+          classId,
+          occurredAt: new Date().toISOString(),
+          payload: {
+            teacherId: principal.sub,
+            teacherName: socket.data.teacherName as string,
+          },
+        };
+        socket.to(classRoomName(classId)).emit(event.type, event);
       }
 
       if (principal?.type === PrincipalType.DISPLAY_DEVICE && classId) {

@@ -24,7 +24,7 @@
 
 ## 技术栈
 
-Vite 8 · React 19 · TypeScript · NestJS · Prisma · Ant Design · Tailwind CSS · shadcn/ui · TanStack Query · Socket.IO · Turborepo
+Vite 8 · React 19 · TypeScript · Elysia · Prisma · Ant Design · Tailwind CSS · shadcn/ui · TanStack Query · Socket.IO · Turborepo
 
 ## 快速开始
 
@@ -32,34 +32,47 @@ Vite 8 · React 19 · TypeScript · NestJS · Prisma · Ant Design · Tailwind C
 
 ```bash
 pnpm install
-pnpm --filter @repo/server dev
-pnpm --filter @repo/web dev
+pnpm dev:fullstack
 ```
 
-打开 [http://localhost:3001/login](http://localhost:3001/login)。前端默认通过 Vite 开发服务器反向代理转发 `/api` 与 `/socket.io` 请求至后端（`localhost:3000`），开箱即用。
+`pnpm dev:fullstack` 会准备本地 SQLite、生成 Prisma Client，在空数据库中写入演示数据，并同时启动 Elysia 后端和 Vite 前端。打开 [http://localhost:3001/login](http://localhost:3001/login)，使用 `zhangsha / admin123` 登录。
+
+Windows 也可以双击 `scripts/start-dev.cmd` 一键启动。
 
 ## 启动本地全栈
 
 默认使用 SQLite。先准备环境文件：
 
 ```powershell
-Copy-Item .env.example apps/server/.env
+Copy-Item .env.example apps/server-elysia/.env
 ```
 
-前端默认使用相对路径由 Vite 反代（后端默认目标为 `http://localhost:3000`），无需额外配置。如需连接独立的外部后端，可在 `apps/web/.env.local` 中指定：
+前端由启动脚本配置为连接 `http://localhost:3000`。如需手动启动或使用其他后端端口，可在 `apps/web/.env.local` 中指定：
 
 ```env
-VITE_API_ORIGIN=http://localhost:3000
+VITE_API_ORIGIN=http://localhost:3311
 ```
 
-然后分别启动数据库、后端和前端：
+推荐直接一键启动：
 
-```bash
+```powershell
+pnpm dev:fullstack
+```
+
+如果需要手动分开启动：
+
+```powershell
 pnpm db:generate
 pnpm db:migrate:deploy
-pnpm --filter @repo/server seed
-pnpm --filter @repo/server dev
+pnpm --filter @repo/server-elysia seed
+pnpm --filter @repo/server-elysia dev:node
 pnpm --filter @repo/web dev
+```
+
+跳过数据库准备适合已完成初始化的本地环境：
+
+```powershell
+./scripts/start-dev.ps1 -SkipDatabase
 ```
 
 SQLite 文件位于 `packages/database/prisma/sqlite/dev.db`。PostgreSQL 使用 `*:postgresql` 命令及 `packages/database/prisma/schema.prisma`。
@@ -69,7 +82,7 @@ SQLite 文件位于 `packages/database/prisma/sqlite/dev.db`。PostgreSQL 使用
 ```text
 apps/
 ├── web/       Vite 8 SPA 前端：后台、大屏与邀请页面
-└── server/    NestJS API 与 Socket.IO 网关
+└── server-elysia/ Elysia API 与 Socket.IO 网关
 packages/
 ├── database/  Prisma schema、迁移与数据库客户端
 ├── eslint-config/
@@ -108,7 +121,7 @@ docker build -f Dockerfile.web -t excitatio-insectorum-web:latest .
 ```
 
 - **前端镜像 (`Dockerfile.web`)**：基于多阶段构建的 `nginx:alpine` 镜像，SPA 静态产物位于 `/usr/share/nginx/html`，默认监听 `3001` 端口，已预设单页路由回退 `try_files $uri $uri/ /index.html;`。构建参数 `VITE_API_ORIGIN` 默认留空，直接使用同源相对路径配合反向代理。
-- **后端镜像 (`Dockerfile`)**：仅安装 server / database 的生产依赖，保留 Prisma CLI、客户端、引擎和迁移文件。容器启动时先执行 SQLite 迁移，再启动 NestJS；数据库路径及 `deploy/docker-compose.yml` 中的持久化挂载保持不变。
+- **后端镜像 (`Dockerfile`)**：仅安装 Elysia server / database 的生产依赖，保留 Prisma CLI、客户端、引擎和迁移文件。容器启动时先执行 SQLite 迁移，再启动 Elysia；数据库路径及 `deploy/docker-compose.yml` 中的持久化挂载保持不变。
 
 生产环境通过 `deploy/server.env` 注入后端配置。
 

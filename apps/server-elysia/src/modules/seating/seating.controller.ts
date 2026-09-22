@@ -1,5 +1,5 @@
 import { Elysia, t } from 'elysia';
-import { SeatCellType, TeacherRole } from '@prisma/client';
+import { TeacherRole } from '@prisma/client';
 import { seatingService, type SeatLayoutSeatInput } from './seating.service';
 import { authPlugin } from '../../plugins/auth';
 import { studentsService } from '../students/students.service';
@@ -24,6 +24,9 @@ export const seatingController = new Elysia({ prefix: '/classes/:classId/seat-la
     async ({ user, params: { classId }, body }) => {
       await studentsService.assertAccess(user!.sub, classId, [TeacherRole.HEAD_TEACHER]);
       const data = await seatingService.saveLayout(classId, user!.sub, {
+        gridRows: body.gridRows,
+        gridCols: body.gridCols,
+        baseVersion: body.baseVersion,
         seats: body.seats as unknown as SeatLayoutSeatInput[],
       });
       return { data };
@@ -32,17 +35,20 @@ export const seatingController = new Elysia({ prefix: '/classes/:classId/seat-la
       requireUser: true,
       params: t.Object({ classId: t.String() }),
       body: t.Object({
+        gridRows: t.Optional(t.Integer({ minimum: 1, maximum: 20 })),
+        gridCols: t.Optional(t.Integer({ minimum: 1, maximum: 20 })),
+        baseVersion: t.Optional(t.Integer({ minimum: 0 })),
         seats: t.Array(
           t.Object({
-            rowIndex: t.Integer(),
-            colIndex: t.Integer(),
+            row: t.Integer({ minimum: 0 }),
+            col: t.Integer({ minimum: 0 }),
             studentId: t.Optional(t.Union([t.String(), t.Null()])),
             cellType: t.Optional(
               t.Union([
-                t.Literal(SeatCellType.SEAT),
-                t.Literal(SeatCellType.AISLE),
-                t.Literal(SeatCellType.PODIUM),
-                t.Literal(SeatCellType.EMPTY),
+                t.Literal('seat'),
+                t.Literal('aisle'),
+                t.Literal('podium'),
+                t.Literal('empty'),
               ]),
             ),
           }),
