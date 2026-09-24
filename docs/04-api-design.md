@@ -230,7 +230,39 @@ Request：
 
 ---
 
-## 5. Teacher API
+## 5. Dormitory API
+
+### GET /classes/:classId/dormitories
+
+权限：HEAD_TEACHER、SUBJECT_TEACHER。返回本班寝室及 ACTIVE、未删除成员。
+
+### POST /classes/:classId/dormitories
+
+权限：HEAD_TEACHER。请求 `{ "name": "301" }`，同班名称不可重复。
+
+### PATCH /classes/:classId/dormitories/:dormitoryId
+
+权限：HEAD_TEACHER。重命名寝室。
+
+### DELETE /classes/:classId/dormitories/:dormitoryId
+
+权限：HEAD_TEACHER。删除寝室并清空成员当前归属。
+
+### POST /classes/:classId/dormitories/:dormitoryId/members
+
+权限：HEAD_TEACHER。请求 `{ "studentIds": ["student-1"] }`；只接受本班 ACTIVE、未删除学生，已有寝室的学生会转入目标寝室。
+
+### DELETE /classes/:classId/dormitories/:dormitoryId/members/:studentId
+
+权限：HEAD_TEACHER。从寝室移出一名学生。
+
+### POST /classes/:classId/dormitories/:dormitoryId/score-events
+
+权限：HEAD_TEACHER、SUBJECT_TEACHER。请求包含 `studentIds`、非零整数 `delta`、`reason` 和幂等 `businessKey`。后端在事务内确认所有学生仍是该寝室当前成员，并创建一个寝室事件和对应学生流水。
+
+---
+
+## 6. Teacher API
 
 ### GET /classes/:classId/teachers
 
@@ -295,7 +327,7 @@ Response：
 
 ---
 
-## 6. Seat Layout API
+## 7. Seat Layout API
 
 ### GET /classes/:classId/seat-layout
 
@@ -403,9 +435,11 @@ SEAT_LAYOUT_CHANGED
 - 修改 currentLayoutVersionId。
 - 广播 SEAT_LAYOUT_CHANGED。
 
+服务器每周一 00:05（Asia/Taipei）为每个有效班级自动创建轮换版本。同一行中已有学生的有效座位向右循环一格；过道、讲台、空格和未坐人的座位保持原位。`rotationWeekKey` 保证同班同周只执行一次。
+
 ---
 
-## 7. Score Rule API
+## 8. Score Rule API
 
 ### GET /classes/:classId/score-rules
 
@@ -444,7 +478,7 @@ Request：
 
 ---
 
-## 8. Score Record API
+## 9. Score Record API
 
 ### POST /classes/:classId/scores/rule
 
@@ -567,7 +601,11 @@ RANKING_CHANGED
 
 ---
 
-## 9. Ranking API
+积分周期由服务器在每月 1 日 00:00（Asia/Taipei）自动结算。汇总查询和日常记分只物化周期，不再触发历史结算，也不提供手动结算接口。
+
+---
+
+## 10. Ranking API
 
 ### GET /classes/:classId/ranking
 
@@ -610,7 +648,7 @@ Response：
 
 ---
 
-## 10. Random Pick API
+## 11. Random Pick API
 
 ### POST /classes/:classId/random-pick
 
@@ -648,7 +686,7 @@ RANDOM_PICKED
 
 ---
 
-## 11. Display Binding API
+## 12. Display Binding API
 
 ### POST /display/binding-codes
 
@@ -712,7 +750,7 @@ Response：
 
 ---
 
-## 12. Device Auth API
+## 13. Device Auth API
 
 ### POST /display/auth/token
 
@@ -740,7 +778,7 @@ Response：
 
 ---
 
-## 13. Display Bootstrap API
+## 14. Display Bootstrap API
 
 ### GET /display/bootstrap
 

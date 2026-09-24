@@ -20,14 +20,17 @@ MVP 核心表：
 3. ClassTeacher
 4. TeacherInvitation
 5. Student
-6. SeatLayoutVersion
-7. Seat
-8. ScoreRule
-9. ScoreRecord
-10. DisplayDevice
-11. ScheduleTemplate
-12. ScheduleTemplatePeriod
-13. ScheduleEntry
+6. Dormitory
+7. SeatLayoutVersion
+8. Seat
+9. ScoreRule
+10. ScorePeriod / ScoreEvent / ScoreEventParticipant
+11. ScoreRecord
+12. ClassCommitteeAssignment
+13. DisplayDevice
+14. ScheduleTemplate
+15. ScheduleTemplatePeriod
+16. ScheduleEntry
 
 建议额外保留：
 
@@ -46,10 +49,12 @@ User
 ├── 1:N ── ClassTeacher ── N:1 ── Classroom
 │                               │
 │                               ├── 1:N Student
+│                               ├── 1:N Dormitory ── 1:N Student
 │                               ├── 1:N SeatLayoutVersion
 │                               │          └── 1:N Seat
 │                               ├── 1:N ScoreRule
 │                               ├── 1:N ScoreRecord
+│                               ├── 1:N ClassCommitteeAssignment
 │                               ├── 1:N ScheduleTemplate
 │                               │          └── 1:N ScheduleTemplatePeriod
 │                               ├── 1:N ScheduleEntry
@@ -225,6 +230,7 @@ INDEX(expiresAt)
 Student
 - id
 - classId
+- dormitoryId?
 - name
 - studentNo
 - status
@@ -253,6 +259,19 @@ INDEX(classId, status)
 UNIQUE(classId, studentNo)  // studentNo 存在时
 ```
 
+### 8.1 Dormitory
+
+```text
+Dormitory
+- id
+- classId
+- name
+- createdAt
+- updatedAt
+```
+
+约束：同班寝室名唯一；`Student.classId + dormitoryId` 通过复合外键保证不能跨班归属。删除寝室时先清空成员当前归属，历史积分事件保留寝室名称快照。
+
 ---
 
 ## 9. SeatLayoutVersion
@@ -265,6 +284,7 @@ SeatLayoutVersion
 - classId
 - version
 - sourceVersionId
+- rotationWeekKey?
 - createdBy
 - createdAt
 ```
@@ -275,12 +295,14 @@ SeatLayoutVersion
 - 每次“保存布局”创建新版本。
 - 恢复历史版本时复制目标版本，生成最新版本。
 - `sourceVersionId` 用于记录恢复来源，可为空。
+- 自动轮换版本写入台北时区周一日期作为 `rotationWeekKey`。
 - 不更新历史版本内容。
 
 约束：
 
 ```text
 UNIQUE(classId, version)
+UNIQUE(classId, rotationWeekKey)
 INDEX(classId, createdAt)
 ```
 

@@ -146,7 +146,19 @@
 | `page`           | integer >= 1       | 1      | 页码                             |
 | `pageSize`       | integer 1..100     | 20     | 每页数量                         |
 
-### 4.5 Seat Layout
+### 4.5 Dormitories
+
+| 方法   | 路径                                                            | 权限           | 请求                                         | 用途                     |
+| ------ | --------------------------------------------------------------- | -------------- | -------------------------------------------- | ------------------------ |
+| GET    | `/classes/:classId/dormitories`                                 | HEAD / SUBJECT | 无                                           | 查询本班寝室和当前成员   |
+| POST   | `/classes/:classId/dormitories`                                 | HEAD           | `{ name }`                                   | 创建寝室                 |
+| PATCH  | `/classes/:classId/dormitories/:dormitoryId`                    | HEAD           | `{ name }`                                   | 重命名寝室               |
+| DELETE | `/classes/:classId/dormitories/:dormitoryId`                    | HEAD           | 无                                           | 删除寝室并移出成员       |
+| POST   | `/classes/:classId/dormitories/:dormitoryId/members`            | HEAD           | `{ studentIds }`                             | 分配或转入本班学生       |
+| DELETE | `/classes/:classId/dormitories/:dormitoryId/members/:studentId` | HEAD           | 无                                           | 移出寝室成员             |
+| POST   | `/classes/:classId/dormitories/:dormitoryId/score-events`       | HEAD / SUBJECT | `{ studentIds, delta, reason, businessKey }` | 为勾选的当前成员批量记分 |
+
+### 4.6 Seat Layout
 
 | 方法 | 路径                                                        | 权限           | 请求                    | 用途                   |
 | ---- | ----------------------------------------------------------- | -------------- | ----------------------- | ---------------------- |
@@ -158,7 +170,9 @@
 
 历史版本 Query 支持 `page`（默认 1）和 `pageSize`（默认 20）。
 
-### 4.6 Schedule
+每周一 00:05（Asia/Taipei）自动轮换各行已有学生的有效座位；空座、过道、讲台和空格不动，同班同周幂等。
+
+### 4.7 Schedule
 
 | 方法 | 路径                         | 权限           | 请求                  | 用途                         |
 | ---- | ---------------------------- | -------------- | --------------------- | ---------------------------- |
@@ -167,7 +181,7 @@
 
 `SaveScheduleRequest` 的模板节次使用 `periodNo`、`startTime`、`endTime`；时间格式为 `HH:mm`，模板最多 12 节且节次集合一致。课程名称必填，`classTeacherId` 只能引用本班 ACTIVE 任课教师。
 
-### 4.7 Score Rules
+### 4.8 Score Rules
 
 | 方法  | 路径                                            | 权限           | 请求                     | 用途         |
 | ----- | ----------------------------------------------- | -------------- | ------------------------ | ------------ |
@@ -176,7 +190,7 @@
 | PATCH | `/classes/:classId/score-rules/:ruleId`         | HEAD           | `UpdateScoreRuleRequest` | 更新积分规则 |
 | POST  | `/classes/:classId/score-rules/:ruleId/disable` | HEAD           | 无                       | 停用积分规则 |
 
-### 4.8 Score Records
+### 4.9 Score Records
 
 | 方法 | 路径                                        | 权限           | 请求                 | 用途             |
 | ---- | ------------------------------------------- | -------------- | -------------------- | ---------------- |
@@ -187,18 +201,20 @@
 
 积分流水 Query：
 
-| 参数         | 类型           | 默认值 | 说明           |
-| ------------ | -------------- | ------ | -------------- |
-| `studentId`  | string         | 无     | 学生过滤       |
-| `operatorId` | string         | 无     | 操作教师过滤   |
-| `from`       | ISO 8601       | 无     | 起始时间，包含 |
-| `to`         | ISO 8601       | 无     | 结束时间，包含 |
+| 参数         | 类型     | 默认值 | 说明           |
+| ------------ | -------- | ------ | -------------- |
+| `studentId`  | string   | 无     | 学生过滤       |
+| `operatorId` | string   | 无     | 操作教师过滤   |
+| `from`       | ISO 8601 | 无     | 起始时间，包含 |
+| `to`         | ISO 8601 | 无     | 结束时间，包含 |
 | `page`       | integer >= 1   | 1      | 页码           |
 | `pageSize`   | integer 1..100 | 20     | 每页数量       |
 
+积分周期由服务器每月 1 日 00:00（Asia/Taipei）自动结算，不提供手动结算接口。
+
 任课教师只能撤销本人创建的积分记录；班主任可以撤销本班任意可撤销记录。
 
-### 4.9 Ranking and Random Pick
+### 4.10 Ranking and Random Pick
 
 | 方法 | 路径                            | 权限           | 请求                | 用途                       |
 | ---- | ------------------------------- | -------------- | ------------------- | -------------------------- |
@@ -207,7 +223,7 @@
 
 排行榜使用 UTC 周一 00:00 为周边界，响应不返回学生积分。
 
-### 4.10 Display
+### 4.11 Display
 
 | 方法 | 路径                                                 | 权限           | 请求                        | 用途                           |
 | ---- | ---------------------------------------------------- | -------------- | --------------------------- | ------------------------------ |
