@@ -24,7 +24,7 @@ jobs:
   deploy:
     if: github.repository == 'Harutaizumiya/Excitatio-Insectorum'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 360
     environment: production
     env:
       DEPLOY_HOST: 101.37.150.242
