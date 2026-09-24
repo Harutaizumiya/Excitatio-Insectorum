@@ -80,6 +80,8 @@ jobs:
           ssh -i "$DEPLOY_SSH_KEY_FILE" \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$DEPLOY_KNOWN_HOSTS_FILE" \
             "$DEPLOY_USER@$DEPLOY_HOST" \
@@ -92,6 +94,8 @@ jobs:
             | ssh -i "$DEPLOY_SSH_KEY_FILE" \
                 -o BatchMode=yes \
                 -o IdentitiesOnly=yes \
+                -o ServerAliveInterval=30 \
+                -o ServerAliveCountMax=20 \
                 -o StrictHostKeyChecking=yes \
                 -o UserKnownHostsFile="$DEPLOY_KNOWN_HOSTS_FILE" \
                 "$DEPLOY_USER@$DEPLOY_HOST" \
@@ -109,6 +113,8 @@ jobs:
           } | ssh -i "$DEPLOY_SSH_KEY_FILE" \
               -o BatchMode=yes \
               -o IdentitiesOnly=yes \
+              -o ServerAliveInterval=30 \
+              -o ServerAliveCountMax=20 \
               -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile="$DEPLOY_KNOWN_HOSTS_FILE" \
               "$DEPLOY_USER@$DEPLOY_HOST" \
