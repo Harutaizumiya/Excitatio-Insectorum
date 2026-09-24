@@ -1,0 +1,107 @@
+name: Deploy main to production
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - .github/workflows/deploy-main.yml
+      - deploy/production-deploy.sh
+      - deploy/production_known_hosts
+      - docs/**
+      - '*.md'
+      - '**/*.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: excitatio-insectorum-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.repository == 'Harutaizumiya/Excitatio-Insectorum'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    env:
+      DEPLOY_HOST: 101.37.150.242
+      DEPLOY_USER: root
+      APP_DIR: /opt/1panel/www/sites/excitatio-insectorum
+    steps:
+      - name: Checkout main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js and pnpm
+        uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024 # v3.0.0
+        with:
+          runtime: node@22
+          version: 11.10.0
+          require-lockfile: true
+          cache: true
+
+      - name: Build web assets
+        run: pnpm --filter @repo/web build
+
+      - name: Build server image
+        run: docker build --file Dockerfile --tag "excitatio-insectorum-server:${GITHUB_SHA}" .
+
+      - name: Prepare SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -d -m 700 "$RUNNER_TEMP/deploy-ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$RUNNER_TEMP/deploy-ssh/id_ed25519"
+          chmod 600 "$RUNNER_TEMP/deploy-ssh/id_ed25519"
+          install -m 600 deploy/production_known_hosts "$RUNNER_TEMP/deploy-ssh/known_hosts"
+          {
+            echo "DEPLOY_SSH_KEY_FILE=$RUNNER_TEMP/deploy-ssh/id_ed25519"
+            echo "DEPLOY_KNOWN_HOSTS_FILE=$RUNNER_TEMP/deploy-ssh/known_hosts"
+          } >> "$GITHUB_ENV"
+
+      - name: Check SSH and prepare release directory
+        run: |
+          ssh -i "$DEPLOY_SSH_KEY_FILE" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$DEPLOY_KNOWN_HOSTS_FILE" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "install -d -m 755 '$APP_DIR/releases/$GITHUB_SHA/web'"
+
+      - name: Transfer server image
+        run: |
+          set -o pipefail
+          docker image save "excitatio-insectorum-server:${GITHUB_SHA}" \
+            | gzip -1 \
+            | ssh -i "$DEPLOY_SSH_KEY_FILE" \
+                -o BatchMode=yes \
+                -o IdentitiesOnly=yes \
+                -o StrictHostKeyChecking=yes \
+                -o UserKnownHostsFile="$DEPLOY_KNOWN_HOSTS_FILE" \
+                "$DEPLOY_USER@$DEPLOY_HOST" \
+                "cat > '$APP_DIR/releases/$GITHUB_SHA/server-image.tar.gz'"
+
+      - name: Transfer web assets
+        run: |
+          set -o pipefail
+          tar -C apps/web/dist -czf - . \
+            | ssh -i "$DEPLOY_SSH_KEY_FILE" \
+                -o BatchMode=yes \
+                -o IdentitiesOnly=yes \
+                -o StrictHostKeyChecking=yes \
+                -o UserKnownHostsFile="$DEPLOY_KNOWN_HOSTS_FILE" \
+                "$DEPLOY_USER@$DEPLOY_HOST" \
+                "tar -xzf - -C '$APP_DIR/releases/$GITHUB_SHA/web'"
+
+      - name: Deploy server and publish web assets
+        run: |
+          ssh -i "$DEPLOY_SSH_KEY_FILE" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$DEPLOY_KNOWN_HOSTS_FILE" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "bash -s -- '$GITHUB_SHA'" < deploy/production-deploy.sh
