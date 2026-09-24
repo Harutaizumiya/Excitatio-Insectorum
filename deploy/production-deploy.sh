@@ -19,7 +19,7 @@ readonly WEB_DIR="$RELEASE_DIR/web"
 readonly IMAGE_ARCHIVE="$RELEASE_DIR/server-image.tar.gz"
 readonly NEW_IMAGE="excitatio-insectorum-server:$release_sha"
 
-for command_name in curl docker python3 gzip; do
+for command_name in curl docker python3 gzip sqlite3; do
   command -v "$command_name" >/dev/null || {
     echo "Required command is missing: $command_name" >&2
     exit 1
@@ -53,18 +53,12 @@ fi
 backup_dir="$APP_DIR/backups/deploy"
 install -d -m 700 "$backup_dir"
 backup_file="$backup_dir/dev-$release_sha-$(date -u +%Y%m%dT%H%M%SZ).db"
-python3 - "$DATABASE_FILE" "$backup_file" <<'PY'
-import sqlite3
-import sys
-
-source_path, backup_path = sys.argv[1:]
-with sqlite3.connect(f'file:{source_path}?mode=ro', uri=True) as source:
-    with sqlite3.connect(backup_path) as backup:
-        source.backup(backup)
-        result = backup.execute('PRAGMA integrity_check').fetchone()
-        if result != ('ok',):
-            raise SystemExit(f'SQLite backup integrity check failed: {result}')
-PY
+sqlite3 "$DATABASE_FILE" ".backup '$backup_file'"
+backup_integrity="$(sqlite3 "$backup_file" 'PRAGMA integrity_check;')"
+if [[ "$backup_integrity" != 'ok' ]]; then
+  echo "SQLite backup integrity check failed: $backup_integrity" >&2
+  exit 1
+fi
 chmod 600 "$backup_file"
 
 echo "Loading server image for $release_sha"
