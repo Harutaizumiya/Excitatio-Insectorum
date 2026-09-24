@@ -151,6 +151,7 @@ model Classroom {
   activeScheduleTemplate  ScheduleTemplate?  @relation("ClassroomActiveScheduleTemplate", fields: [activeScheduleTemplateId], references: [id], onDelete: SetNull)
   teachers               ClassTeacher[]
   students               Student[]
+  dormitories             Dormitory[]
   layouts                SeatLayoutVersion[] @relation("ClassroomLayoutVersions")
   scoreRules             ScoreRule[]
   scorePeriods           ScorePeriod[]
@@ -253,7 +254,9 @@ model Student {
   gender    StudentGender @default(UNKNOWN)
   status    StudentStatus @default(ACTIVE)
   deletedAt DateTime?
+  dormitoryId String?
   classroom Classroom     @relation(fields: [classId], references: [id], onDelete: Restrict)
+  dormitory Dormitory?    @relation(fields: [classId, dormitoryId], references: [classId, id], onDelete: Restrict)
   seats     Seat[]
   scores    ScoreRecord[]
   scoreEventParticipants ScoreEventParticipant[]
@@ -264,12 +267,28 @@ model Student {
   @@unique([classId, studentNo])
   @@index([classId, status])
   @@index([classId, deletedAt, status])
+  @@index([dormitoryId])
+}
+
+model Dormitory {
+  id        String    @id @default(cuid())
+  classId   String
+  name      String
+  classroom Classroom @relation(fields: [classId], references: [id], onDelete: Restrict)
+  students  Student[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([classId, name])
+  @@unique([classId, id])
+  @@index([classId])
 }
 
 model SeatLayoutVersion {
   id                  String              @id @default(cuid())
   classId             String
   version             Int
+  rotationWeekKey     String?
   sourceVersionId     String?
   createdBy           String
   classroom           Classroom           @relation("ClassroomLayoutVersions", fields: [classId], references: [id], onDelete: Restrict)
@@ -281,6 +300,7 @@ model SeatLayoutVersion {
   createdAt           DateTime            @default(now())
 
   @@unique([classId, version])
+  @@unique([classId, rotationWeekKey])
   @@index([classId, createdAt])
   @@index([sourceVersionId])
   @@index([createdBy])
@@ -352,6 +372,8 @@ model ScoreEvent {
   reason        String?
   parameters    String?
   businessKey   String?         @unique
+  sourceDormitoryId String?
+  sourceDormitoryName String?
   classroom     Classroom       @relation(fields: [classId], references: [id], onDelete: Restrict)
   period        ScorePeriod     @relation(fields: [periodId], references: [id], onDelete: Restrict)
   operator      User            @relation("ScoreEventOperator", fields: [operatorId], references: [id], onDelete: Restrict)
@@ -362,6 +384,7 @@ model ScoreEvent {
   @@index([classId, occurredAt])
   @@index([periodId, type])
   @@index([operatorId, occurredAt])
+  @@index([classId, sourceDormitoryId, occurredAt])
 }
 
 model ScoreEventParticipant {

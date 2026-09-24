@@ -63,6 +63,7 @@ export function App(): ReactElement {
               <Route path="/admin" element={<AdminRoute><AdminPage route="overview" /></AdminRoute>} />
               <Route path="/admin/students/committee" element={<AdminRoute><AdminPage route="students-committee" /></AdminRoute>} />
               <Route path="/admin/students" element={<AdminRoute><AdminPage route="students" /></AdminRoute>} />
+              <Route path="/admin/dormitories" element={<AdminRoute><AdminPage route="dormitories" /></AdminRoute>} />
               <Route path="/admin/seating" element={<AdminRoute><AdminPage route="seating" /></AdminRoute>} />
               <Route path="/admin/schedule" element={<AdminRoute><AdminPage route="schedule" /></AdminRoute>} />
               <Route path="/admin/teachers" element={<AdminRoute><AdminPage route="teachers" /></AdminRoute>} />

@@ -59,6 +59,9 @@ importers:
       bcryptjs:
         specifier: ^3.0.2
         version: 3.0.3
+      croner:
+        specifier: ^10.0.1
+        version: 10.0.1
       csv-parse:
         specifier: ^7.0.2
         version: 7.0.2
@@ -2335,6 +2338,10 @@ packages:
 
   crc@3.8.0:
     resolution: {integrity: sha512-iX3mfgcTMIq3ZKLIsVFAbv7+Mc10kxabAGQb8HvjA1o3T1PIYprbakQ65d3I+2HGHt6nSKkM9PYjgoJO2KcFBQ==}
+
+  croner@10.0.1:
+    resolution: {integrity: sha512-ixNtAJndqh173VQ4KodSdJEI6nuioBWI0V1ITNKhZZsO0pEMoDxz539T4FTTbSZ/xIOSuDnzxLVRqBVSvPNE2g==}
+    engines: {node: '>=18.0'}
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -6913,6 +6920,8 @@ snapshots:
   crc@3.8.0:
     dependencies:
       buffer: 5.7.1
+
+  croner@10.0.1: {}
 
   cross-spawn@7.0.6:
     dependencies:

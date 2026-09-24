@@ -183,10 +183,20 @@ export class SeatingService {
         });
       }
 
-      await tx.classroom.update({
-        where: { id: classId },
+      const switched = await tx.classroom.updateMany({
+        where: {
+          id: classId,
+          currentLayoutVersionId: classroom.currentLayoutVersionId,
+        },
         data: { currentLayoutVersionId: layout.id, gridRows, gridCols },
       });
+      if (switched.count !== 1) {
+        throw new BusinessError(
+          'SEAT_LAYOUT_VERSION_CONFLICT',
+          '座位布局版本已发生变化，请重新加载后再保存',
+          409,
+        );
+      }
 
       return { versionId: layout.id, version: nextVersion };
     });
@@ -292,6 +302,14 @@ export class SeatingService {
       throw new BusinessError('SEAT_LAYOUT_VERSION_NOT_FOUND', '座位布局版本不存在', 404);
     }
 
+    const classroom = await prisma.classroom.findUnique({
+      where: { id: classId },
+      select: { currentLayoutVersionId: true },
+    });
+    if (!classroom) {
+      throw new BusinessError('CLASSROOM_NOT_FOUND', '班级不存在', 404);
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       const latest = await tx.seatLayoutVersion.findFirst({
         where: { classId },
@@ -321,10 +339,20 @@ export class SeatingService {
         });
       }
 
-      await tx.classroom.update({
-        where: { id: classId },
+      const switched = await tx.classroom.updateMany({
+        where: {
+          id: classId,
+          currentLayoutVersionId: classroom.currentLayoutVersionId,
+        },
         data: { currentLayoutVersionId: newLayout.id },
       });
+      if (switched.count !== 1) {
+        throw new BusinessError(
+          'SEAT_LAYOUT_VERSION_CONFLICT',
+          '座位布局版本已发生变化，请重新加载后再恢复',
+          409,
+        );
+      }
 
       return {
         versionId: newLayout.id,

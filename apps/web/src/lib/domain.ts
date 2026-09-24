@@ -112,6 +112,28 @@ export interface Student {
   updatedAt: IsoDateTime;
 }
 
+export interface DormitoryMember {
+  id: string;
+  name: string;
+  studentNo: string | null;
+}
+
+export interface Dormitory {
+  id: string;
+  classId: string;
+  name: string;
+  students: DormitoryMember[];
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+}
+
+export interface CreateDormitoryScoreInput {
+  studentIds: string[];
+  delta: number;
+  reason: string;
+  businessKey: string;
+}
+
 export interface StudentListQuery {
   status?: StudentStatus;
   includeDeleted?: boolean;
@@ -309,6 +331,7 @@ export interface ScoreEventResult {
   occurredAt: IsoDateTime;
   studentIds: string[];
   records: Array<{ studentId: string; delta: number }>;
+  sourceDormitory?: { id: string; name: string } | null;
 }
 
 export interface ScoreRecordEvent {

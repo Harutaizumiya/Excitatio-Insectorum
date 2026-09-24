@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   type Prisma,
+  type PrismaClient,
   RelationStatus,
   ScoreRecordType,
   StudentStatus,
@@ -10,7 +11,11 @@ import { prisma } from '../../plugins/prisma';
 import { BusinessError } from '../../plugins/error-handler';
 import { ClassEventType } from '../realtime/realtime.types';
 import { realtimeService } from '../realtime/realtime.service';
-import { scorePeriodsService } from './score-periods.service';
+import {
+  normalizeCommitteeAssignments,
+  scorePeriodsService,
+  type CommitteeAssignmentInput,
+} from './score-periods.service';
 import { summarizeScoreEvent } from './score-event-summary';
 
 const scoreRecordInclude = {
@@ -26,8 +31,10 @@ type ScoreRecordWithRelations = Prisma.ScoreRecordGetPayload<{
 }>;
 
 export class ScoresService {
+  constructor(private readonly db: PrismaClient = prisma) {}
+
   async assertClassAccess(userId: string, classId: string, roles?: TeacherRole[]) {
-    const access = await prisma.classTeacher.findFirst({
+    const access = await this.db.classTeacher.findFirst({
       where: {
         teacherId: userId,
         classId,
@@ -43,7 +50,7 @@ export class ScoresService {
 
   // --- Score Rules ---
   async listRules(classId: string, enabled?: boolean) {
-    return prisma.scoreRule.findMany({
+    return this.db.scoreRule.findMany({
       where: {
         classId,
         ...(enabled !== undefined ? { enabled } : {}),
@@ -73,7 +80,7 @@ export class ScoresService {
 
     await this.assertClassAccess(operatorId, classId, [TeacherRole.HEAD_TEACHER]);
 
-    return prisma.scoreRule.create({
+    return this.db.scoreRule.create({
       data: {
         classId,
         name,
@@ -104,12 +111,12 @@ export class ScoresService {
       throw new BusinessError('INVALID_SCORE_DELTA', '积分值必须为非 0 整数', 400);
     }
 
-    const existing = await prisma.scoreRule.findFirst({ where: { id: ruleId, classId } });
+    const existing = await this.db.scoreRule.findFirst({ where: { id: ruleId, classId } });
     if (!existing) {
       throw new BusinessError('SCORE_RULE_NOT_FOUND', '积分规则不存在', 404);
     }
 
-    return prisma.scoreRule.update({
+    return this.db.scoreRule.update({
       where: { id: ruleId },
       data: {
         name: dto.name?.trim(),
@@ -124,12 +131,12 @@ export class ScoresService {
 
   async disableRule(classId: string, ruleId: string, operatorId: string) {
     await this.assertClassAccess(operatorId, classId, [TeacherRole.HEAD_TEACHER]);
-    const existing = await prisma.scoreRule.findFirst({ where: { id: ruleId, classId } });
+    const existing = await this.db.scoreRule.findFirst({ where: { id: ruleId, classId } });
     if (!existing) {
       throw new BusinessError('SCORE_RULE_NOT_FOUND', '积分规则不存在', 404);
     }
 
-    return prisma.scoreRule.update({
+    return this.db.scoreRule.update({
       where: { id: ruleId },
       data: { enabled: false },
     });
@@ -142,9 +149,9 @@ export class ScoresService {
     dto: { studentId: string; ruleId: string },
   ) {
     const access = await this.assertClassAccess(operatorId, classId);
-    const period = await scorePeriodsService.ensureCurrentPeriod(classId, operatorId);
+    const period = await scorePeriodsService.ensurePeriodForDate(classId, new Date());
 
-    const record = await prisma.$transaction(async (tx) => {
+    const record = await this.db.$transaction(async (tx) => {
       const [student, rule] = await Promise.all([
         tx.student.findFirst({
           where: { id: dto.studentId, classId, status: StudentStatus.ACTIVE, deletedAt: null },
@@ -195,9 +202,9 @@ export class ScoresService {
     }
 
     const access = await this.assertClassAccess(operatorId, classId);
-    const period = await scorePeriodsService.ensureCurrentPeriod(classId, operatorId);
+    const period = await scorePeriodsService.ensurePeriodForDate(classId, new Date());
 
-    const record = await prisma.$transaction(async (tx) => {
+    const record = await this.db.$transaction(async (tx) => {
       const student = await tx.student.findFirst({
         where: { id: dto.studentId, classId, status: StudentStatus.ACTIVE, deletedAt: null },
         select: { id: true },
@@ -283,15 +290,15 @@ export class ScoresService {
       throw new BusinessError('INVALID_SCORE_DATE_RANGE', '开始时间不能晚于结束时间');
     }
 
-    const [records, total] = await prisma.$transaction([
-      prisma.scoreRecord.findMany({
+    const [records, total] = await this.db.$transaction([
+      this.db.scoreRecord.findMany({
         where,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: scoreRecordInclude,
       }),
-      prisma.scoreRecord.count({ where }),
+      this.db.scoreRecord.count({ where }),
     ]);
 
     return {
@@ -303,7 +310,7 @@ export class ScoresService {
   async revertRecord(classId: string, recordId: string, operatorId: string) {
     const access = await this.assertClassAccess(operatorId, classId);
 
-    const record = await prisma.$transaction(async (tx) => {
+    const record = await this.db.$transaction(async (tx) => {
       const original = await tx.scoreRecord.findFirst({
         where: { id: recordId, classId },
         include: { reversion: true },
@@ -388,8 +395,12 @@ export class ScoresService {
 
   // --- Committee ---
   async listCommittee(classId: string) {
-    const assignments = await prisma.classCommitteeAssignment.findMany({
-      where: { classId, status: RelationStatus.ACTIVE },
+    const assignments = await this.db.classCommitteeAssignment.findMany({
+      where: {
+        classId,
+        status: RelationStatus.ACTIVE,
+        student: { status: StudentStatus.ACTIVE, deletedAt: null },
+      },
       include: { student: { select: { name: true } } },
       orderBy: [{ role: 'asc' }, { termStartAt: 'desc' }, { studentId: 'asc' }],
     });
@@ -409,19 +420,16 @@ export class ScoresService {
   async replaceCommittee(
     classId: string,
     operatorId: string,
-    assignments: Array<{
-      studentId: string;
-      role: string;
-      subject?: string | null;
-      termStartAt: string;
-      termEndAt?: string | null;
-      trialEndsAt?: string | null;
-    }>,
+    assignments: CommitteeAssignmentInput[],
   ) {
     await this.assertClassAccess(operatorId, classId, [TeacherRole.HEAD_TEACHER]);
+    const normalizedAssignments = normalizeCommitteeAssignments(assignments);
+    const replacementAt = new Date();
 
-    await prisma.$transaction(async (tx) => {
-      const studentIds = [...new Set(assignments.map((assignment) => assignment.studentId))];
+    await this.db.$transaction(async (tx) => {
+      const studentIds = [
+        ...new Set(normalizedAssignments.map((assignment) => assignment.studentId)),
+      ];
       if (studentIds.length > 0) {
         const students = await tx.student.findMany({
           where: { classId, id: { in: studentIds }, status: StudentStatus.ACTIVE, deletedAt: null },
@@ -432,21 +440,86 @@ export class ScoresService {
         }
       }
 
-      await tx.classCommitteeAssignment.updateMany({
-        where: { classId, status: RelationStatus.ACTIVE },
-        data: { status: RelationStatus.REVOKED },
+      const existingAssignments = await tx.classCommitteeAssignment.findMany({
+        where: { classId },
+        select: {
+          id: true,
+          studentId: true,
+          role: true,
+          subject: true,
+          termStartAt: true,
+          termEndAt: true,
+          trialEndsAt: true,
+          status: true,
+        },
       });
+      const existingByKey = new Map(
+        existingAssignments.map((assignment) => [
+          `${assignment.studentId}\u0000${assignment.role}\u0000${assignment.termStartAt.getTime()}`,
+          assignment,
+        ]),
+      );
 
-      if (assignments.length > 0) {
+      const desiredByKey = new Map(
+        normalizedAssignments.map((assignment) => [
+          `${assignment.studentId}\u0000${assignment.role}\u0000${assignment.termStartAt.getTime()}`,
+          assignment,
+        ]),
+      );
+
+      for (const existing of existingAssignments) {
+        const key = `${existing.studentId}\u0000${existing.role}\u0000${existing.termStartAt.getTime()}`;
+        const desired = desiredByKey.get(key);
+        if (!desired) {
+          if (existing.status === RelationStatus.ACTIVE) {
+            await tx.classCommitteeAssignment.update({
+              where: { id: existing.id },
+              data: {
+                status: RelationStatus.REVOKED,
+                termEndAt:
+                  existing.termEndAt && existing.termEndAt < replacementAt
+                    ? existing.termEndAt
+                    : replacementAt,
+              },
+            });
+          }
+          continue;
+        }
+
+        if (
+          existing.status !== RelationStatus.ACTIVE ||
+          existing.subject !== desired.subject ||
+          existing.termEndAt?.getTime() !== desired.termEndAt?.getTime() ||
+          existing.trialEndsAt?.getTime() !== desired.trialEndsAt?.getTime()
+        ) {
+          await tx.classCommitteeAssignment.update({
+            where: { id: existing.id },
+            data: {
+              subject: desired.subject,
+              termEndAt: desired.termEndAt,
+              trialEndsAt: desired.trialEndsAt,
+              status: RelationStatus.ACTIVE,
+            },
+          });
+        }
+      }
+
+      const newAssignments = normalizedAssignments.filter(
+        (assignment) =>
+          !existingByKey.has(
+            `${assignment.studentId}\u0000${assignment.role}\u0000${assignment.termStartAt.getTime()}`,
+          ),
+      );
+      if (newAssignments.length > 0) {
         await tx.classCommitteeAssignment.createMany({
-          data: assignments.map((a) => ({
+          data: newAssignments.map((assignment) => ({
             classId,
-            studentId: a.studentId,
-            role: a.role.trim(),
-            subject: a.subject?.trim() || null,
-            termStartAt: new Date(a.termStartAt),
-            termEndAt: a.termEndAt ? new Date(a.termEndAt) : null,
-            trialEndsAt: a.trialEndsAt ? new Date(a.trialEndsAt) : null,
+            studentId: assignment.studentId,
+            role: assignment.role,
+            subject: assignment.subject,
+            termStartAt: assignment.termStartAt,
+            termEndAt: assignment.termEndAt,
+            trialEndsAt: assignment.trialEndsAt,
             status: RelationStatus.ACTIVE,
           })),
         });
@@ -461,7 +534,7 @@ export class ScoresService {
     const fromDate = from ? new Date(from) : new Date(Date.now() - 30 * 86400 * 1000);
     const toDate = to ? new Date(to) : new Date();
 
-    const records = await prisma.scoreRecord.findMany({
+    const records = await this.db.scoreRecord.findMany({
       where: {
         classId,
         createdAt: { gte: fromDate, lte: toDate },

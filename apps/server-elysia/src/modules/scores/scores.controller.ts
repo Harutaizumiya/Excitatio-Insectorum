@@ -1,5 +1,5 @@
 import { Elysia, t } from 'elysia';
-import { ScoreEventType, ScoreRecordType, TeacherRole } from '@prisma/client';
+import { ScoreEventType, ScoreRecordType } from '@prisma/client';
 import { scoresService } from './scores.service';
 import { authPlugin } from '../../plugins/auth';
 import { scoreEventsService, type CreateScoreEventInput } from './score-events.service';
@@ -224,7 +224,7 @@ export const scoresController = new Elysia({ prefix: '/classes/:classId' })
     '/score-periods/current/summary',
     async ({ user, params: { classId } }) => {
       await scoresService.assertClassAccess(user!.sub, classId);
-      const data = await scorePeriodsService.getCurrentSummary(classId, user!.sub);
+      const data = await scorePeriodsService.getCurrentSummary(classId);
       return { data };
     },
     {
@@ -237,7 +237,7 @@ export const scoresController = new Elysia({ prefix: '/classes/:classId' })
     '/score-periods/summary',
     async ({ user, params: { classId }, query }) => {
       await scoresService.assertClassAccess(user!.sub, classId);
-      const data = await scorePeriodsService.getSummary(classId, user!.sub, query.from, query.to);
+      const data = await scorePeriodsService.getSummary(classId, query.from, query.to);
       return { data };
     },
     {
@@ -248,20 +248,5 @@ export const scoresController = new Elysia({ prefix: '/classes/:classId' })
         to: t.Optional(t.String()),
       }),
       detail: { summary: '查询积分周期或日期范围汇总', tags: ['Scores'] },
-    },
-  )
-  .post(
-    '/score-periods/settle',
-    async ({ user, params: { classId }, body }) => {
-      await scoresService.assertClassAccess(user!.sub, classId, [TeacherRole.HEAD_TEACHER]);
-      if (body.periodId) await scorePeriodsService.settlePeriod(classId, body.periodId, user!.sub);
-      else await scorePeriodsService.settleBeforeCurrent(classId, user!.sub);
-      return { data: { settled: true } };
-    },
-    {
-      requireUser: true,
-      params: t.Object({ classId: t.String() }),
-      body: t.Object({ periodId: t.Optional(t.String()) }),
-      detail: { summary: '结算积分周期', tags: ['Score Periods'] },
     },
   );

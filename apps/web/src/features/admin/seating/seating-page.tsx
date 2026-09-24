@@ -9,6 +9,7 @@ import {
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -96,8 +97,10 @@ export function SeatingPage() {
     seats,
     versions,
     isDirty,
+    remoteChanged,
     saveLayout: persistSave,
     restoreLayout: persistRestore,
+    reloadLayout,
     updateDraft,
   } = useAdminSeating();
 
@@ -388,7 +391,7 @@ export function SeatingPage() {
               icon={<SaveOutlined />}
               style={primaryButtonStyle}
               loading={saving}
-              disabled={!isDirty}
+              disabled={!isDirty || remoteChanged}
               onClick={() => void saveLayout()}
             >
               {isLayoutStage ? "保存并返回" : isDirty ? "保存" : "已保存"}
@@ -396,6 +399,27 @@ export function SeatingPage() {
           </Space>
         }
       />
+
+      {remoteChanged && (
+        <Alert
+          type="warning"
+          showIcon
+          title="座位表已自动轮换"
+          description="当前未保存的调整基于旧版本。载入最新座位表后再继续编辑。"
+          action={
+            <Button
+              size="small"
+              onClick={async () => {
+                await reloadLayout();
+                notification.success({ title: "已载入最新座位表" });
+              }}
+            >
+              载入最新版本
+            </Button>
+          }
+          style={{ marginBottom: 16 }}
+        />
+      )}
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={isLayoutStage ? 24 : 18}>

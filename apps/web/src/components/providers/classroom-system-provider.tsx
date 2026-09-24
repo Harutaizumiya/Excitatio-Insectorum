@@ -61,6 +61,8 @@ function RealtimeQuerySync({ client }: { client: ClassRealtimeClient }) {
           queryKey: ["classrooms", event.classId, "score-records"],
         })
         void queryClient.invalidateQueries({ queryKey: ["classrooms", event.classId, "score-periods"] })
+        void queryClient.invalidateQueries({ queryKey: ["admin", event.classId, "score-records"] })
+        void queryClient.invalidateQueries({ queryKey: ["admin", event.classId, "score-period-summary"] })
         refreshRanking(event.classId)
       }),
       client.subscribe("SCORE_REVERTED", undefined, (event) => {
@@ -68,6 +70,8 @@ function RealtimeQuerySync({ client }: { client: ClassRealtimeClient }) {
           queryKey: ["classrooms", event.classId, "score-records"],
         })
         void queryClient.invalidateQueries({ queryKey: ["classrooms", event.classId, "score-periods"] })
+        void queryClient.invalidateQueries({ queryKey: ["admin", event.classId, "score-records"] })
+        void queryClient.invalidateQueries({ queryKey: ["admin", event.classId, "score-period-summary"] })
         refreshRanking(event.classId)
       }),
       client.subscribe("RANKING_CHANGED", undefined, (event) => refreshRanking(event.classId)),
@@ -77,11 +81,24 @@ function RealtimeQuerySync({ client }: { client: ClassRealtimeClient }) {
           queryKey: ["classrooms", event.classId, "seat-layout", "versions"],
         })
         void queryClient.invalidateQueries({ queryKey: ["display"] })
+        const adminSeatingKey = ["admin", event.classId, "seating"] as const
+        const cached = queryClient.getQueryData<{
+          draft: unknown
+          saved: unknown
+          remoteChanged?: boolean
+        }>(adminSeatingKey)
+        if (cached && JSON.stringify(cached.draft) !== JSON.stringify(cached.saved)) {
+          queryClient.setQueryData(adminSeatingKey, { ...cached, remoteChanged: true })
+        } else {
+          void queryClient.invalidateQueries({ queryKey: adminSeatingKey })
+        }
       }),
       client.subscribe("STUDENT_CHANGED", undefined, (event) => {
         void queryClient.invalidateQueries({
           queryKey: ["classrooms", event.classId, "students"],
         })
+        void queryClient.invalidateQueries({ queryKey: ["admin", event.classId, "students"] })
+        void queryClient.invalidateQueries({ queryKey: ["admin", event.classId, "dormitories"] })
         void queryClient.invalidateQueries({ queryKey: ["display"] })
       }),
       client.subscribe("DISPLAY_CONFIG_CHANGED", undefined, (event) => {

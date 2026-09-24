@@ -13,6 +13,7 @@ import type {
   CreateBindingCodeResult,
   CreateClassroomBindingCodeResult,
   CreateCustomScoreInput,
+  CreateDormitoryScoreInput,
   CreateScoreEventInput,
   CreateRuleScoreInput,
   CreateScoreRuleInput,
@@ -23,6 +24,7 @@ import type {
   DeviceTokenResult,
   DisplayBootstrap,
   DisplayDevice,
+  Dormitory,
   FeedbackCreateResult,
   FeedbackDetail,
   FeedbackListItem,
@@ -150,18 +152,21 @@ function requestUsageDescriptor(path: string, method: string): RequestUsageDescr
     module,
   });
 
-  if (!resource && operation === 'PATCH') return descriptor('classroom.settings_updated', 'classroom');
+  if (!resource && operation === 'PATCH')
+    return descriptor('classroom.settings_updated', 'classroom');
   if (resource === 'students/import' && operation === 'POST') {
     return descriptor('students.imported', 'students');
   }
-  if (resource === 'students' && operation === 'POST') return descriptor('students.created', 'students');
+  if (resource === 'students' && operation === 'POST')
+    return descriptor('students.created', 'students');
   if (/^students\/[^/]+$/.test(resource) && operation === 'PATCH') {
     return descriptor('students.updated', 'students');
   }
   if (/^students\/[^/]+\/(deactivate|restore|delete)$/.test(resource) && operation === 'POST') {
     return descriptor(`students.${resource.split('/').at(-1)}d`, 'students');
   }
-  if (resource === 'teachers' && operation === 'POST') return descriptor('teachers.created', 'teachers');
+  if (resource === 'teachers' && operation === 'POST')
+    return descriptor('teachers.created', 'teachers');
   if (/^teachers\/[^/]+\/invitations$/.test(resource) && operation === 'POST') {
     return descriptor('teachers.invitation_created', 'teachers');
   }
@@ -185,9 +190,6 @@ function requestUsageDescriptor(path: string, method: string): RequestUsageDescr
   }
   if (/^scores\/[^/]+\/revert$/.test(resource) && operation === 'POST') {
     return descriptor('scores.reverted', 'scores');
-  }
-  if (resource === 'score-periods/settle' && operation === 'POST') {
-    return descriptor('scores.settled', 'scores');
   }
   if (resource === 'committee' && operation === 'PUT') {
     return descriptor('students.committee_updated', 'students');
@@ -300,8 +302,7 @@ export class ApiClassroomService implements ClassroomService {
         module: descriptor.module,
         page: typeof window === 'undefined' ? undefined : window.location.pathname,
         appVersion: import.meta.env.VITE_APP_VERSION || 'web',
-        browser:
-          typeof navigator === 'undefined' ? undefined : navigator.userAgent.slice(0, 255),
+        browser: typeof navigator === 'undefined' ? undefined : navigator.userAgent.slice(0, 255),
         traceId,
         errorCode,
         properties: { durationMs: Math.max(0, Date.now() - startedAt) },
@@ -392,10 +393,7 @@ export class ApiClassroomService implements ClassroomService {
     );
   }
 
-  async createFeedback(
-    classId: string,
-    input: CreateFeedbackInput,
-  ): Promise<FeedbackCreateResult> {
+  async createFeedback(classId: string, input: CreateFeedbackInput): Promise<FeedbackCreateResult> {
     const traceId = input.traceId || createTraceId();
     return this.request<FeedbackCreateResult>(
       `/classes/${encodeURIComponent(classId)}/feedback`,
@@ -519,6 +517,67 @@ export class ApiClassroomService implements ClassroomService {
         method: 'POST',
         body: jsonBody({ students: input }),
       },
+    );
+  }
+
+  async listDormitories(classId: string): Promise<Dormitory[]> {
+    return this.request<Dormitory[]>(`/classes/${encodeURIComponent(classId)}/dormitories`);
+  }
+
+  async createDormitory(classId: string, name: string): Promise<Dormitory> {
+    return this.request<Dormitory>(`/classes/${encodeURIComponent(classId)}/dormitories`, {
+      method: 'POST',
+      body: jsonBody({ name }),
+    });
+  }
+
+  async renameDormitory(classId: string, dormitoryId: string, name: string): Promise<Dormitory> {
+    return this.request<Dormitory>(
+      `/classes/${encodeURIComponent(classId)}/dormitories/${encodeURIComponent(dormitoryId)}`,
+      { method: 'PATCH', body: jsonBody({ name }) },
+    );
+  }
+
+  async deleteDormitory(
+    classId: string,
+    dormitoryId: string,
+  ): Promise<{ id: string; removedStudentIds: string[] }> {
+    return this.request<{ id: string; removedStudentIds: string[] }>(
+      `/classes/${encodeURIComponent(classId)}/dormitories/${encodeURIComponent(dormitoryId)}`,
+      { method: 'DELETE' },
+    );
+  }
+
+  async addDormitoryMembers(
+    classId: string,
+    dormitoryId: string,
+    studentIds: string[],
+  ): Promise<Dormitory> {
+    return this.request<Dormitory>(
+      `/classes/${encodeURIComponent(classId)}/dormitories/${encodeURIComponent(dormitoryId)}/members`,
+      { method: 'POST', body: jsonBody({ studentIds }) },
+    );
+  }
+
+  async removeDormitoryMember(
+    classId: string,
+    dormitoryId: string,
+    studentId: string,
+  ): Promise<Dormitory> {
+    return this.request<Dormitory>(
+      `/classes/${encodeURIComponent(classId)}/dormitories/${encodeURIComponent(dormitoryId)}/members/${encodeURIComponent(studentId)}`,
+      { method: 'DELETE' },
+    );
+  }
+
+  async createDormitoryScoreEvent(
+    classId: string,
+    dormitoryId: string,
+    input: CreateDormitoryScoreInput,
+  ): Promise<ScoreEventResult> {
+    return this.request<ScoreEventResult>(
+      `/classes/${encodeURIComponent(classId)}/dormitories/${encodeURIComponent(dormitoryId)}/score-events`,
+      { method: 'POST', body: jsonBody(input) },
     );
   }
 
@@ -687,16 +746,6 @@ export class ApiClassroomService implements ClassroomService {
       {
         method: 'PUT',
         body: jsonBody(input),
-      },
-    );
-  }
-
-  async settleScorePeriods(classId: string, periodId?: string): Promise<{ settled: true }> {
-    return this.request<{ settled: true }>(
-      `/classes/${encodeURIComponent(classId)}/score-periods/settle`,
-      {
-        method: 'POST',
-        body: jsonBody(periodId ? { periodId } : {}),
       },
     );
   }
