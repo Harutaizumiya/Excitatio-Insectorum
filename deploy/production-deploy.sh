@@ -7,6 +7,7 @@ readonly COMPOSE_FILE="$APP_DIR/docker-compose.yml"
 readonly DATABASE_FILE="$APP_DIR/data/sqlite/dev.db"
 readonly STATIC_DIR="$APP_DIR/static"
 readonly HEALTH_URL='http://127.0.0.1:3000/api/v1/health'
+readonly SERVER_IMAGE='ghcr.io/harutaizumiya/excitatio-insectorum-server'
 
 release_sha="${1:-}"
 if [[ ! "$release_sha" =~ ^[0-9a-f]{40}$ ]]; then
@@ -16,17 +17,16 @@ fi
 
 readonly RELEASE_DIR="$APP_DIR/releases/$release_sha"
 readonly WEB_DIR="$RELEASE_DIR/web"
-readonly IMAGE_ARCHIVE="$RELEASE_DIR/server-image.tar.gz"
-readonly NEW_IMAGE="excitatio-insectorum-server:$release_sha"
+readonly NEW_IMAGE="$SERVER_IMAGE:$release_sha"
 
-for command_name in curl docker python3 gzip sqlite3; do
+for command_name in curl docker python3 sqlite3; do
   command -v "$command_name" >/dev/null || {
     echo "Required command is missing: $command_name" >&2
     exit 1
   }
 done
 
-if [[ ! -f "$COMPOSE_FILE" || ! -f "$DATABASE_FILE" || ! -f "$WEB_DIR/index.html" || ! -s "$IMAGE_ARCHIVE" ]]; then
+if [[ ! -f "$COMPOSE_FILE" || ! -f "$DATABASE_FILE" || ! -f "$WEB_DIR/index.html" ]]; then
   echo 'Release files or the current production deployment are incomplete.' >&2
   exit 1
 fi
@@ -61,9 +61,28 @@ if [[ "$backup_integrity" != 'ok' ]]; then
 fi
 chmod 600 "$backup_file"
 
-echo "Loading server image for $release_sha"
-gzip -dc "$IMAGE_ARCHIVE" | docker image load
-rm -f -- "$IMAGE_ARCHIVE"
+echo "Pulling server image for $release_sha"
+if [[ -z "${GHCR_TOKEN:-}" || -z "${GHCR_USERNAME:-}" ]]; then
+  echo 'GHCR credentials are required to pull the release image.' >&2
+  exit 1
+fi
+
+docker_auth_dir="$(mktemp -d /tmp/excitatio-docker-auth.XXXXXXXXXX)"
+export DOCKER_CONFIG="$docker_auth_dir"
+cleanup_registry_auth() {
+  docker logout ghcr.io >/dev/null 2>&1 || true
+  rm -f -- "$docker_auth_dir/config.json"
+  rmdir -- "$docker_auth_dir" 2>/dev/null || true
+}
+trap cleanup_registry_auth EXIT
+
+printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+docker pull "$NEW_IMAGE"
+docker logout ghcr.io
+rm -f -- "$docker_auth_dir/config.json"
+rmdir -- "$docker_auth_dir"
+trap - EXIT
+unset DOCKER_CONFIG GHCR_TOKEN GHCR_USERNAME
 docker image inspect "$NEW_IMAGE" >/dev/null
 
 docker image tag "$old_image_id" "$rollback_tag"
