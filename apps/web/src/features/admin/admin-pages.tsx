@@ -12,6 +12,7 @@ import {
   EditOutlined,
   EyeOutlined,
   FileTextOutlined,
+  HomeOutlined,
   LinkOutlined,
   LoadingOutlined,
   PlusOutlined,
@@ -26,6 +27,7 @@ import {
 } from "@ant-design/icons";
 import { SeatingPage } from "./seating/seating-page";
 import { SchedulePage } from "./schedule/schedule-page";
+import { DormitoriesPage } from "./dormitories/dormitories-page";
 import { StudentImportModal, type ImportStudentPayload } from "./student-import";
 import {
   Alert,
@@ -79,6 +81,7 @@ import {
   useAdminDisplayDevices,
   useAdminClassroom,
   useAdminCommittee,
+  useAdminDormitories,
   useAdminScoreRecords,
   useAdminScorePeriodSummary,
   useAdminScoreRules,
@@ -111,6 +114,8 @@ export function AdminPage({ route }: AdminPageProps) {
       return <StudentsPage />;
     case "students-committee":
       return <StudentCommitteePage />;
+    case "dormitories":
+      return <DormitoriesPage />;
     case "seating":
       return <SeatingPage />;
     case "schedule":
@@ -519,6 +524,8 @@ function StudentsPage() {
     deleteStudent: softDeleteStudent,
     batchImportStudents,
   } = useAdminStudents();
+  const { assignments } = useAdminCommittee();
+  const { dormitories } = useAdminDormitories();
   const { createScoreEvent, isScoring } = useAdminScoreRecords();
   const [keyword, setKeyword] = useState("");
   const [status, setStatus] = useState<"ALL" | "DELETED" | StudentStatus>("ALL");
@@ -547,6 +554,23 @@ function StudentsPage() {
       return matchesKeyword && matchesStatus;
     }),
     [keyword, status, students],
+  );
+
+  const rolesByStudent = useMemo(() => {
+    const result = new Map<string, string[]>();
+    for (const assignment of assignments) {
+      if (assignment.status !== "ACTIVE") continue;
+      const roles = result.get(assignment.studentId) ?? [];
+      roles.push(assignment.subject ? `${assignment.role}（${assignment.subject}）` : assignment.role);
+      result.set(assignment.studentId, roles);
+    }
+    return result;
+  }, [assignments]);
+
+  const dormitoryByStudent = useMemo(
+    () => new Map(dormitories.flatMap((dormitory) =>
+      dormitory.students.map((student) => [student.id, dormitory.name] as const))),
+    [dormitories],
   );
 
   const openCreate = () => {
@@ -630,6 +654,22 @@ function StudentsPage() {
     { title: "学生", dataIndex: "name", width: 170, render: (name: string) => <Space><Avatar size={30} style={{ background: "#e9f1ff", color: "#0a59f7" }}>{name.slice(0, 1)}</Avatar><Typography.Text strong>{name}</Typography.Text></Space> },
     { title: "学号", dataIndex: "studentNo", width: 120, render: (value: string) => <Typography.Text code>{value}</Typography.Text> },
     { title: "状态", dataIndex: "status", width: 120, render: (value: StudentStatus, student) => <StatusTag status={value} deletedAt={student.deletedAt} /> },
+    {
+      title: "身份",
+      key: "identity",
+      width: 240,
+      render: (_, student) => {
+        const roles = rolesByStudent.get(student.id) ?? [];
+        const dormitory = dormitoryByStudent.get(student.id);
+        if (roles.length === 0 && !dormitory) return <Typography.Text type="secondary">普通学生</Typography.Text>;
+        return (
+          <Space size={[4, 4]} wrap>
+            {roles.map((role) => <Tag key={role} color="blue">{role}</Tag>)}
+            {dormitory && <Tag color="green">{dormitory}</Tag>}
+          </Space>
+        );
+      },
+    },
     { title: "当前座位", dataIndex: "seat", width: 130, render: (value: string | null) => value ? <Tag color="blue" style={{ borderRadius: 999 }}>{value}</Tag> : <Typography.Text type="secondary">未安排</Typography.Text> },
     { title: "最后更新", dataIndex: "updatedAt", width: 170, render: (value: string) => <Typography.Text type="secondary">{formatDateTime(value)}</Typography.Text> },
     {
@@ -715,6 +755,9 @@ function StudentsPage() {
             <Link to="/admin/students/committee">
               <Button icon={<TeamOutlined />}>班委设置</Button>
             </Link>
+            <Link to="/admin/dormitories">
+              <Button icon={<HomeOutlined />}>住宿生管理</Button>
+            </Link>
             <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
               批量导入
             </Button>
@@ -732,7 +775,7 @@ function StudentsPage() {
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>找到 {filteredStudents.length} 名学生</Typography.Text>
           </Space>
         </div>
-      <Table rowKey="id" columns={columns} dataSource={filteredStudents} scroll={{ x: 1120 }} pagination={{ pageSize: 8, showSizeChanger: false, showTotal: (total) => `共 ${total} 名` }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有符合条件的学生" /> }} />
+      <Table rowKey="id" columns={columns} dataSource={filteredStudents} scroll={{ x: 1360 }} pagination={{ pageSize: 8, showSizeChanger: false, showTotal: (total) => `共 ${total} 名` }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有符合条件的学生" /> }} />
       </Card>
 
       <Drawer title={editingStudent ? "编辑学生资料" : "新增学生"} open={drawerOpen} onClose={() => setDrawerOpen(false)} size={430} destroyOnHidden footer={<Space style={{ display: "flex", justifyContent: "flex-end" }}><Button onClick={() => setDrawerOpen(false)}>取消</Button><Button type="primary" onClick={() => void form.submit()}>{editingStudent ? "保存修改" : "新增学生"}</Button></Space>}>

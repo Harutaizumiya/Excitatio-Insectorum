@@ -13,6 +13,7 @@ export type AdminRoute =
   | 'overview'
   | 'students'
   | 'students-committee'
+  | 'dormitories'
   | 'seating'
   | 'schedule'
   | 'teachers'
@@ -147,6 +148,12 @@ export const navItems: Array<{
 }> = [
   { key: 'overview', label: '班级概览', href: '/admin', description: '查看班级运行状态' },
   { key: 'students', label: '学生管理', href: '/admin/students', description: '维护学生与学号' },
+  {
+    key: 'dormitories',
+    label: '住宿生管理',
+    href: '/admin/dormitories',
+    description: '管理寝室与住宿生',
+  },
   { key: 'seating', label: '座位管理', href: '/admin/seating', description: '编辑课堂座位布局' },
   { key: 'schedule', label: '课程表', href: '/admin/schedule', description: '编辑班级课程表' },
   {

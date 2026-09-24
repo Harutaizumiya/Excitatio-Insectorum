@@ -18,6 +18,8 @@ import {
 import type {
   ClassTeacher,
   ClassSchedule,
+  CreateDormitoryScoreInput,
+  Dormitory,
   ImportedStudentInput,
   ScoreRecord as ApiScoreRecord,
   CreateScoreEventInput,
@@ -38,6 +40,7 @@ export const adminQueryKeys = {
   all: ['admin'] as const,
   classroom: (classId: string) => ['admin', classId, 'classroom'] as const,
   students: (classId: string) => ['admin', classId, 'students'] as const,
+  dormitories: (classId: string) => ['admin', classId, 'dormitories'] as const,
   teachers: (classId: string) => ['admin', classId, 'teachers'] as const,
   scoreRules: (classId: string) => ['admin', classId, 'score-rules'] as const,
   scoreRecords: (classId: string) => ['admin', classId, 'score-records'] as const,
@@ -57,7 +60,13 @@ export interface SeatingDraft {
   seats: Seat[];
 }
 
-type SeatingQueryData = { draft: SeatingDraft; saved: SeatingDraft; versions: SeatLayoutVersion[] };
+type SeatingQueryData = {
+  draft: SeatingDraft;
+  saved: SeatingDraft;
+  baseVersion: number;
+  versions: SeatLayoutVersion[];
+  remoteChanged?: boolean;
+};
 
 export interface ScheduleDraft {
   activeTemplateKey: string;
@@ -217,6 +226,7 @@ async function loadSeating(
   return {
     draft: { ...saved, seats: saved.seats.map((seat) => ({ ...seat })) },
     saved,
+    baseVersion: current.version ?? 0,
     versions,
   };
 }
@@ -287,6 +297,7 @@ export function useAdminStudents() {
     mutationFn: (student: Student) => service.deactivateStudent(classId, student.id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: adminQueryKeys.students(classId) });
+      void queryClient.invalidateQueries({ queryKey: adminQueryKeys.dormitories(classId) });
       void queryClient.invalidateQueries({ queryKey: adminQueryKeys.seating(classId) });
       void queryClient.invalidateQueries({ queryKey: ['classrooms', classId, 'ranking'] });
     },
@@ -303,6 +314,7 @@ export function useAdminStudents() {
     mutationFn: (student: Student) => service.deleteStudent(classId, student.id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: adminQueryKeys.students(classId) });
+      void queryClient.invalidateQueries({ queryKey: adminQueryKeys.dormitories(classId) });
       void queryClient.invalidateQueries({ queryKey: adminQueryKeys.seating(classId) });
       void queryClient.invalidateQueries({ queryKey: ['classrooms', classId, 'ranking'] });
     },
@@ -320,6 +332,81 @@ export function useAdminStudents() {
     deleteStudent: deleteMutation.mutateAsync,
     batchImportStudents: batchImportMutation.mutateAsync,
     isLoading: query.isLoading,
+  };
+}
+
+export function useAdminDormitories() {
+  const service = useClassroomService();
+  const classId = currentClassId();
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: adminQueryKeys.dormitories(classId),
+    queryFn: () => service.listDormitories(classId),
+    enabled: classId.length > 0,
+    staleTime: STALE_TIME,
+  });
+  const refreshMembers = () => {
+    void queryClient.invalidateQueries({ queryKey: adminQueryKeys.dormitories(classId) });
+    void queryClient.invalidateQueries({ queryKey: adminQueryKeys.students(classId) });
+    void queryClient.invalidateQueries({ queryKey: ['classrooms', classId, 'students'] });
+  };
+  const createMutation = useMutation({
+    mutationFn: (name: string) => service.createDormitory(classId, name),
+    onSuccess: refreshMembers,
+  });
+  const renameMutation = useMutation({
+    mutationFn: ({ dormitoryId, name }: { dormitoryId: string; name: string }) =>
+      service.renameDormitory(classId, dormitoryId, name),
+    onSuccess: refreshMembers,
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (dormitoryId: string) => service.deleteDormitory(classId, dormitoryId),
+    onSuccess: refreshMembers,
+  });
+  const addMembersMutation = useMutation({
+    mutationFn: ({ dormitoryId, studentIds }: { dormitoryId: string; studentIds: string[] }) =>
+      service.addDormitoryMembers(classId, dormitoryId, studentIds),
+    onSuccess: refreshMembers,
+  });
+  const removeMemberMutation = useMutation({
+    mutationFn: ({ dormitoryId, studentId }: { dormitoryId: string; studentId: string }) =>
+      service.removeDormitoryMember(classId, dormitoryId, studentId),
+    onSuccess: refreshMembers,
+  });
+  const scoreMutation = useMutation({
+    mutationFn: ({
+      dormitoryId,
+      input,
+    }: {
+      dormitoryId: string;
+      input: CreateDormitoryScoreInput;
+    }) => service.createDormitoryScoreEvent(classId, dormitoryId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminQueryKeys.scoreRecords(classId) });
+      void queryClient.invalidateQueries({ queryKey: adminQueryKeys.scorePeriodSummary(classId) });
+      void queryClient.invalidateQueries({ queryKey: ['classrooms', classId, 'score-records'] });
+      void queryClient.invalidateQueries({ queryKey: ['classrooms', classId, 'score-periods'] });
+      void queryClient.invalidateQueries({ queryKey: ['classrooms', classId, 'ranking'] });
+    },
+    onError: refreshMembers,
+  });
+  const dormitories: Dormitory[] = query.data ?? [];
+  return {
+    dormitories,
+    createDormitory: createMutation.mutateAsync,
+    renameDormitory: renameMutation.mutateAsync,
+    deleteDormitory: deleteMutation.mutateAsync,
+    addMembers: addMembersMutation.mutateAsync,
+    removeMember: removeMemberMutation.mutateAsync,
+    scoreDormitory: scoreMutation.mutateAsync,
+    isLoading: query.isLoading,
+    isSaving:
+      createMutation.isPending ||
+      renameMutation.isPending ||
+      deleteMutation.isPending ||
+      addMembersMutation.isPending ||
+      removeMemberMutation.isPending,
+    isScoring: scoreMutation.isPending,
   };
 }
 
@@ -661,6 +748,7 @@ export function useAdminSeating() {
   const emptyState: SeatingQueryData = {
     draft: { gridRows: 0, gridCols: 0, seats: [] },
     saved: { gridRows: 0, gridCols: 0, seats: [] },
+    baseVersion: 0,
     versions: [],
   };
   const state = query.data ?? emptyState;
@@ -669,6 +757,7 @@ export function useAdminSeating() {
       const result = await service.saveSeatLayout(classId, {
         gridRows: draft.gridRows,
         gridCols: draft.gridCols,
+        baseVersion: state.baseVersion,
         seats: draft.seats.map(({ row, col, studentId, cellType }) => ({
           row,
           col,
@@ -683,6 +772,7 @@ export function useAdminSeating() {
       queryClient.setQueryData(adminQueryKeys.seating(classId), {
         draft: next.draft,
         saved: next.saved,
+        baseVersion: next.baseVersion,
         versions: next.versions,
       }),
   });
@@ -696,6 +786,7 @@ export function useAdminSeating() {
       queryClient.setQueryData(adminQueryKeys.seating(classId), {
         draft: next.draft,
         saved: next.saved,
+        baseVersion: next.baseVersion,
         versions: next.versions,
       }),
   });
@@ -708,11 +799,15 @@ export function useAdminSeating() {
     ...state.draft,
     savedLayout: state.saved,
     versions: state.versions,
+    remoteChanged: state.remoteChanged ?? false,
     isDirty: JSON.stringify(state.draft) !== JSON.stringify(state.saved),
     saveLayout: saveMutation.mutateAsync,
     restoreLayout: restoreMutation.mutateAsync,
     updateDraft,
     updateDraftSeats: (seats: Seat[]) => updateDraft({ ...state.draft, seats }),
+    reloadLayout: async () => {
+      await query.refetch();
+    },
     isLoading: query.isLoading,
   };
 }

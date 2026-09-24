@@ -11,6 +11,7 @@ import type {
   CreateBindingCodeResult,
   CreateClassroomBindingCodeResult,
   CreateCustomScoreInput,
+  CreateDormitoryScoreInput,
   CreateScoreEventInput,
   CreateRuleScoreInput,
   CreateScoreRuleInput,
@@ -22,6 +23,7 @@ import type {
   DeviceTokenResult,
   DisplayBootstrap,
   DisplayDevice,
+  Dormitory,
   FeedbackCreateResult,
   FeedbackDetail,
   FeedbackListItem,
@@ -92,6 +94,28 @@ export interface ClassroomService {
   restoreStudent(classId: string, studentId: string): Promise<Student>;
   deleteStudent(classId: string, studentId: string): Promise<Student>;
   importStudents(classId: string, input: ImportedStudentInput[]): Promise<StudentImportResult>;
+  listDormitories(classId: string): Promise<Dormitory[]>;
+  createDormitory(classId: string, name: string): Promise<Dormitory>;
+  renameDormitory(classId: string, dormitoryId: string, name: string): Promise<Dormitory>;
+  deleteDormitory(
+    classId: string,
+    dormitoryId: string,
+  ): Promise<{ id: string; removedStudentIds: string[] }>;
+  addDormitoryMembers(
+    classId: string,
+    dormitoryId: string,
+    studentIds: string[],
+  ): Promise<Dormitory>;
+  removeDormitoryMember(
+    classId: string,
+    dormitoryId: string,
+    studentId: string,
+  ): Promise<Dormitory>;
+  createDormitoryScoreEvent(
+    classId: string,
+    dormitoryId: string,
+    input: CreateDormitoryScoreInput,
+  ): Promise<ScoreEventResult>;
 
   listTeachers(classId: string): Promise<ClassTeacher[]>;
   createTeacher(classId: string, input: CreateTeacherInput): Promise<CreateTeacherResult>;
@@ -124,8 +148,6 @@ export interface ClassroomService {
   ): Promise<ScorePeriodSummary>;
   listCommittee(classId: string): Promise<CommitteeAssignment[]>;
   updateCommittee(classId: string, input: UpdateCommitteeInput): Promise<CommitteeAssignment[]>;
-  settleScorePeriods(classId: string, periodId?: string): Promise<{ settled: true }>;
-
   getSeatLayout(classId: string): Promise<SeatLayout>;
   listSeatLayoutVersions(
     classId: string,
