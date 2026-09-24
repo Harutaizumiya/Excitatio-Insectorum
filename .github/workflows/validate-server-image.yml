@@ -1,0 +1,35 @@
+name: Validate server image
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/validate-server-image.yml
+      - Dockerfile
+      - apps/server-elysia/**
+      - deploy/split-pnpm-store.mjs
+      - deploy/split-pnpm-store.test.mjs
+      - package.json
+      - packages/database/**
+      - packages/typescript-config/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build production server image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Test image layer splitter
+        run: node --test deploy/split-pnpm-store.test.mjs
+
+      - name: Build production server image
+        run: docker build --progress=plain --file Dockerfile --tag excitatio-insectorum-server:pr-${{ github.event.pull_request.number }} .

@@ -26,12 +26,26 @@ RUN pnpm --filter @repo/server-elysia --filter @repo/database install --prod --f
 COPY packages/database/scripts ./packages/database/scripts
 COPY packages/database/prisma ./packages/database/prisma
 RUN pnpm --filter @repo/database db:generate
+COPY deploy/split-pnpm-store.mjs ./deploy/split-pnpm-store.mjs
+RUN node ./deploy/split-pnpm-store.mjs \
+    /app/node_modules/.pnpm \
+    /tmp/pnpm-groups \
+    /tmp/root-node-modules \
+    8
 
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PATH="/app/packages/database/node_modules/.bin:/app/node_modules/.bin:$PATH"
-COPY --from=production-deps --chown=node:node /app/node_modules ./node_modules
+COPY --from=production-deps --chown=node:node /tmp/pnpm-groups/0/ ./node_modules/.pnpm/
+COPY --from=production-deps --chown=node:node /tmp/pnpm-groups/1/ ./node_modules/.pnpm/
+COPY --from=production-deps --chown=node:node /tmp/pnpm-groups/2/ ./node_modules/.pnpm/
+COPY --from=production-deps --chown=node:node /tmp/pnpm-groups/3/ ./node_modules/.pnpm/
+COPY --from=production-deps --chown=node:node /tmp/pnpm-groups/4/ ./node_modules/.pnpm/
+COPY --from=production-deps --chown=node:node /tmp/pnpm-groups/5/ ./node_modules/.pnpm/
+COPY --from=production-deps --chown=node:node /tmp/pnpm-groups/6/ ./node_modules/.pnpm/
+COPY --from=production-deps --chown=node:node /tmp/pnpm-groups/7/ ./node_modules/.pnpm/
+COPY --from=production-deps --chown=node:node /tmp/root-node-modules/ ./node_modules/
 COPY --from=production-deps --chown=node:node /app/apps/server-elysia/node_modules ./apps/server-elysia/node_modules
 COPY --from=production-deps --chown=node:node /app/packages/database/node_modules ./packages/database/node_modules
 COPY --from=builder --chown=node:node /app/apps/server-elysia/dist ./apps/server-elysia/dist
