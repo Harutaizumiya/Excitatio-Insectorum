@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 concurrency:
   group: excitatio-insectorum-production
@@ -29,6 +30,7 @@ jobs:
       DEPLOY_HOST: 101.37.150.242
       DEPLOY_USER: root
       APP_DIR: /opt/1panel/www/sites/excitatio-insectorum
+      SERVER_IMAGE: ghcr.io/harutaizumiya/excitatio-insectorum-server
     steps:
       - name: Checkout main commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,8 +48,19 @@ jobs:
       - name: Build web assets
         run: pnpm --filter @repo/web build
 
-      - name: Build server image
-        run: docker build --file Dockerfile --tag "excitatio-insectorum-server:${GITHUB_SHA}" .
+      - name: Build and publish server image
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker build \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --file Dockerfile \
+            --tag "$SERVER_IMAGE:$GITHUB_SHA" .
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$SERVER_IMAGE:$GITHUB_SHA"
+          docker logout ghcr.io
+          trap - EXIT
 
       - name: Prepare SSH
         env:
@@ -72,19 +85,6 @@ jobs:
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "install -d -m 755 '$APP_DIR/releases/$GITHUB_SHA/web'"
 
-      - name: Transfer server image
-        run: |
-          set -o pipefail
-          docker image save "excitatio-insectorum-server:${GITHUB_SHA}" \
-            | gzip -1 \
-            | ssh -i "$DEPLOY_SSH_KEY_FILE" \
-                -o BatchMode=yes \
-                -o IdentitiesOnly=yes \
-                -o StrictHostKeyChecking=yes \
-                -o UserKnownHostsFile="$DEPLOY_KNOWN_HOSTS_FILE" \
-                "$DEPLOY_USER@$DEPLOY_HOST" \
-                "cat > '$APP_DIR/releases/$GITHUB_SHA/server-image.tar.gz'"
-
       - name: Transfer web assets
         run: |
           set -o pipefail
@@ -98,11 +98,18 @@ jobs:
                 "tar -xzf - -C '$APP_DIR/releases/$GITHUB_SHA/web'"
 
       - name: Deploy server and publish web assets
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ssh -i "$DEPLOY_SSH_KEY_FILE" \
-            -o BatchMode=yes \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$DEPLOY_KNOWN_HOSTS_FILE" \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "bash -s -- '$GITHUB_SHA'" < deploy/production-deploy.sh
+          set -o pipefail
+          {
+            printf 'export GHCR_TOKEN=%q\n' "$GHCR_TOKEN"
+            printf 'export GHCR_USERNAME=%q\n' "$GITHUB_ACTOR"
+            cat deploy/production-deploy.sh
+          } | ssh -i "$DEPLOY_SSH_KEY_FILE" \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$DEPLOY_KNOWN_HOSTS_FILE" \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "bash -s -- '$GITHUB_SHA'"
