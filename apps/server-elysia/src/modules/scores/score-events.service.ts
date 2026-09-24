@@ -4,6 +4,7 @@ import {
   RelationStatus,
   ScoreEventType,
   ScoreRecordType,
+  StudentStatus,
   TeacherRole,
 } from '@prisma/client';
 import { prisma } from '../../plugins/prisma';
@@ -46,6 +47,8 @@ export interface CreateScoreEventInput {
   subject?: string;
   reason?: string;
   businessKey?: string;
+  /** Only the dormitory route supplies this server-side value. */
+  dormitoryId?: string;
 }
 
 function getTaipeiDateKey(reference: Date): string {
@@ -59,6 +62,12 @@ function fixedRankDelta(rank: number, maxRank: number, firstDelta: number): numb
 }
 
 export class ScoreEventsService {
+  constructor(
+    private readonly db = prisma,
+    private readonly periods = scorePeriodsService,
+    private readonly realtime = realtimeService,
+  ) {}
+
   async create(classId: string, operatorId: string, dto: CreateScoreEventInput) {
     const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
     if (Number.isNaN(occurredAt.getTime())) {
@@ -66,7 +75,7 @@ export class ScoreEventsService {
     }
     this.validateEventInput(dto);
 
-    const access = await prisma.classTeacher.findFirst({
+    const access = await this.db.classTeacher.findFirst({
       where: {
         classId,
         teacherId: operatorId,
@@ -78,97 +87,142 @@ export class ScoreEventsService {
     if (!access)
       throw new BusinessError('FORBIDDEN_CLASS_ACCESS', '当前教师在该班级没有有效关系', 403);
 
-    await scorePeriodsService.ensureCurrentPeriod(classId, operatorId);
-    const period = await scorePeriodsService.ensurePeriodForDate(classId, occurredAt);
-    const result = await prisma.$transaction(async (tx) => {
-      const operator = await tx.classTeacher.findFirst({
-        where: {
-          classId,
-          teacherId: operatorId,
-          status: RelationStatus.ACTIVE,
-          role: { in: [TeacherRole.HEAD_TEACHER, TeacherRole.SUBJECT_TEACHER] },
-        },
-        select: { teacherId: true, subject: true },
-      });
-      if (!operator)
-        throw new BusinessError('FORBIDDEN_CLASS_ACCESS', '当前教师在该班级没有有效关系', 403);
-
-      if (dto.businessKey) {
-        const existing = await tx.scoreEvent.findUnique({
-          where: { businessKey: dto.businessKey },
-          include: eventInclude,
-        });
-        if (existing) {
-          if (existing.classId !== classId)
-            throw new BusinessError(
-              'SCORE_EVENT_BUSINESS_KEY_CONFLICT',
-              '事件业务键已被其他班级使用',
-              409,
-            );
-          return existing;
-        }
-      }
-
-      const students = await tx.student.findMany({
-        where: { classId, id: { in: dto.studentIds }, status: 'ACTIVE' },
-        select: { id: true },
-      });
-      if (students.length !== dto.studentIds.length)
-        throw new BusinessError('STUDENT_NOT_FOUND', '事件学生必须是本班在班学生', 404);
-
-      const deltas = await this.calculateDeltas(tx, classId, period.id, occurredAt, dto);
-      const reason = dto.reason?.trim() || null;
-      const event = await tx.scoreEvent.create({
-        data: {
-          classId,
-          periodId: period.id,
-          type: dto.type,
-          operatorId,
-          occurredAt,
-          reason,
-          businessKey: dto.businessKey ?? null,
-          parameters: JSON.stringify({
-            rank: dto.rank,
-            minutesLate: dto.minutesLate,
-            manualDelta: dto.manualDelta,
-            isOrganizer: dto.isOrganizer ?? false,
-            specialContribution: dto.specialContribution ?? false,
-            subject: dto.subject ?? operator.subject,
-            deltas,
-          }),
-        },
-      });
-      await tx.scoreEventParticipant.createMany({
-        data: dto.studentIds.map((studentId) => ({ eventId: event.id, studentId })),
-      });
-
-      const recordData = dto.studentIds
-        .map((studentId, index) => ({ studentId, delta: deltas[index]! }))
-        .filter((item) => item.delta !== 0);
-      if (recordData.length > 0) {
-        await tx.scoreRecord.createMany({
-          data: recordData.map((item) => ({
+    const period = await this.periods.ensurePeriodForDate(classId, occurredAt);
+    let transactionResult: { result: EventWithResults; created: boolean };
+    try {
+      transactionResult = await this.db.$transaction(async (tx) => {
+        const operator = await tx.classTeacher.findFirst({
+          where: {
             classId,
-            studentId: item.studentId,
-            operatorId,
-            subject: dto.subject?.trim() || operator.subject,
-            periodId: period.id,
-            eventId: event.id,
-            delta: item.delta,
-            reason,
-            recordType: ScoreRecordType.NORMAL,
-            occurredAt,
-            violation: this.isViolation(dto.type, item.delta),
-          })),
+            teacherId: operatorId,
+            status: RelationStatus.ACTIVE,
+            role: { in: [TeacherRole.HEAD_TEACHER, TeacherRole.SUBJECT_TEACHER] },
+          },
+          select: { teacherId: true, subject: true },
         });
-      }
-      return tx.scoreEvent.findUniqueOrThrow({ where: { id: event.id }, include: eventInclude });
-    });
+        if (!operator)
+          throw new BusinessError('FORBIDDEN_CLASS_ACCESS', '当前教师在该班级没有有效关系', 403);
 
-    if (result.scoreRecords.length > 0) {
+        if (dto.businessKey) {
+          const existing = await tx.scoreEvent.findUnique({
+            where: { businessKey: dto.businessKey },
+            include: eventInclude,
+          });
+          if (existing) {
+            return {
+              result: this.reuseExisting(existing, classId, operatorId, dto),
+              created: false,
+            };
+          }
+        }
+
+        let sourceDormitoryName: string | null = null;
+        if (dto.dormitoryId) {
+          if (dto.type !== ScoreEventType.DORM_HYGIENE)
+            throw new BusinessError('INVALID_SCORE_EVENT_TYPE', '寝室积分事件类型无效');
+          const dormitory = await tx.dormitory.findFirst({
+            where: { id: dto.dormitoryId, classId },
+            select: { name: true },
+          });
+          if (!dormitory) throw new BusinessError('DORMITORY_NOT_FOUND', '寝室不存在', 404);
+          sourceDormitoryName = dormitory.name;
+        }
+
+        const students = await tx.student.findMany({
+          where: {
+            classId,
+            id: { in: dto.studentIds },
+            status: StudentStatus.ACTIVE,
+            deletedAt: null,
+            ...(dto.dormitoryId ? { dormitoryId: dto.dormitoryId } : {}),
+          },
+          select: { id: true },
+        });
+        if (students.length !== dto.studentIds.length)
+          throw new BusinessError(
+            dto.dormitoryId ? 'DORMITORY_MEMBER_MISMATCH' : 'STUDENT_NOT_FOUND',
+            dto.dormitoryId ? '所选学生已不属于该寝室，请刷新名单' : '事件学生必须是本班在班学生',
+            dto.dormitoryId ? 409 : 404,
+          );
+
+        const deltas = await this.calculateDeltas(tx, classId, period.id, occurredAt, dto);
+        const reason = dto.reason?.trim() || null;
+        const event = await tx.scoreEvent.create({
+          data: {
+            classId,
+            periodId: period.id,
+            type: dto.type,
+            operatorId,
+            occurredAt,
+            reason,
+            businessKey: dto.businessKey ?? null,
+            sourceDormitoryId: dto.dormitoryId ?? null,
+            sourceDormitoryName,
+            parameters: JSON.stringify({
+              rank: dto.rank,
+              minutesLate: dto.minutesLate,
+              manualDelta: dto.manualDelta,
+              isOrganizer: dto.isOrganizer ?? false,
+              specialContribution: dto.specialContribution ?? false,
+              subject: dto.subject ?? operator.subject,
+              deltas,
+            }),
+          },
+        });
+        await tx.scoreEventParticipant.createMany({
+          data: dto.studentIds.map((studentId) => ({ eventId: event.id, studentId })),
+        });
+
+        const recordData = dto.studentIds
+          .map((studentId, index) => ({ studentId, delta: deltas[index]! }))
+          .filter((item) => item.delta !== 0);
+        if (recordData.length > 0) {
+          await tx.scoreRecord.createMany({
+            data: recordData.map((item) => ({
+              classId,
+              studentId: item.studentId,
+              operatorId,
+              subject: dto.subject?.trim() || operator.subject,
+              periodId: period.id,
+              eventId: event.id,
+              delta: item.delta,
+              reason,
+              recordType: ScoreRecordType.NORMAL,
+              occurredAt,
+              violation: this.isViolation(dto.type, item.delta),
+            })),
+          });
+        }
+        return {
+          result: await tx.scoreEvent.findUniqueOrThrow({
+            where: { id: event.id },
+            include: eventInclude,
+          }),
+          created: true,
+        };
+      });
+    } catch (error) {
+      if (
+        !(error instanceof Error && 'code' in error && error.code === 'P2002') ||
+        !dto.businessKey
+      )
+        throw error;
+      const existing = await this.db.scoreEvent.findUnique({
+        where: { businessKey: dto.businessKey },
+        include: eventInclude,
+      });
+      if (!existing) throw error;
+      transactionResult = {
+        result: this.reuseExisting(existing, classId, operatorId, dto),
+        created: false,
+      };
+    }
+    const { result, created } = transactionResult;
+
+    if (created && result.scoreRecords.length > 0) {
       const occurredAtIso = new Date().toISOString();
       for (const record of result.scoreRecords) {
-        realtimeService.publishClassEvent(classId, {
+        this.realtime.publishClassEvent(classId, {
           id: randomUUID(),
           type: ClassEventType.SCORE_CHANGED,
           classId,
@@ -180,7 +234,7 @@ export class ScoreEventsService {
           },
         });
       }
-      realtimeService.publishClassEvent(classId, {
+      this.realtime.publishClassEvent(classId, {
         id: randomUUID(),
         type: ClassEventType.RANKING_CHANGED,
         classId,
@@ -189,6 +243,37 @@ export class ScoreEventsService {
       });
     }
     return this.toResponse(result);
+  }
+
+  private reuseExisting(
+    existing: EventWithResults,
+    classId: string,
+    operatorId: string,
+    dto: CreateScoreEventInput,
+  ): EventWithResults {
+    if (existing.classId !== classId)
+      throw new BusinessError(
+        'SCORE_EVENT_BUSINESS_KEY_CONFLICT',
+        '事件业务键已被其他班级使用',
+        409,
+      );
+    if (dto.dormitoryId) {
+      const sameRequest =
+        existing.type === ScoreEventType.DORM_HYGIENE &&
+        existing.sourceDormitoryId === dto.dormitoryId &&
+        existing.operatorId === operatorId &&
+        existing.reason === dto.reason?.trim() &&
+        existing.participants.length === dto.studentIds.length &&
+        existing.participants.every((item) => dto.studentIds.includes(item.studentId)) &&
+        existing.scoreRecords.every((item) => item.delta === dto.manualDelta);
+      if (!sameRequest)
+        throw new BusinessError(
+          'SCORE_EVENT_BUSINESS_KEY_CONFLICT',
+          '事件业务键与已有登记不一致',
+          409,
+        );
+    }
+    return existing;
   }
 
   private validateEventInput(dto: CreateScoreEventInput): void {
@@ -330,6 +415,9 @@ export class ScoreEventsService {
         studentId: record.studentId,
         delta: record.delta,
       })),
+      ...(event.sourceDormitoryId
+        ? { sourceDormitory: { id: event.sourceDormitoryId, name: event.sourceDormitoryName } }
+        : {}),
     };
   }
 }

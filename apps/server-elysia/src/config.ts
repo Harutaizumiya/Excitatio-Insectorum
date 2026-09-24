@@ -27,6 +27,8 @@ export interface AppConfig {
   deviceBindingSecret: string;
   corsOrigins: string[];
   swaggerEnabled: boolean;
+  scoreSettlementCron: string;
+  seatRotationCron: string;
 }
 
 const nodeEnv = process.env.NODE_ENV || 'development';
@@ -96,4 +98,6 @@ export const config: AppConfig = {
     .map((origin) => origin.trim())
     .filter(Boolean),
   swaggerEnabled: process.env.SWAGGER_ENABLED !== 'false',
+  scoreSettlementCron: process.env.SCORE_SETTLEMENT_CRON || '0 0 1 * *',
+  seatRotationCron: process.env.SEAT_ROTATION_CRON || '5 0 * * 1',
 };

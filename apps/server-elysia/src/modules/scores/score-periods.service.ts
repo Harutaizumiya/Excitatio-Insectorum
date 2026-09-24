@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   type Prisma,
+  type PrismaClient,
   RelationStatus,
   ScoreEventType,
   ScorePeriodStatus,
@@ -45,6 +46,142 @@ function roleBonus(role: string): number {
   return 5;
 }
 
+export interface CommitteeAssignmentInput {
+  studentId: string;
+  role: string;
+  subject?: string | null;
+  termStartAt: string;
+  termEndAt?: string | null;
+  trialEndsAt?: string | null;
+}
+
+interface NormalizedCommitteeAssignment {
+  studentId: string;
+  role: string;
+  subject: string | null;
+  termStartAt: Date;
+  termEndAt: Date | null;
+  trialEndsAt: Date | null;
+}
+
+export interface CommitteeRewardCandidate {
+  studentId: string;
+  role: string;
+  termStartAt: Date;
+  termEndAt: Date | null;
+  trialEndsAt: Date | null;
+  studentStatus: StudentStatus;
+  deletedAt: Date | null;
+}
+
+function parseCommitteeDate(value: string | null | undefined, field: string): Date | null {
+  if (value === undefined || value === null || value === '') return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new BusinessError('INVALID_COMMITTEE_ASSIGNMENT', `${field}时间无效`, 400);
+  }
+  return date;
+}
+
+function committeeAssignmentKey(assignment: {
+  studentId: string;
+  role: string;
+  termStartAt: Date;
+}): string {
+  return `${assignment.studentId}\u0000${assignment.role}\u0000${assignment.termStartAt.getTime()}`;
+}
+
+function sameNullableDate(left: Date | null, right: Date | null): boolean {
+  return left?.getTime() === right?.getTime();
+}
+
+export function normalizeCommitteeAssignments(
+  assignments: CommitteeAssignmentInput[],
+): NormalizedCommitteeAssignment[] {
+  const normalized: NormalizedCommitteeAssignment[] = [];
+  const byKey = new Map<string, NormalizedCommitteeAssignment>();
+
+  for (const assignment of assignments) {
+    const role = assignment.role.trim();
+    if (!role) throw new BusinessError('INVALID_COMMITTEE_ASSIGNMENT', '班委岗位不能为空', 400);
+
+    const termStartAt = parseCommitteeDate(assignment.termStartAt, '任职开始');
+    if (!termStartAt) {
+      throw new BusinessError('INVALID_COMMITTEE_ASSIGNMENT', '任职开始时间不能为空', 400);
+    }
+    const termEndAt = parseCommitteeDate(assignment.termEndAt, '任职结束');
+    if (termEndAt !== null && termEndAt <= termStartAt) {
+      throw new BusinessError(
+        'INVALID_COMMITTEE_ASSIGNMENT',
+        '任职结束时间必须晚于任职开始时间',
+        400,
+      );
+    }
+    const item: NormalizedCommitteeAssignment = {
+      studentId: assignment.studentId,
+      role,
+      subject: assignment.subject?.trim() || null,
+      termStartAt,
+      termEndAt,
+      trialEndsAt: parseCommitteeDate(assignment.trialEndsAt, '试用结束'),
+    };
+    const key = committeeAssignmentKey(item);
+    const existing = byKey.get(key);
+    if (existing) {
+      if (
+        existing.subject !== item.subject ||
+        !sameNullableDate(existing.termEndAt, item.termEndAt) ||
+        !sameNullableDate(existing.trialEndsAt, item.trialEndsAt)
+      ) {
+        throw new BusinessError('INVALID_COMMITTEE_ASSIGNMENT', '同一岗位的任职信息不一致', 400);
+      }
+      continue;
+    }
+    byKey.set(key, item);
+    normalized.push(item);
+  }
+
+  return normalized;
+}
+
+export function buildCommitteeRewards(
+  assignments: CommitteeRewardCandidate[],
+  taskStudentIds: ReadonlySet<string>,
+  period: { startAt: Date; endAt: Date },
+) {
+  const eligibleByRole = new Map<string, CommitteeRewardCandidate>();
+  for (const assignment of assignments) {
+    if (assignment.studentStatus !== StudentStatus.ACTIVE || assignment.deletedAt !== null)
+      continue;
+    if (assignment.termStartAt >= period.endAt) continue;
+    if (assignment.termEndAt !== null && assignment.termEndAt <= period.startAt) continue;
+
+    const key = `${assignment.studentId}\u0000${assignment.role.trim()}`;
+    const current = eligibleByRole.get(key);
+    if (!current || assignment.termStartAt > current.termStartAt) {
+      eligibleByRole.set(key, assignment);
+    }
+  }
+
+  return [...eligibleByRole.values()]
+    .filter(
+      (assignment) => assignment.trialEndsAt === null || assignment.trialEndsAt <= period.endAt,
+    )
+    .map((assignment) => ({
+      studentId: assignment.studentId,
+      delta:
+        assignment.role.trim() === '团支书' && !taskStudentIds.has(assignment.studentId)
+          ? 0
+          : roleBonus(assignment.role),
+      role: assignment.role.trim(),
+    }))
+    .filter((assignment) => assignment.delta !== 0)
+    .sort(
+      (left, right) =>
+        left.studentId.localeCompare(right.studentId) || left.role.localeCompare(right.role),
+    );
+}
+
 export interface RankedPeriodStudent {
   studentId: string;
   name: string;
@@ -53,25 +190,15 @@ export interface RankedPeriodStudent {
 }
 
 export class ScorePeriodsService {
-  async ensureCurrentPeriod(classId: string, operatorId?: string, reference = new Date()) {
-    await this.backfillLegacyRecords(classId);
-    const current = await this.getOrCreatePeriod(classId, getTaipeiMonthPeriod(reference));
-    const previous = await prisma.scorePeriod.findMany({
-      where: { classId, status: ScorePeriodStatus.OPEN, endAt: { lte: current.startAt } },
-      orderBy: { startAt: 'asc' },
-      select: periodSelect,
-    });
-    for (const period of previous) await this.settlePeriod(classId, period.id, operatorId);
-    return current;
-  }
+  constructor(private readonly db: PrismaClient = prisma) {}
 
   async ensurePeriodForDate(classId: string, reference: Date) {
     await this.backfillLegacyRecords(classId);
     return this.getOrCreatePeriod(classId, getTaipeiMonthPeriod(reference));
   }
 
-  async getCurrentSummary(classId: string, operatorId: string) {
-    const period = await this.ensureCurrentPeriod(classId, operatorId);
+  async getCurrentSummary(classId: string) {
+    const period = await this.ensurePeriodForDate(classId, new Date());
     return this.buildSummary(classId, [period], period);
   }
 
@@ -80,12 +207,12 @@ export class ScorePeriodsService {
     return this.buildSummary(classId, [period], period);
   }
 
-  async getSummary(classId: string, operatorId: string, from?: string, to?: string) {
-    const current = await this.ensureCurrentPeriod(classId, operatorId);
+  async getSummary(classId: string, from?: string, to?: string) {
+    const current = await this.ensurePeriodForDate(classId, new Date());
     if (!from && !to) return this.buildSummary(classId, [current], current);
 
     const range = this.parseRange(from, to);
-    const periods = await prisma.scorePeriod.findMany({
+    const periods = await this.db.scorePeriod.findMany({
       where: {
         classId,
         startAt: { lt: range.endAt },
@@ -97,18 +224,56 @@ export class ScorePeriodsService {
     return this.buildSummary(classId, periods, periods.length === 1 ? periods[0] : null, range);
   }
 
-  async settleBeforeCurrent(classId: string, operatorId: string) {
-    const current = await this.ensureCurrentPeriod(classId, operatorId);
-    const openPeriods = await prisma.scorePeriod.findMany({
-      where: { classId, status: ScorePeriodStatus.OPEN, endAt: { lte: current.startAt } },
-      orderBy: { startAt: 'asc' },
-      select: periodSelect,
+  async settleAllDuePeriods(now: Date = new Date()): Promise<{
+    settled: number;
+    skipped: number;
+    failed: number;
+  }> {
+    const dueClasses = await this.db.scorePeriod.findMany({
+      where: { status: ScorePeriodStatus.OPEN, endAt: { lte: now } },
+      select: { classId: true },
+      distinct: ['classId'],
     });
-    for (const period of openPeriods) await this.settlePeriod(classId, period.id, operatorId);
+    let settled = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const { classId } of dueClasses) {
+      const headTeacher = await this.db.classTeacher.findFirst({
+        where: { classId, status: RelationStatus.ACTIVE, role: TeacherRole.HEAD_TEACHER },
+        select: { teacherId: true },
+      });
+      if (!headTeacher) {
+        skipped += 1;
+        console.warn(`[score-settlement] skipped class without active head teacher: ${classId}`);
+        continue;
+      }
+
+      const periods = await this.db.scorePeriod.findMany({
+        where: { classId, status: ScorePeriodStatus.OPEN, endAt: { lte: now } },
+        orderBy: { startAt: 'asc' },
+        select: periodSelect,
+      });
+      for (const period of periods) {
+        try {
+          await this.settlePeriod(classId, period.id, headTeacher.teacherId);
+          settled += 1;
+        } catch (error) {
+          failed += 1;
+          console.error('[score-settlement] failed period', {
+            classId,
+            periodId: period.id,
+            error,
+          });
+        }
+      }
+    }
+
+    return { settled, skipped, failed };
   }
 
   async settlePeriod(classId: string, periodId: string, requestedOperatorId?: string) {
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await this.db.$transaction(async (tx) => {
       const period = await tx.scorePeriod.findFirst({
         where: { id: periodId, classId },
         select: periodSelect,
@@ -122,7 +287,7 @@ export class ScorePeriodsService {
       }
 
       const students = await tx.student.findMany({
-        where: { classId, status: StudentStatus.ACTIVE },
+        where: { classId, status: StudentStatus.ACTIVE, deletedAt: null },
         select: { id: true },
       });
       const violations = await tx.scoreRecord.findMany({
@@ -152,7 +317,7 @@ export class ScorePeriodsService {
             occurredAt: eventAt,
             reason: '周期无违规奖励',
             businessKey: noViolationKey,
-            parameters: JSON.stringify({ delta: 10 }),
+            parameters: JSON.stringify({ delta: 10, sourceSystem: true }),
           },
         });
         await tx.scoreEventParticipant.createMany({
@@ -182,11 +347,20 @@ export class ScorePeriodsService {
       const assignments = await tx.classCommitteeAssignment.findMany({
         where: {
           classId,
-          status: RelationStatus.ACTIVE,
           termStartAt: { lt: period.endAt },
           OR: [{ termEndAt: null }, { termEndAt: { gt: period.startAt } }],
+          student: { status: StudentStatus.ACTIVE, deletedAt: null },
         },
-        select: { studentId: true, role: true, trialEndsAt: true },
+        select: {
+          studentId: true,
+          role: true,
+          termStartAt: true,
+          termEndAt: true,
+          trialEndsAt: true,
+          status: true,
+          updatedAt: true,
+          student: { select: { status: true, deletedAt: true } },
+        },
       });
       const taskEvents = await tx.scoreEvent.findMany({
         where: { classId, periodId: period.id, type: ScoreEventType.COMMITTEE_TASK_COMPLETED },
@@ -195,19 +369,21 @@ export class ScorePeriodsService {
       const taskStudents = new Set(
         taskEvents.flatMap((event) => event.participants.map((item) => item.studentId)),
       );
-      const committeeRewards = assignments
-        .filter(
-          (assignment) => assignment.trialEndsAt === null || assignment.trialEndsAt <= period.endAt,
-        )
-        .map((assignment) => ({
+      const committeeRewards = buildCommitteeRewards(
+        assignments.map((assignment) => ({
           studentId: assignment.studentId,
-          delta:
-            assignment.role === '团支书' && !taskStudents.has(assignment.studentId)
-              ? 0
-              : roleBonus(assignment.role),
           role: assignment.role,
-        }))
-        .filter((assignment) => assignment.delta !== 0);
+          termStartAt: assignment.termStartAt,
+          termEndAt:
+            assignment.termEndAt ??
+            (assignment.status === RelationStatus.REVOKED ? assignment.updatedAt : null),
+          trialEndsAt: assignment.trialEndsAt,
+          studentStatus: assignment.student.status,
+          deletedAt: assignment.student.deletedAt,
+        })),
+        taskStudents,
+        period,
+      );
 
       const committeeKey = `score-period:${period.id}:committee`;
       const existingCommittee = await tx.scoreEvent.findUnique({
@@ -223,7 +399,7 @@ export class ScorePeriodsService {
             occurredAt: eventAt,
             reason: '班委周期奖励',
             businessKey: committeeKey,
-            parameters: JSON.stringify({ rewards: committeeRewards }),
+            parameters: JSON.stringify({ rewards: committeeRewards, sourceSystem: true }),
           },
         });
         await tx.scoreEventParticipant.createMany({
@@ -263,7 +439,7 @@ export class ScorePeriodsService {
   }
 
   private async getOrCreatePeriod(classId: string, boundary: { startAt: Date; endAt: Date }) {
-    return prisma.scorePeriod.upsert({
+    return this.db.scorePeriod.upsert({
       where: {
         classId_startAt_endAt: { classId, startAt: boundary.startAt, endAt: boundary.endAt },
       },
@@ -279,7 +455,7 @@ export class ScorePeriodsService {
   }
 
   private async backfillLegacyRecords(classId: string) {
-    const legacyRecords = await prisma.scoreRecord.findMany({
+    const legacyRecords = await this.db.scoreRecord.findMany({
       where: { classId, periodId: null },
       select: { id: true, createdAt: true, occurredAt: true },
     });
@@ -293,7 +469,7 @@ export class ScorePeriodsService {
     }
     for (const { boundary, ids } of byPeriod.values()) {
       const period = await this.getOrCreatePeriod(classId, boundary);
-      await prisma.scoreRecord.updateMany({
+      await this.db.scoreRecord.updateMany({
         where: { id: { in: ids }, periodId: null },
         data: { periodId: period.id },
       });
@@ -306,14 +482,14 @@ export class ScorePeriodsService {
     currentPeriod: PeriodRow | null,
     range?: { startAt: Date; endAt: Date },
   ) {
-    const activeStudents = await prisma.student.findMany({
-      where: { classId, status: StudentStatus.ACTIVE },
+    const activeStudents = await this.db.student.findMany({
+      where: { classId, status: StudentStatus.ACTIVE, deletedAt: null },
       select: { id: true, name: true },
       orderBy: { id: 'asc' },
     });
     const periodIds = periods.map((period) => period.id);
     const records = periodIds.length
-      ? await prisma.scoreRecord.findMany({
+      ? await this.db.scoreRecord.findMany({
           where: { classId, periodId: { in: periodIds } },
           select: { studentId: true, delta: true },
         })
