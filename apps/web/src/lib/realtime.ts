@@ -40,6 +40,7 @@ export interface RealtimeEventPayloads {
     teacherId: string;
     teacherName: string;
   };
+  ANNOUNCEMENT_CHANGED: { announcementId: string };
 }
 
 export type ClassEventType = keyof RealtimeEventPayloads;
@@ -245,6 +246,7 @@ function isClassEventType(value: string): value is ClassEventType {
       DISPLAY_CONFIG_CHANGED: true,
       SCHEDULE_CHANGED: true,
       TEACHER_CONNECTED: true,
+      ANNOUNCEMENT_CHANGED: true,
     }
   );
 }

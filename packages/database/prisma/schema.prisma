@@ -133,6 +133,7 @@ model User {
   usageEvents    UsageEvent[]
   submittedFeedbacks Feedback[]      @relation("FeedbackSubmitter")
   processedFeedbacks Feedback[]      @relation("FeedbackProcessor")
+  announcements Announcement[]
   createdAt      DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime            @updatedAt @db.Timestamptz(3)
 }
@@ -164,6 +165,8 @@ model Classroom {
   scheduleEntries        ScheduleEntry[]
   usageEvents            UsageEvent[]
   feedbacks              Feedback[]
+  announcements          Announcement[]
+  announcementLock       AnnouncementLock?
   createdAt              DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt              DateTime            @updatedAt @db.Timestamptz(3)
 
@@ -262,6 +265,7 @@ model Student {
   scores    ScoreRecord[]
   scoreEventParticipants ScoreEventParticipant[]
   committeeAssignments  ClassCommitteeAssignment[]
+  announcements          Announcement[]
   createdAt DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt DateTime      @updatedAt @db.Timestamptz(3)
 
@@ -459,13 +463,89 @@ model DisplayDevice {
   name        String             @db.VarChar(120)
   status      DeviceStatus       @default(ACTIVE)
   lastSeenAt  DateTime?          @db.Timestamptz(3)
+  soundReady  Boolean            @default(false)
+  soundReadyAt DateTime?         @db.Timestamptz(3)
   revokedAt   DateTime?          @db.Timestamptz(3)
   classroom   Classroom          @relation(fields: [classId], references: [id], onDelete: Restrict)
   credentials DeviceCredential[]
   usageEvents UsageEvent[]
+  announcementDeliveries AnnouncementDelivery[]
+  announcementReplies AnnouncementReply[]
   createdAt   DateTime           @default(now()) @db.Timestamptz(3)
 
   @@index([classId, status])
+}
+
+model Announcement {
+  id             String   @id @default(cuid())
+  classId        String
+  teacherId      String
+  studentId      String?
+  studentName    String?  @db.VarChar(100)
+  teacherName    String   @db.VarChar(100)
+  mode           String   @db.VarChar(20)
+  text           String   @db.VarChar(240)
+  repeatCount    Int
+  durationSeconds Int
+  status         String   @default("WAITING_DISPLAY") @db.VarChar(30)
+  idempotencyKey String   @db.VarChar(100)
+  primaryDeviceId String
+  sentAt         DateTime @default(now()) @db.Timestamptz(3)
+  acknowledgedAt DateTime? @db.Timestamptz(3)
+  endedAt        DateTime? @db.Timestamptz(3)
+  endReason      String?  @db.VarChar(30)
+  classroom      Classroom @relation(fields: [classId], references: [id], onDelete: Restrict)
+  teacher        User @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  student        Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  deliveries     AnnouncementDelivery[]
+  reply          AnnouncementReply?
+  lock           AnnouncementLock?
+
+  @@unique([teacherId, idempotencyKey])
+  @@index([classId, sentAt])
+  @@index([status, sentAt])
+}
+
+model AnnouncementLock {
+  classId        String @id
+  announcementId String @unique
+  classroom      Classroom @relation(fields: [classId], references: [id], onDelete: Cascade)
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+}
+
+model AnnouncementDelivery {
+  id             String @id @default(cuid())
+  announcementId String
+  deviceId       String
+  isPrimary      Boolean @default(false)
+  displayedAt    DateTime? @db.Timestamptz(3)
+  expiresAt      DateTime? @db.Timestamptz(3)
+  inputStartedAt DateTime? @db.Timestamptz(3)
+  inputUntil     DateTime? @db.Timestamptz(3)
+  pausedRemainingMs Int?
+  pauseUsed      Boolean @default(false)
+  soundStatus    String @default("PENDING") @db.VarChar(30)
+  playedCount    Int @default(0)
+  endReason      String? @db.VarChar(30)
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  device         DisplayDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+
+  @@unique([announcementId, deviceId])
+  @@index([deviceId, announcementId])
+}
+
+model AnnouncementReply {
+  id             String @id @default(cuid())
+  announcementId String @unique
+  deviceId       String
+  type           String @db.VarChar(20)
+  text           String @db.VarChar(100)
+  idempotencyKey String @db.VarChar(100)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  device         DisplayDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+
+  @@unique([deviceId, idempotencyKey])
 }
 
 model UsageEvent {

@@ -476,6 +476,55 @@ export interface DisplayDevice {
   online: boolean;
 }
 
+export type AnnouncementStatus =
+  'WAITING_DISPLAY' | 'DISPLAYING' | 'REPLIED' | 'TIMED_OUT' | 'ENDED' | 'FAILED';
+
+export interface Announcement {
+  id: string;
+  classId: string;
+  teacherId: string;
+  teacherName: string;
+  studentId: string | null;
+  studentName: string | null;
+  mode: 'CUSTOM' | 'STUDENT';
+  text: string;
+  repeatCount: number;
+  durationSeconds: number;
+  status: AnnouncementStatus;
+  primaryDeviceId: string;
+  sentAt: IsoDateTime;
+  acknowledgedAt: IsoDateTime | null;
+  endedAt: IsoDateTime | null;
+  endReason: string | null;
+  deliveries: Array<{
+    deviceId: string;
+    isPrimary: boolean;
+    displayedAt: IsoDateTime | null;
+    expiresAt: IsoDateTime | null;
+    inputUntil: IsoDateTime | null;
+    pauseUsed: boolean;
+    soundStatus: 'PENDING' | 'PLAYING' | 'FAILED' | 'INTERRUPTED' | 'COMPLETED';
+    playedCount: number;
+    endReason: string | null;
+  }>;
+  reply: {
+    id: string;
+    deviceId: string;
+    type: 'QUICK' | 'CUSTOM';
+    text: string;
+    createdAt: IsoDateTime;
+  } | null;
+}
+
+export interface CreateAnnouncementInput {
+  mode: 'CUSTOM' | 'STUDENT';
+  studentId?: string;
+  text: string;
+  repeatCount: number;
+  durationSeconds: number;
+  idempotencyKey: string;
+}
+
 export interface CreateBindingCodeResult {
   code: string;
   expiresAt: IsoDateTime;

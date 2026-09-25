@@ -16,6 +16,7 @@ import {
   RANDOM_PICK_HOP_COUNT,
   RANDOM_PICK_HOP_INTERVAL_MS,
 } from "@/features/classroom/random-pick-animation";
+import { DisplayAnnouncement } from "./display-announcement";
 
 type Highlight = { studentId: string; name: string } | null;
 type SeatKind = "seat" | "podium" | "corridor";
@@ -715,6 +716,8 @@ export function DisplaySurface(): React.ReactElement {
   const randomPickSettleTimer = useRef<number | null>(null);
   const seatUpdateTimer = useRef<number | null>(null);
   const scoreFeedbackTimerRef = useRef<number | null>(null);
+  const announcementActiveRef = useRef(false);
+  const announcementViewRef = useRef<{ zoom: number; offset: { x: number; y: number } } | null>(null);
   const seatUpdatePendingRef = useRef(false);
   const dataRef = useRef<DisplayBootstrap | null>(null);
   dataRef.current = data;
@@ -901,6 +904,7 @@ export function DisplaySurface(): React.ReactElement {
     );
     subscriptions.push(
       realtime.subscribe("RANDOM_PICKED", session.classId, (event) => {
+        if (announcementActiveRef.current) return;
         if (randomPickMarqueeTimer.current !== null) {
           window.clearInterval(randomPickMarqueeTimer.current);
           randomPickMarqueeTimer.current = null;
@@ -1056,6 +1060,31 @@ export function DisplaySurface(): React.ReactElement {
           </motion.div>
         ) : null}
       </AnimatePresence>
+      <DisplayAnnouncement
+        data={data}
+        activeRef={announcementActiveRef}
+        onHighlightStart={(studentId, name, row, col) => {
+          if (!announcementViewRef.current) announcementViewRef.current = { zoom, offset };
+          if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
+          if (randomPickMarqueeTimer.current !== null) window.clearInterval(randomPickMarqueeTimer.current);
+          if (randomPickSettleTimer.current !== null) window.clearTimeout(randomPickSettleTimer.current);
+          setHighlight({ studentId, name });
+          setZoom(100);
+          setOffset({
+            x: Math.round(((data.classroom.gridCols - 1) / 2 - col) * 96),
+            y: Math.round(((data.classroom.gridRows - 1) / 2 - row) * 96),
+          });
+        }}
+        onHighlightEnd={() => setHighlight(null)}
+        onFinish={() => {
+          setHighlight(null);
+          if (announcementViewRef.current) {
+            setZoom(announcementViewRef.current.zoom);
+            setOffset(announcementViewRef.current.offset);
+            announcementViewRef.current = null;
+          }
+        }}
+      />
     </main>
   );
 }

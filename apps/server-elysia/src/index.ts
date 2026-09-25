@@ -4,6 +4,7 @@ import { config } from './config';
 import { realtimeService } from './modules/realtime/realtime.service';
 import { startScoreSettlementJob } from './modules/scores/score-settlement.job';
 import { startWeeklySeatingRotationJob } from './modules/seating/weekly-seating-rotation.job';
+import { announcementsService } from './modules/announcements/announcements.service';
 
 const isBun = typeof (globalThis as unknown as { Bun?: unknown }).Bun !== 'undefined';
 
@@ -47,6 +48,7 @@ if (process.env.NODE_ENV !== 'test') {
   realtimeService.attach(server);
   startScoreSettlementJob(config.scoreSettlementCron);
   startWeeklySeatingRotationJob(config.seatRotationCron);
+  announcementsService.start();
   server.listen(config.port, () => {
     console.log(
       `Elysia server listening on http://localhost:${config.port} (${isBun ? 'Bun' : 'Node.js'})`,

@@ -133,6 +133,42 @@ export class RealtimeService {
 
       socket.on('disconnect', () => {
         this.clients.delete(socket.id);
+        if (principal?.type === PrincipalType.DISPLAY_DEVICE && classId) {
+          const stillConnected = this.getConnectedDisplayDeviceIds(classId).includes(principal.sub);
+          if (!stillConnected) {
+            void prisma.displayDevice
+              .update({
+                where: { id: principal.sub },
+                data: { soundReady: false, soundReadyAt: null },
+              })
+              .catch(() => undefined);
+            void prisma.announcementDelivery
+              .findMany({
+                where: {
+                  deviceId: principal.sub,
+                  isPrimary: true,
+                  announcement: { status: { in: ['WAITING_DISPLAY', 'DISPLAYING'] } },
+                },
+                select: { id: true, announcementId: true },
+              })
+              .then(async (deliveries) => {
+                for (const delivery of deliveries) {
+                  await prisma.announcementDelivery.update({
+                    where: { id: delivery.id },
+                    data: { soundStatus: 'INTERRUPTED' },
+                  });
+                  this.publishClassEvent(classId, {
+                    id: randomUUID(),
+                    type: ClassEventType.ANNOUNCEMENT_CHANGED,
+                    classId,
+                    occurredAt: new Date().toISOString(),
+                    payload: { announcementId: delivery.announcementId },
+                  });
+                }
+              })
+              .catch(() => undefined);
+          }
+        }
       });
     });
 
@@ -148,6 +184,21 @@ export class RealtimeService {
     } catch (error) {
       console.error(`[Realtime] Failed to broadcast event ${event.id}:`, error);
     }
+  }
+
+  getConnectedDisplayDeviceIds(classId: string): string[] {
+    const ids = new Set<string>();
+    for (const client of this.clients.values()) {
+      const principal = client.data.principal as AccessTokenClaims | undefined;
+      if (
+        client.connected &&
+        client.data.classId === classId &&
+        principal?.type === PrincipalType.DISPLAY_DEVICE
+      ) {
+        ids.add(principal.sub);
+      }
+    }
+    return [...ids];
   }
 
   disconnectUser(userId: string): void {

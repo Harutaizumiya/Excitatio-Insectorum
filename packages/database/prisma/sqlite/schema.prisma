@@ -133,6 +133,7 @@ model User {
   usageEvents    UsageEvent[]
   submittedFeedbacks Feedback[]      @relation("FeedbackSubmitter")
   processedFeedbacks Feedback[]      @relation("FeedbackProcessor")
+  announcements Announcement[]
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 }
@@ -164,6 +165,8 @@ model Classroom {
   scheduleEntries        ScheduleEntry[]
   usageEvents            UsageEvent[]
   feedbacks              Feedback[]
+  announcements          Announcement[]
+  announcementLock       AnnouncementLock?
   createdAt              DateTime            @default(now())
   updatedAt              DateTime            @updatedAt
 
@@ -262,6 +265,7 @@ model Student {
   scores    ScoreRecord[]
   scoreEventParticipants ScoreEventParticipant[]
   committeeAssignments  ClassCommitteeAssignment[]
+  announcements          Announcement[]
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
@@ -459,13 +463,89 @@ model DisplayDevice {
   name        String
   status      DeviceStatus       @default(ACTIVE)
   lastSeenAt  DateTime?
+  soundReady  Boolean            @default(false)
+  soundReadyAt DateTime?
   revokedAt   DateTime?
   classroom   Classroom          @relation(fields: [classId], references: [id], onDelete: Restrict)
   credentials DeviceCredential[]
   usageEvents UsageEvent[]
+  announcementDeliveries AnnouncementDelivery[]
+  announcementReplies AnnouncementReply[]
   createdAt   DateTime           @default(now())
 
   @@index([classId, status])
+}
+
+model Announcement {
+  id             String   @id @default(cuid())
+  classId        String
+  teacherId      String
+  studentId      String?
+  studentName    String?
+  teacherName    String
+  mode           String
+  text           String
+  repeatCount    Int
+  durationSeconds Int
+  status         String   @default("WAITING_DISPLAY")
+  idempotencyKey String
+  primaryDeviceId String
+  sentAt         DateTime @default(now())
+  acknowledgedAt DateTime?
+  endedAt        DateTime?
+  endReason      String?
+  classroom      Classroom @relation(fields: [classId], references: [id], onDelete: Restrict)
+  teacher        User @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  student        Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  deliveries     AnnouncementDelivery[]
+  reply          AnnouncementReply?
+  lock           AnnouncementLock?
+
+  @@unique([teacherId, idempotencyKey])
+  @@index([classId, sentAt])
+  @@index([status, sentAt])
+}
+
+model AnnouncementLock {
+  classId        String @id
+  announcementId String @unique
+  classroom      Classroom @relation(fields: [classId], references: [id], onDelete: Cascade)
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+}
+
+model AnnouncementDelivery {
+  id             String @id @default(cuid())
+  announcementId String
+  deviceId       String
+  isPrimary      Boolean @default(false)
+  displayedAt    DateTime?
+  expiresAt      DateTime?
+  inputStartedAt DateTime?
+  inputUntil     DateTime?
+  pausedRemainingMs Int?
+  pauseUsed      Boolean @default(false)
+  soundStatus    String @default("PENDING")
+  playedCount    Int @default(0)
+  endReason      String?
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  device         DisplayDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+
+  @@unique([announcementId, deviceId])
+  @@index([deviceId, announcementId])
+}
+
+model AnnouncementReply {
+  id             String @id @default(cuid())
+  announcementId String @unique
+  deviceId       String
+  type           String
+  text           String
+  idempotencyKey String
+  createdAt      DateTime @default(now())
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  device         DisplayDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+
+  @@unique([deviceId, idempotencyKey])
 }
 
 model UsageEvent {

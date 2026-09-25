@@ -127,6 +127,7 @@ RANKING_CHANGED
 STUDENT_CHANGED
 DISPLAY_CONFIG_CHANGED
 SCHEDULE_CHANGED
+ANNOUNCEMENT_CHANGED
 ```
 
 ### 临时交互事件
@@ -555,3 +556,13 @@ RANDOM_PICKED
 ```text
 DISPLAY_CONFIG_CHANGED
 ```
+
+## 23. 远程喊话状态通知
+
+`ANNOUNCEMENT_CHANGED` 是状态型事件，payload 仅包含 `announcementId`。教师和大屏收到事件后分别从已授权的 REST 接口读取最新状态；事件本身不携带喊话正文或回复。
+
+- 教师：`/api/v1/classes/:classId/announcements` 创建、查看本人记录，并可调用 `/:id/end` 结束本人喊话。
+- 大屏：`/api/v1/display/announcements/current` 查询 token 所属班级中分配给本设备的有效喊话；通过 `/displayed`、`/playback`、`/input` 和 `/reply` 回报状态。
+- 同班只允许一条活动喊话。服务端用数据库唯一占用记录裁决并发和首条回复；提交成功后才广播事件。
+- 浏览器 TTS 由大屏本地合成。教师端的最短显示时间按每秒约 3 字估算；实际播报可能因浏览器音色而变化，到时仍关闭展示。
+- 大屏刷新后只恢复剩余展示时间，不重播语音或高亮座位。声音需由大屏操作者先点击“启用声音”。

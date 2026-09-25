@@ -4,6 +4,8 @@ import type {
   BindDisplayByCodeResult,
   ClassroomBindingSessionStatus,
   Classroom,
+  Announcement,
+  CreateAnnouncementInput,
   ClassroomSummary,
   ClassTeacher,
   ConsumeInvitationInput,
@@ -183,6 +185,23 @@ export interface ClassroomService {
   revokeDisplayDevice(classId: string, deviceId: string): Promise<BindDisplayResult>;
   exchangeDeviceCredential(input: DeviceTokenInput): Promise<DeviceTokenResult>;
   getDisplayBootstrap(deviceId: string): Promise<DisplayBootstrap>;
+  listAnnouncements(classId: string): Promise<Announcement[]>;
+  getAnnouncement(classId: string, id: string): Promise<Announcement>;
+  createAnnouncement(classId: string, input: CreateAnnouncementInput): Promise<Announcement>;
+  endAnnouncement(classId: string, id: string): Promise<Announcement>;
+  getCurrentAnnouncement(): Promise<Announcement | null>;
+  setDisplaySoundReady(ready: boolean): Promise<{ ready: boolean }>;
+  confirmAnnouncementDisplayed(id: string): Promise<Announcement>;
+  reportAnnouncementPlayback(
+    id: string,
+    status: 'PLAYING' | 'FAILED' | 'INTERRUPTED' | 'COMPLETED',
+    playedCount: number,
+  ): Promise<{ accepted: boolean }>;
+  setAnnouncementInput(id: string, action: 'START' | 'RETURN'): Promise<Announcement>;
+  replyAnnouncement(
+    id: string,
+    input: { type: 'QUICK' | 'CUSTOM'; text?: string; idempotencyKey: string },
+  ): Promise<Announcement>;
 
   login(input: LoginInput): Promise<LoginResult>;
   logout(): Promise<LogoutResult>;

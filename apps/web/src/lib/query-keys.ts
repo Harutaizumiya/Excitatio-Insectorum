@@ -23,6 +23,7 @@ export const classroomQueryKeys = {
     ['classrooms', classId, 'score-periods', 'summary', query] as const,
   committee: (classId: string) => ['classrooms', classId, 'committee'] as const,
   displayDevices: (classId: string) => ['classrooms', classId, 'display-devices'] as const,
+  announcements: (classId: string) => ['classrooms', classId, 'announcements'] as const,
   displayBootstrap: (deviceId: string) => ['display', deviceId, 'bootstrap'] as const,
   bindingSession: (bindingSessionId: string) =>
     ['display', 'binding-session', bindingSessionId] as const,

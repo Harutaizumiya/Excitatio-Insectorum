@@ -20,6 +20,7 @@ import { telemetryController } from './modules/telemetry/telemetry.controller';
 import { feedbackController } from './modules/feedback/feedback.controller';
 import { analyticsController } from './modules/analytics/analytics.controller';
 import { dormitoriesController } from './modules/dormitories/dormitories.controller';
+import { announcementsController } from './modules/announcements/announcements.controller';
 
 const isBun = typeof (globalThis as unknown as { Bun?: unknown }).Bun !== 'undefined';
 
@@ -76,5 +77,6 @@ export const app = baseApp.group('/api/v1', (group) =>
     .use(displaysController)
     .use(telemetryController)
     .use(feedbackController)
-    .use(analyticsController),
+    .use(analyticsController)
+    .use(announcementsController),
 );
