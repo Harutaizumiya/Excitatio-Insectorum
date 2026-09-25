@@ -18,6 +18,7 @@ import {
   Popconfirm,
   Row,
   Space,
+  Switch,
   Tag,
   Typography,
 } from "antd";
@@ -30,7 +31,12 @@ import {
   type Seat,
   type SeatLayoutVersion,
 } from "../admin-data";
-import { useAdminSeating, useAdminStudents } from "../admin-queries";
+import {
+  useAdminClassroom,
+  useAdminSeating,
+  useAdminStudents,
+  useSetAutoSeatRotation,
+} from "../admin-queries";
 import { DragPreview } from "./drag-preview";
 import { DropIndicator } from "./drop-indicator";
 import { SeatCell } from "./seat-cell";
@@ -91,6 +97,9 @@ function PageHeader({
 export function SeatingPage() {
   const { modal, notification } = AntApp.useApp();
   const { students } = useAdminStudents();
+  const { data: classroom, isLoading: isClassroomLoading } = useAdminClassroom();
+  const { mutateAsync: setAutoSeatRotation, isPending: isUpdatingAutoSeatRotation } =
+    useSetAutoSeatRotation();
   const {
     gridRows,
     gridCols,
@@ -355,6 +364,24 @@ export function SeatingPage() {
         description={`${gridRows} 行 × ${gridCols} 列`}
         action={
           <Space>
+            <Space size={8}>
+              <Typography.Text>自动轮换</Typography.Text>
+              <Switch
+                aria-label="自动轮换"
+                checked={classroom?.autoSeatRotationEnabled ?? false}
+                checkedChildren="开"
+                unCheckedChildren="关"
+                loading={isClassroomLoading || isUpdatingAutoSeatRotation}
+                disabled={!classroom || isUpdatingAutoSeatRotation}
+                onChange={(enabled) => {
+                  void setAutoSeatRotation(enabled).catch((error: unknown) => {
+                    notification.error({
+                      title: error instanceof Error ? error.message : "自动轮换设置失败",
+                    });
+                  });
+                }}
+              />
+            </Space>
             {!isLayoutStage && (
               <Button
                 icon={<EditOutlined />}

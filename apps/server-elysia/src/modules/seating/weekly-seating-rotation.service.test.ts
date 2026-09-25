@@ -14,6 +14,8 @@ interface FakeDbOptions {
   currentLayoutVersionId?: string | null;
   currentCreatedAt?: Date;
   switchedCount?: number;
+  autoSeatRotationEnabled?: boolean;
+  transactionAutoSeatRotationEnabled?: boolean;
 }
 
 function createFakeDb(options: FakeDbOptions = {}) {
@@ -48,7 +50,10 @@ function createFakeDb(options: FakeDbOptions = {}) {
       },
     },
     classroom: {
-      findUnique: async () => ({ currentLayoutVersionId }),
+      findUnique: async () => ({
+        currentLayoutVersionId,
+        autoSeatRotationEnabled: options.transactionAutoSeatRotationEnabled ?? true,
+      }),
       updateMany: async () => ({ count: options.switchedCount ?? 1 }),
     },
     classTeacher: {
@@ -69,7 +74,7 @@ function createFakeDb(options: FakeDbOptions = {}) {
   };
   const db = {
     classroom: {
-      findMany: async () => [{ id: 'class-1' }],
+      findMany: async () => (options.autoSeatRotationEnabled === false ? [] : [{ id: 'class-1' }]),
     },
     seatLayoutVersion: {
       findFirst: async () => (options.marker ? { id: 'layout-rotation' } : null),
@@ -120,6 +125,26 @@ test('does not repeat a class already marked with the Taipei week key', async ()
 
   assert.deepEqual(result.classes, [
     { classId: 'class-1', status: 'SKIPPED', reason: 'ALREADY_ROTATED' },
+  ]);
+  assert.equal(fake.createdLayouts.length, 0);
+  assert.equal(fake.published.length, 0);
+});
+
+test('does not include a class with automatic seat rotation disabled', async () => {
+  const fake = createFakeDb({ autoSeatRotationEnabled: false });
+  const result = await fake.service.run(mondayAfterSchedule);
+
+  assert.deepEqual(result.classes, []);
+  assert.equal(fake.createdLayouts.length, 0);
+  assert.equal(fake.published.length, 0);
+});
+
+test('skips when automatic seat rotation is disabled after the scheduler query', async () => {
+  const fake = createFakeDb({ transactionAutoSeatRotationEnabled: false });
+  const result = await fake.service.run(mondayAfterSchedule);
+
+  assert.deepEqual(result.classes, [
+    { classId: 'class-1', status: 'SKIPPED', reason: 'AUTO_ROTATION_DISABLED' },
   ]);
   assert.equal(fake.createdLayouts.length, 0);
   assert.equal(fake.published.length, 0);

@@ -147,6 +147,7 @@ model Classroom {
   currentLayoutVersionId String?             @unique
   activeScheduleTemplateId String?           @unique
   status                 String              @default("ACTIVE") @db.VarChar(30)
+  autoSeatRotationEnabled Boolean             @default(true)
   currentLayout          SeatLayoutVersion?  @relation("CurrentClassroomLayout", fields: [currentLayoutVersionId], references: [id], onDelete: SetNull)
   activeScheduleTemplate  ScheduleTemplate?  @relation("ClassroomActiveScheduleTemplate", fields: [activeScheduleTemplateId], references: [id], onDelete: SetNull)
   teachers               ClassTeacher[]

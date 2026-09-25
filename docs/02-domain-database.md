@@ -108,6 +108,7 @@ Classroom
 - gridCols
 - currentLayoutVersionId
 - activeScheduleTemplateId
+- autoSeatRotationEnabled
 - status
 - createdAt
 - updatedAt
@@ -119,6 +120,7 @@ Classroom
 - `gridCols >= 1`
 - 当前 MVP 建议限制最大值，例如 `20 × 20`。
 - `currentLayoutVersionId` 可为空，表示尚未建立座位布局。
+- `autoSeatRotationEnabled` 默认为 `true`，班主任可在座位管理中关闭每周自动轮换。
 - `activeScheduleTemplateId` 可为空，表示尚未建立课表；当前模板覆盖整周课程。
 
 ### 5.1 课表
@@ -593,6 +595,7 @@ model Classroom {
   gridRows               Int                 @default(6)
   gridCols               Int                 @default(8)
   currentLayoutVersionId String?
+  autoSeatRotationEnabled Boolean             @default(true)
   teachers               ClassTeacher[]
   students               Student[]
   layouts                SeatLayoutVersion[]

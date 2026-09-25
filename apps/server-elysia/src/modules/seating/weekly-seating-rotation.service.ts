@@ -16,6 +16,7 @@ const TAIPEI_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 export type WeeklyRotationSkipReason =
   | 'ALREADY_ROTATED'
+  | 'AUTO_ROTATION_DISABLED'
   | 'NO_LAYOUT'
   | 'LAYOUT_CREATED_AFTER_SCHEDULE'
   | 'NO_ACTIVE_HEAD_TEACHER'
@@ -125,7 +126,7 @@ export class WeeklySeatingRotationService {
     }
 
     const classrooms = await this.db.classroom.findMany({
-      where: { status: 'ACTIVE' },
+      where: { status: 'ACTIVE', autoSeatRotationEnabled: true },
       select: { id: true },
       orderBy: { id: 'asc' },
     });
@@ -172,8 +173,11 @@ export class WeeklySeatingRotationService {
 
         const classroom = await tx.classroom.findUnique({
           where: { id: classId },
-          select: { currentLayoutVersionId: true },
+          select: { currentLayoutVersionId: true, autoSeatRotationEnabled: true },
         });
+        if (classroom?.autoSeatRotationEnabled === false) {
+          return { classId, status: 'SKIPPED' as const, reason: 'AUTO_ROTATION_DISABLED' as const };
+        }
         if (!classroom?.currentLayoutVersionId) {
           return { classId, status: 'SKIPPED' as const, reason: 'NO_LAYOUT' as const };
         }

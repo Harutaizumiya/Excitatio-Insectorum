@@ -42,6 +42,7 @@ export interface ClassroomSummary {
 export interface Classroom extends ClassroomSummary {
   activeScheduleTemplateId: string | null;
   currentLayoutVersionId: string | null;
+  autoSeatRotationEnabled: boolean;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
 }
@@ -52,6 +53,7 @@ export interface UpdateClassroomInput {
   schoolYear?: string;
   gridRows?: number;
   gridCols?: number;
+  autoSeatRotationEnabled?: boolean;
 }
 
 export type Weekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;

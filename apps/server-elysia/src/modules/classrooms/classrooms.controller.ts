@@ -138,6 +138,7 @@ export const classroomsController = new Elysia({ prefix: '/classes' })
           schoolYear: body.schoolYear,
           gridRows: body.gridRows,
           gridCols: body.gridCols,
+          autoSeatRotationEnabled: body.autoSeatRotationEnabled,
         },
       });
 
@@ -154,9 +155,10 @@ export const classroomsController = new Elysia({ prefix: '/classes' })
         schoolYear: t.Optional(t.String()),
         gridRows: t.Optional(t.Integer({ minimum: 1, maximum: 20 })),
         gridCols: t.Optional(t.Integer({ minimum: 1, maximum: 20 })),
+        autoSeatRotationEnabled: t.Optional(t.Boolean()),
       }),
       detail: {
-        summary: '更新班级基础信息与网格',
+        summary: '更新班级基础信息、网格与自动轮换设置',
         tags: ['Classrooms'],
         security: [{ 'access-token': [] }],
       },
