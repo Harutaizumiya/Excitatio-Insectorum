@@ -140,7 +140,8 @@ Classroom System
 
 /admin
 /admin/students
-/admin/dormitories
+/admin/students/committee
+/admin/students/dormitories
 /admin/seating
 /admin/teachers
 /admin/score-rules
@@ -180,7 +181,6 @@ DISPLAY_DEVICE
 ├─────────────┬────────────────────────────────────────┤
 │ 班级概览     │                                        │
 │ 学生管理     │                                        │
-│ 住宿生管理   │                                        │
 │ 座位管理     │               页面内容                 │
 │ 任课教师     │                                        │
 │ 积分规则     │                                        │
@@ -251,11 +251,11 @@ MVP 不做复杂 Dashboard 和统计图表，仅保留统计入口。
 
 新增 / 编辑使用 Drawer。
 
-“身份”同时展示当前有效班委岗位和寝室；学生页提供班委设置、住宿生管理入口。
+“身份”同时展示当前有效班委岗位和寝室；学生页提供班委设置、住宿生管理二级页面入口。
 
 ### 8.1 住宿生管理
 
-路由：`/admin/dormitories`。
+路由：`/admin/students/dormitories`。
 
 - 左侧选择、创建、重命名或删除本班寝室，右侧维护成员。
 - 分配学生时允许从本班其他寝室直接转入。
