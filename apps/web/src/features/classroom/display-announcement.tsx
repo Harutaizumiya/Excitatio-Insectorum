@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { Button, Input } from 'antd';
 import {
   useClassroomService,
@@ -26,7 +26,9 @@ export function DisplayAnnouncement({
   const realtime = useRealtimeClient();
   const [item, setItem] = useState<Announcement | null>(null);
   const [phase, setPhase] = useState<Phase>('SHOW');
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(
+    () => typeof window !== 'undefined' && 'speechSynthesis' in window,
+  );
   const [replyText, setReplyText] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -37,11 +39,25 @@ export function DisplayAnnouncement({
   const phaseRef = useRef<Phase>('SHOW');
   const highlightTimer = useRef<number | null>(null);
   const speechTimer = useRef<number | null>(null);
+  const speechStartTimer = useRef<number | null>(null);
   const speechGeneration = useRef(0);
   const playedCount = useRef(0);
   const replyKey = useRef(crypto.randomUUID());
+  const soundReadyQueue = useRef<Promise<void>>(Promise.resolve());
   dataRef.current = data;
   callbacks.current = { onHighlightStart, onHighlightEnd, onFinish };
+
+  const setSoundReady = useCallback(
+    (ready: boolean) => {
+      const request = soundReadyQueue.current.then(() => service.setDisplaySoundReady(ready));
+      soundReadyQueue.current = request.then(
+        () => undefined,
+        () => undefined,
+      );
+      return request;
+    },
+    [service],
+  );
 
   const setPhaseBoth = (next: Phase) => {
     phaseRef.current = next;
@@ -52,6 +68,8 @@ export function DisplayAnnouncement({
     speechGeneration.current += 1;
     if (speechTimer.current !== null) window.clearTimeout(speechTimer.current);
     speechTimer.current = null;
+    if (speechStartTimer.current !== null) window.clearTimeout(speechStartTimer.current);
+    speechStartTimer.current = null;
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
   };
 
@@ -77,8 +95,10 @@ export function DisplayAnnouncement({
   const speak = (announcement: Announcement) => {
     const deviceId = getDisplaySession()?.deviceId;
     if (!deviceId || announcement.primaryDeviceId !== deviceId) return;
-    if (!soundEnabled || !('speechSynthesis' in window)) {
+    if (!('speechSynthesis' in window)) {
       reportPlayback(announcement.id, 'FAILED');
+      setSoundEnabled(false);
+      void setSoundReady(false).catch(() => undefined);
       return;
     }
     stopSpeech();
@@ -102,10 +122,18 @@ export function DisplayAnnouncement({
         .find((candidate) => candidate.lang.toLowerCase().startsWith('zh-cn'));
       if (voice) utterance.voice = voice;
       utterance.onstart = () => {
-        if (generation === speechGeneration.current) reportPlayback(announcement.id, 'PLAYING');
+        if (generation !== speechGeneration.current) return;
+        if (speechStartTimer.current !== null) window.clearTimeout(speechStartTimer.current);
+        speechStartTimer.current = null;
+        setSoundEnabled(true);
+        setError('');
+        void setSoundReady(true).catch(() => undefined);
+        reportPlayback(announcement.id, 'PLAYING');
       };
       utterance.onend = () => {
         if (generation !== speechGeneration.current) return;
+        if (speechStartTimer.current !== null) window.clearTimeout(speechStartTimer.current);
+        speechStartTimer.current = null;
         playedCount.current += 1;
         if (playedCount.current >= announcement.repeatCount) {
           reportPlayback(announcement.id, 'COMPLETED');
@@ -114,12 +142,38 @@ export function DisplayAnnouncement({
           speechTimer.current = window.setTimeout(play, 2_000);
         }
       };
-      utterance.onerror = () => {
-        if (generation === speechGeneration.current) reportPlayback(announcement.id, 'FAILED');
+      utterance.onerror = (event) => {
+        if (generation !== speechGeneration.current) return;
+        if (speechStartTimer.current !== null) window.clearTimeout(speechStartTimer.current);
+        speechStartTimer.current = null;
+        reportPlayback(announcement.id, 'FAILED');
+        if (event.error === 'canceled' || event.error === 'interrupted') return;
+        setSoundEnabled(false);
+        setError(
+          event.error === 'not-allowed'
+            ? '浏览器拦截了自动播报，请点击启用声音重试'
+            : '语音播报失败，请点击启用声音重试',
+        );
+        void setSoundReady(false).catch(() => undefined);
       };
       try {
+        speechStartTimer.current = window.setTimeout(() => {
+          if (generation !== speechGeneration.current) return;
+          speechStartTimer.current = null;
+          speechGeneration.current += 1;
+          window.speechSynthesis.cancel();
+          setSoundEnabled(false);
+          setError('自动播报未启动，请点击启用声音重试');
+          void setSoundReady(false).catch(() => undefined);
+          reportPlayback(announcement.id, 'FAILED');
+        }, 5_000);
         window.speechSynthesis.speak(utterance);
       } catch {
+        if (speechStartTimer.current !== null) window.clearTimeout(speechStartTimer.current);
+        speechStartTimer.current = null;
+        setSoundEnabled(false);
+        setError('语音播报失败，请点击启用声音重试');
+        void setSoundReady(false).catch(() => undefined);
         reportPlayback(announcement.id, 'FAILED');
       }
     };
@@ -188,7 +242,9 @@ export function DisplayAnnouncement({
   useEffect(() => {
     const session = getDisplaySession();
     if (!session) return;
-    void service.setDisplaySoundReady(false).catch(() => undefined);
+    const speechSupported = 'speechSynthesis' in window;
+    setSoundEnabled(speechSupported);
+    void setSoundReady(speechSupported).catch(() => setSoundEnabled(false));
     const sync = () =>
       void service
         .getCurrentAnnouncement()
@@ -221,26 +277,39 @@ export function DisplayAnnouncement({
       window.clearInterval(interval);
       if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
       if (speechTimer.current !== null) window.clearTimeout(speechTimer.current);
+      if (speechStartTimer.current !== null) window.clearTimeout(speechStartTimer.current);
       speechGeneration.current += 1;
       if ('speechSynthesis' in window) window.speechSynthesis.cancel();
       activeRef.current = false;
     };
-  }, [service, realtime, activeRef]);
+  }, [service, realtime, activeRef, setSoundReady]);
 
   const enableSound = () => {
     if (!('speechSynthesis' in window)) {
       setError('此浏览器不支持语音播报');
       return;
     }
+    const current = itemRef.current;
+    if (current && phaseRef.current === 'SHOW') {
+      setError('');
+      speak(current);
+      return;
+    }
     const test = new SpeechSynthesisUtterance('声音已启用');
     test.lang = 'zh-CN';
     test.onend = () => {
-      void service
-        .setDisplaySoundReady(true)
-        .then(() => setSoundEnabled(true))
+      void setSoundReady(true)
+        .then(() => {
+          setSoundEnabled(true);
+          setError('');
+        })
         .catch(() => setError('声音启用失败，请重试'));
     };
-    test.onerror = () => setError('声音启用失败，请检查设备音量并重试');
+    test.onerror = () => {
+      setSoundEnabled(false);
+      setError('声音启用失败，请检查设备音量并重试');
+      void setSoundReady(false).catch(() => undefined);
+    };
     window.speechSynthesis.speak(test);
   };
 
@@ -306,7 +375,7 @@ export function DisplayAnnouncement({
   return (
     <>
       {!soundEnabled ? (
-        <div className="pointer-events-auto fixed bottom-5 right-5 z-40 rounded-xl bg-white p-3 shadow-lg">
+        <div className="pointer-events-auto fixed bottom-5 right-5 z-[60] rounded-xl bg-white p-3 shadow-lg">
           <Button type="primary" size="large" onClick={enableSound}>
             启用声音
           </Button>
