@@ -502,6 +502,7 @@ export interface Announcement {
     displayedAt: IsoDateTime | null;
     expiresAt: IsoDateTime | null;
     inputUntil: IsoDateTime | null;
+    inputActive: boolean;
     pauseUsed: boolean;
     soundStatus: 'PENDING' | 'PLAYING' | 'FAILED' | 'INTERRUPTED' | 'COMPLETED';
     playedCount: number;

@@ -7,7 +7,6 @@ import { ClassEventType } from '../realtime/realtime.types';
 import { realtimeService } from '../realtime/realtime.service';
 
 const RECEIVE_MS = 10_000;
-const INPUT_MS = 60_000;
 const RETAIN_MS = 7 * 24 * 60 * 60_000;
 const activeStatuses = ['WAITING_DISPLAY', 'DISPLAYING'];
 
@@ -49,6 +48,7 @@ function detail(row: AnnouncementWithRelations) {
       displayedAt: delivery.displayedAt,
       expiresAt: delivery.expiresAt,
       inputUntil: delivery.inputUntil,
+      inputActive: delivery.pausedRemainingMs !== null,
       pauseUsed: delivery.pauseUsed,
       soundStatus: delivery.soundStatus,
       playedCount: delivery.playedCount,
@@ -364,13 +364,15 @@ export class AnnouncementsService {
         data: {
           pauseUsed: true,
           inputStartedAt: new Date(now),
-          inputUntil: new Date(now + INPUT_MS),
+          inputUntil: null,
           pausedRemainingMs: delivery.expiresAt.getTime() - now,
         },
       });
       if (!changed.count) throw new BusinessError('ANNOUNCEMENT_PAUSE_USED', '输入时间已用完', 409);
-    } else if (delivery.inputUntil && delivery.pausedRemainingMs !== null) {
-      const expiresAt = Math.min(now, delivery.inputUntil.getTime()) + delivery.pausedRemainingMs;
+    } else if (delivery.pausedRemainingMs !== null) {
+      const expiresAt =
+        (delivery.inputUntil ? Math.min(now, delivery.inputUntil.getTime()) : now) +
+        delivery.pausedRemainingMs;
       if (expiresAt <= now) throw new BusinessError('ANNOUNCEMENT_ENDED', '该喊话已结束', 409);
       await prisma.announcementDelivery.update({
         where: { id: delivery.id },
@@ -410,7 +412,9 @@ export class AnnouncementsService {
     const delivery = row.deliveries.find((item) => item.deviceId === deviceId) ?? null;
     assertDelivery(delivery);
     const now = Date.now();
-    const validInput = delivery.inputUntil && delivery.inputUntil.getTime() > now;
+    const validInput =
+      delivery.pausedRemainingMs !== null ||
+      Boolean(delivery.inputUntil && delivery.inputUntil.getTime() > now);
     if (
       !delivery.displayedAt ||
       (!validInput && (!delivery.expiresAt || delivery.expiresAt.getTime() <= now))
@@ -424,10 +428,14 @@ export class AnnouncementsService {
       await prisma.$transaction(async (tx) => {
         const live = await tx.announcementDelivery.findUnique({ where: { id: delivery.id } });
         const acceptedAt = Date.now();
+        const liveInputActive = Boolean(
+          live &&
+            (live.pausedRemainingMs !== null ||
+              (live.inputUntil && live.inputUntil.getTime() > acceptedAt)),
+        );
         if (
           !live?.displayedAt ||
-          ((!live.inputUntil || live.inputUntil.getTime() <= acceptedAt) &&
-            (!live.expiresAt || live.expiresAt.getTime() <= acceptedAt))
+          (!liveInputActive && (!live.expiresAt || live.expiresAt.getTime() <= acceptedAt))
         ) {
           throw new BusinessError('ANNOUNCEMENT_ENDED', '该喊话已结束', 409);
         }
@@ -541,7 +549,9 @@ export class AnnouncementsService {
       if (
         latest.every(
           (delivery) =>
-            !delivery.inputUntil && (!delivery.expiresAt || delivery.expiresAt.getTime() <= now),
+            !delivery.inputUntil &&
+            delivery.pausedRemainingMs === null &&
+            (!delivery.expiresAt || delivery.expiresAt.getTime() <= now),
         )
       ) {
         await this.finish(row, 'TIMED_OUT', 'DISPLAY_EXPIRED');

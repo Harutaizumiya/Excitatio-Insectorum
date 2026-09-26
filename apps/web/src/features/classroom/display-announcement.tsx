@@ -137,7 +137,7 @@ export function DisplayAnnouncement({
     if (itemRef.current?.id === next.id) {
       itemRef.current = next;
       setItem(next);
-      if (phaseRef.current === 'INPUT' && !delivery.inputUntil) {
+      if (phaseRef.current === 'INPUT' && !delivery.inputActive) {
         setPhaseBoth('SHOW');
         if (playedCount.current < next.repeatCount) speak(next);
       }
@@ -151,7 +151,7 @@ export function DisplayAnnouncement({
     setItem(next);
     if (delivery.displayedAt) {
       // Reconnect and refresh restore the remaining window without replaying speech or highlight.
-      setPhaseBoth(delivery.inputUntil ? 'INPUT' : 'SHOW');
+      setPhaseBoth(delivery.inputActive ? 'INPUT' : 'SHOW');
       return;
     }
     const seat = next.studentId
@@ -303,10 +303,6 @@ export function DisplayAnnouncement({
   const remaining = delivery?.expiresAt
     ? Math.max(0, Math.ceil((new Date(delivery.expiresAt).getTime() - now) / 1_000))
     : (item?.durationSeconds ?? 0);
-  const inputRemaining = delivery?.inputUntil
-    ? Math.max(0, Math.ceil((new Date(delivery.inputUntil).getTime() - now) / 1_000))
-    : 0;
-
   return (
     <>
       {!soundEnabled ? (
@@ -332,9 +328,9 @@ export function DisplayAnnouncement({
             <div className="mt-8 break-words text-4xl font-semibold leading-relaxed md:text-6xl">
               {item.text}
             </div>
-            <div className="mt-8 text-2xl text-slate-300">
-              {phase === 'INPUT' ? `输入剩余 ${inputRemaining} 秒` : `剩余 ${remaining} 秒`}
-            </div>
+            {phase !== 'INPUT' ? (
+              <div className="mt-8 text-2xl text-slate-300">剩余 {remaining} 秒</div>
+            ) : null}
             {phase === 'INPUT' ? (
               <div className="mx-auto mt-10 flex max-w-2xl flex-col gap-4">
                 <Input.TextArea
