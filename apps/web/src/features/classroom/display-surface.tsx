@@ -1,30 +1,46 @@
-"use client";
+'use client';
 
-import { useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
-import { App as AntApp } from "antd";
-import { ArrowUpOutlined, CrownOutlined, MinusOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button } from "@/components/motion/button";
-import { useClassroomService, useRealtimeClient } from "@/components/providers/classroom-system-provider";
-import { ClassroomServiceError } from "@/lib/classroom-service";
-import { reportUsageEventBestEffort, type ClassEventType, type DisplayBootstrap, type Seat } from "@/lib";
-import { clearDisplaySession, getDisplaySession } from "@/lib/session";
-import { SeatCell } from "@/features/admin/seating/seat-cell";
+import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { App as AntApp } from 'antd';
+import {
+  ArrowUpOutlined,
+  BarChartOutlined,
+  MinusOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
+import { Button } from '@/components/motion/button';
+import {
+  useClassroomService,
+  useRealtimeClient,
+} from '@/components/providers/classroom-system-provider';
+import { ClassroomServiceError } from '@/lib/classroom-service';
+import {
+  reportUsageEventBestEffort,
+  type ClassEventType,
+  type DisplayBootstrap,
+  type Seat,
+} from '@/lib';
+import { clearDisplaySession, getDisplaySession } from '@/lib/session';
+import { SeatCell } from '@/features/admin/seating/seat-cell';
 import {
   RANDOM_PICK_ANIMATION_DURATION_MS,
   RANDOM_PICK_HOP_COUNT,
   RANDOM_PICK_HOP_INTERVAL_MS,
-} from "@/features/classroom/random-pick-animation";
-import { DisplayAnnouncement } from "./display-announcement";
+} from '@/features/classroom/random-pick-animation';
+import { DisplayAnnouncement } from './display-announcement';
+import { DisplayScoreDrawer } from './display-score-drawer';
+import './display-surface.css';
 
 type Highlight = { studentId: string; name: string } | null;
-type SeatKind = "seat" | "podium" | "corridor";
+type SeatKind = 'seat' | 'podium' | 'corridor';
 type DisplayGridCell = { row: number; col: number; rowSpan: number };
-type DisplaySeatSnapshot = DisplayBootstrap["layout"]["seats"][number];
+type DisplaySeatSnapshot = DisplayBootstrap['layout']['seats'][number];
 type ScoreFeedback = { delta: number; token: number };
 
-const SEAT_UPDATE_NOTIFICATION_KEY = "display-seat-update";
+const SEAT_UPDATE_NOTIFICATION_KEY = 'display-seat-update';
 const SEAT_UPDATE_DURATION = 1800;
 const SEAT_UPDATE_TOTAL_DURATION = 3000;
 const DISPLAY_HEARTBEAT_INTERVAL_MS = 60_000;
@@ -34,24 +50,35 @@ function formatScore(score: number): string {
 }
 
 function formatScoreDelta(delta: number): string {
-  return `${delta > 0 ? "+" : ""}${delta}分`;
+  return `${delta > 0 ? '+' : ''}${delta}分`;
 }
 
-function getSeatKind(row: number, col: number, rows: number, cols: number, cellType?: Seat["cellType"]): SeatKind {
-  if (cellType === "aisle") return "corridor";
-  if (cellType === "podium") return "podium";
-  if (cellType === "empty") return "seat";
-  if (rows === 7 && cols === 9 && row === 0 && col === 4) return "podium";
-  if (rows === 7 && cols === 9 && row > 0 && (col === 4 || col === 6)) return "corridor";
-  return "seat";
+function getSeatKind(
+  row: number,
+  col: number,
+  rows: number,
+  cols: number,
+  cellType?: Seat['cellType'],
+): SeatKind {
+  if (cellType === 'aisle') return 'corridor';
+  if (cellType === 'podium') return 'podium';
+  if (cellType === 'empty') return 'seat';
+  if (rows === 7 && cols === 9 && row === 0 && col === 4) return 'podium';
+  if (rows === 7 && cols === 9 && row > 0 && (col === 4 || col === 6)) return 'corridor';
+  return 'seat';
 }
 
-function getSeatLabel(row: number, col: number, seat: Pick<DisplaySeatSnapshot, "student" | "cellType"> | undefined, kind: SeatKind): string {
-  if (kind === "podium") return "讲台";
-  if (kind === "corridor") return "走廊";
+function getSeatLabel(
+  row: number,
+  col: number,
+  seat: Pick<DisplaySeatSnapshot, 'student' | 'cellType'> | undefined,
+  kind: SeatKind,
+): string {
+  if (kind === 'podium') return '讲台';
+  if (kind === 'corridor') return '走廊';
   if (seat?.student) return seat.student.name;
-  if (row === 0) return "空位";
-  return String(row + 1) + "-" + String(col + 1);
+  if (row === 0) return '空位';
+  return String(row + 1) + '-' + String(col + 1);
 }
 
 function FlipFlapLabel({
@@ -97,9 +124,10 @@ function FlipFlapLabel({
       const createScrambledName = () => {
         if (scrambleChars.length === 0) return value;
         const scrambleLength = 2 + Math.floor(Math.random() * 2);
-        return Array.from({ length: scrambleLength }, () =>
-          scrambleChars[Math.floor(Math.random() * scrambleChars.length)]
-        ).join("");
+        return Array.from(
+          { length: scrambleLength },
+          () => scrambleChars[Math.floor(Math.random() * scrambleChars.length)],
+        ).join('');
       };
       setDisplayedValue(createScrambledName());
       scrambleTimer = window.setInterval(() => {
@@ -128,52 +156,60 @@ function FlipFlapLabel({
     <span
       className="display-name-flap"
       data-display-name-flap
-      data-flipping={isFlipping ? "true" : "false"}
+      data-flipping={isFlipping ? 'true' : 'false'}
     >
       {displayedValue}
     </span>
   );
 }
 
-function CourseTimeline({ schedule }: { schedule: DisplayBootstrap["schedule"] }): React.ReactElement | null {
-  const [now, setNow] = useState(() => new Date())
+function CourseTimeline({
+  schedule,
+}: {
+  schedule: DisplayBootstrap['schedule'];
+}): React.ReactElement | null {
+  const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1_000)
-    return () => window.clearInterval(timer)
-  }, [])
+    const timer = window.setInterval(() => setNow(new Date()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-  const weekday = now.getDay() === 0 ? 7 : now.getDay()
-  const currentMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60
-  const periods = new Map(schedule.periods.map((period) => [period.periodNo, period]))
+  const weekday = now.getDay() === 0 ? 7 : now.getDay();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+  const periods = new Map(schedule.periods.map((period) => [period.periodNo, period]));
   const courses = schedule.entries
     .filter((entry) => entry.weekday === weekday)
     .sort((left, right) => left.periodNo - right.periodNo)
     .map((entry) => {
-      const period = periods.get(entry.periodNo)
+      const period = periods.get(entry.periodNo);
       const toMinutes = (value: string) => {
-        const [hour, minute] = value.split(":").map(Number)
-        return hour * 60 + minute
-      }
-      const startMinutes = period ? toMinutes(period.startTime) : 0
-      const endMinutes = period ? toMinutes(period.endTime) : 0
-      const active = period ? currentMinutes >= startMinutes && currentMinutes < endMinutes : false
-      const completed = period ? currentMinutes >= endMinutes : false
-      const progress = active && endMinutes > startMinutes
-        ? Math.min(100, Math.max(0, ((currentMinutes - startMinutes) / (endMinutes - startMinutes)) * 100))
-        : 0
-      return { ...entry, active, completed, progress }
-    })
-  if (courses.length === 0) return null
+        const [hour, minute] = value.split(':').map(Number);
+        return hour * 60 + minute;
+      };
+      const startMinutes = period ? toMinutes(period.startTime) : 0;
+      const endMinutes = period ? toMinutes(period.endTime) : 0;
+      const active = period ? currentMinutes >= startMinutes && currentMinutes < endMinutes : false;
+      const completed = period ? currentMinutes >= endMinutes : false;
+      const progress =
+        active && endMinutes > startMinutes
+          ? Math.min(
+              100,
+              Math.max(0, ((currentMinutes - startMinutes) / (endMinutes - startMinutes)) * 100),
+            )
+          : 0;
+      return { ...entry, active, completed, progress };
+    });
+  if (courses.length === 0) return null;
   return (
     <div className="display-surface__course-timeline flex h-[26px] w-max min-w-0 shrink-0 items-center gap-[6px] overflow-x-auto whitespace-nowrap">
       <span className="shrink-0 text-[11px] leading-4 text-[#8c8c8c]">今日课程：</span>
       {courses.map((course) => {
-        const active = course.active
-        const completed = course.completed
+        const active = course.active;
+        const completed = course.completed;
         return (
           <div
             key={`${course.weekday}-${course.periodNo}`}
-            role={active ? "progressbar" : undefined}
+            role={active ? 'progressbar' : undefined}
             aria-label={active ? `${course.courseName}进行中` : undefined}
             aria-valuemin={active ? 0 : undefined}
             aria-valuemax={active ? 100 : undefined}
@@ -181,10 +217,10 @@ function CourseTimeline({ schedule }: { schedule: DisplayBootstrap["schedule"] }
             title={active ? `已进行 ${Math.round(course.progress)}%` : undefined}
             className={
               active
-                ? "relative flex h-[26px] min-w-[95px] shrink-0 items-center justify-center overflow-hidden rounded-[6px] border-[1.5px] border-[#1677ff] bg-[#e6f4ff] px-[10px] text-[12px] font-bold text-[#0958d9] shadow-[0_1px_4px_rgba(22,119,255,0.15)]"
+                ? 'relative flex h-[26px] min-w-[95px] shrink-0 items-center justify-center overflow-hidden rounded-[6px] border-[1.5px] border-[#1677ff] bg-[#e6f4ff] px-[10px] text-[12px] font-bold text-[#0958d9] shadow-[0_1px_4px_rgba(22,119,255,0.15)]'
                 : completed
-                  ? "flex size-[26px] shrink-0 items-center justify-center rounded-[6px] border border-[#e4e7ec] bg-[#f0f2f5] text-[11px] text-[#a0a6b2]"
-                  : "flex size-[26px] shrink-0 items-center justify-center rounded-[6px] border border-[#d9dce3] bg-white text-[11px] font-bold text-[#595959]"
+                  ? 'flex size-[26px] shrink-0 items-center justify-center rounded-[6px] border border-[#e4e7ec] bg-[#f0f2f5] text-[11px] text-[#a0a6b2]'
+                  : 'flex size-[26px] shrink-0 items-center justify-center rounded-[6px] border border-[#d9dce3] bg-white text-[11px] font-bold text-[#595959]'
             }
           >
             {active ? (
@@ -196,7 +232,9 @@ function CourseTimeline({ schedule }: { schedule: DisplayBootstrap["schedule"] }
                 />
                 <span className="relative z-[1]">{course.courseName} (进行中)</span>
               </>
-            ) : course.courseName.slice(0, 1)}
+            ) : (
+              course.courseName.slice(0, 1)
+            )}
           </div>
         );
       })}
@@ -218,6 +256,8 @@ function DisplaySeat({
   rowSpan,
   scoreFeedback,
   scoreFeedbackKey,
+  onSelectStudent,
+  selected,
 }: {
   row: number;
   col: number;
@@ -232,10 +272,12 @@ function DisplaySeat({
   rowSpan: number;
   scoreFeedback?: number;
   scoreFeedbackKey?: number;
+  onSelectStudent: (id: string) => void;
+  selected: boolean;
 }): React.ReactElement {
   const label = getSeatLabel(row, col, seat, kind);
-  const isCorridor = kind === "corridor";
-  const isMergedCorridor = kind === "corridor" && rowSpan > 1;
+  const isCorridor = kind === 'corridor';
+  const isMergedCorridor = kind === 'corridor' && rowSpan > 1;
   const adminSeat = seat
     ? {
         id: `display-${row}-${col}`,
@@ -246,26 +288,32 @@ function DisplaySeat({
       }
     : undefined;
   const adminStudent = seat?.student
-    ? { id: seat.student.id, name: seat.student.name, studentNo: "" }
+    ? { id: seat.student.id, name: seat.student.name, studentNo: '' }
     : undefined;
 
   return (
     <motion.div
-      role="img"
-      aria-label={label}
-      data-display-random-highlight={highlighted ? "true" : "false"}
+      role={seat?.student ? 'button' : 'img'}
+      tabIndex={seat?.student ? 0 : undefined}
+      aria-label={seat?.student ? `查看${label}的积分走势` : label}
+      data-student-id={seat?.student?.id}
+      onKeyDown={(event) => {
+        if (seat?.student && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          onSelectStudent(seat.student.id);
+        }
+      }}
+      data-display-random-highlight={highlighted ? 'true' : 'false'}
       initial={false}
       animate={{ scale: highlighted ? 1.08 : 1 }}
-      transition={{ type: "spring", stiffness: 400, damping: 25 }}
-      className={`relative ${isMergedCorridor ? "h-full" : "h-20"} ${isCorridor ? "w-16" : "w-24"} shrink-0 text-center`}
+      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+      className={`display-seat relative ${isMergedCorridor ? 'h-full' : 'h-20'} ${isCorridor ? 'w-16' : 'w-24'} shrink-0 text-center`}
       style={{
         gridColumn: col + 1,
         gridRow: `${row + 1} / span ${rowSpan}`,
-        justifySelf: isCorridor ? "center" : "stretch",
+        justifySelf: isCorridor ? 'center' : 'stretch',
         marginInline: isCorridor ? 4 : 0,
-        boxShadow: highlighted
-          ? "0 6px 18px rgba(10, 89, 247, 0.35)"
-          : "none",
+        boxShadow: highlighted ? '0 6px 18px rgba(10, 89, 247, 0.35)' : 'none',
       }}
     >
       <SeatCell
@@ -275,12 +323,13 @@ function DisplaySeat({
         student={adminStudent}
         isLayoutStage={false}
         readOnly
-        emphasized={false}
-        height={isMergedCorridor ? "100%" : undefined}
+        appearance="display"
+        emphasized={selected}
+        height={isMergedCorridor ? '100%' : undefined}
         showSeatNumber={false}
         studentContent={
-          <div className="relative flex min-h-0 w-full flex-1 items-center justify-center px-1 pt-3 text-center">
-            <span className="max-w-full truncate text-[18px] font-extrabold leading-tight text-[#14233c]">
+          <div className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-1 px-1 text-center">
+            <span className="max-w-full truncate text-[20px] font-extrabold leading-tight text-[#14233c]">
               <FlipFlapLabel
                 value={label}
                 targetValue={nameAnimationTarget ?? label}
@@ -291,20 +340,18 @@ function DisplaySeat({
               />
             </span>
             {seat?.student ? (
-              <span className="absolute right-0 top-0 rounded-full border border-[#d6e4ff] bg-[#f0f5ff] px-1.5 py-0.5 text-[10px] font-bold leading-none tabular-nums text-[#0958d9]">
+              <span className="text-[12px] font-medium leading-none tabular-nums text-[#8b94a7]">
                 {formatScore(seat.student.score)}
               </span>
             ) : null}
-            {typeof scoreFeedback === "number" ? (
+            {typeof scoreFeedback === 'number' ? (
               <motion.span
                 key={scoreFeedbackKey}
                 initial={{ opacity: 0, y: 6, scale: 0.8 }}
                 animate={{ opacity: 1, y: -12, scale: 1 }}
-                transition={{ duration: 0.7, ease: "easeOut" }}
+                transition={{ duration: 0.7, ease: 'easeOut' }}
                 className={`pointer-events-none absolute right-0 -top-1 rounded-full px-1.5 py-1 text-[11px] font-extrabold leading-none shadow-sm ${
-                  scoreFeedback > 0
-                    ? "bg-[#f6ffed] text-[#389e0d]"
-                    : "bg-[#fff1f0] text-[#cf1322]"
+                  scoreFeedback > 0 ? 'bg-[#f6ffed] text-[#389e0d]' : 'bg-[#fff1f0] text-[#cf1322]'
                 }`}
               >
                 {formatScoreDelta(scoreFeedback)}
@@ -339,7 +386,10 @@ function SeatMatrix({
   nameAnimationTrigger,
   nameAnimationTargets,
   scoreFeedbacks,
-  }: {
+  onSelectStudent,
+  selectedStudentId,
+  onFitScaleChange,
+}: {
   data: DisplayBootstrap;
   highlight: Highlight;
   zoom: number;
@@ -351,23 +401,52 @@ function SeatMatrix({
   nameAnimationTrigger: number;
   nameAnimationTargets: Map<string, string>;
   scoreFeedbacks: Map<string, ScoreFeedback>;
+  onSelectStudent: (id: string) => void;
+  selectedStudentId: string | null;
+  onFitScaleChange: (scale: number) => void;
 }): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
-  const dragStartRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const [fitScale, setFitScale] = useState(1);
+  const pointerStudentRef = useRef<string | null>(null);
+  const pointerMovedRef = useRef(false);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const resize = () => {
+      const scale = Math.min(
+        (container.clientWidth - 16) / (data.classroom.gridCols * 112 - 16),
+        (container.clientHeight - 16) / (data.classroom.gridRows * 96 - 16),
+      );
+      setFitScale(scale);
+      onFitScaleChange(scale);
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [data.classroom.gridCols, data.classroom.gridRows, onFitScaleChange]);
+  const dragStartRef = useRef<{
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
   const pinchStartRef = useRef<{ distance: number; initialZoom: number } | null>(null);
   const scrambleChars = useMemo(
-    () => Array.from(
-      new Set(
-        data.layout.seats
-          .flatMap((seat) => (seat.student?.name ? Array.from(seat.student.name) : []))
-          .filter((char) => char.trim().length > 0)
-      )
-    ),
-    [data.layout.seats]
+    () =>
+      Array.from(
+        new Set(
+          data.layout.seats
+            .flatMap((seat) => (seat.student?.name ? Array.from(seat.student.name) : []))
+            .filter((char) => char.trim().length > 0),
+        ),
+      ),
+    [data.layout.seats],
   );
   const seatLookup = useMemo(
-    () => new Map(data.layout.seats.map((seat) => [String(seat.row) + "-" + String(seat.col), seat])),
-    [data.layout.seats]
+    () =>
+      new Map(data.layout.seats.map((seat) => [String(seat.row) + '-' + String(seat.col), seat])),
+    [data.layout.seats],
   );
   const cells = useMemo<DisplayGridCell[]>(() => {
     const rows = data.classroom.gridRows;
@@ -385,13 +464,13 @@ function SeatMatrix({
         const key = `${row}-${col}`;
         if (mergedCorridorCells.has(key)) continue;
 
-        if (kindAt(row, col) !== "corridor") {
+        if (kindAt(row, col) !== 'corridor') {
           nextCells.push({ row, col, rowSpan: 1 });
           continue;
         }
 
         let rowSpan = 1;
-        while (row + rowSpan < rows && kindAt(row + rowSpan, col) === "corridor") {
+        while (row + rowSpan < rows && kindAt(row + rowSpan, col) === 'corridor') {
           mergedCorridorCells.add(`${row + rowSpan}-${col}`);
           rowSpan += 1;
         }
@@ -403,7 +482,11 @@ function SeatMatrix({
   }, [data.classroom.gridCols, data.classroom.gridRows, seatLookup]);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0 && e.pointerType === "mouse") return;
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    pointerStudentRef.current =
+      (e.target as HTMLElement).closest<HTMLElement>('[data-student-id]')?.dataset.studentId ??
+      null;
+    pointerMovedRef.current = false;
     dragStartRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -418,6 +501,7 @@ function SeatMatrix({
     if (!dragStartRef.current) return;
     const dx = e.clientX - dragStartRef.current.startX;
     const dy = e.clientY - dragStartRef.current.startY;
+    if (Math.hypot(dx, dy) > 6) pointerMovedRef.current = true;
     onOffsetChange({
       x: Math.round(dragStartRef.current.originX + dx),
       y: Math.round(dragStartRef.current.originY + dy),
@@ -433,12 +517,16 @@ function SeatMatrix({
       }
       dragStartRef.current = null;
       setIsDragging(false);
+      if (e.type !== 'pointercancel' && !pointerMovedRef.current && pointerStudentRef.current) {
+        onSelectStudent(pointerStudentRef.current);
+      }
     }
   };
 
   // Multi-touch pinch-to-zoom support for interactive touchscreens / smart boards
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length === 2) {
+      pointerMovedRef.current = true;
       const t1 = e.touches[0];
       const t2 = e.touches[1];
       const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
@@ -458,7 +546,7 @@ function SeatMatrix({
         const ratio = dist / pinchStartRef.current.distance;
         const nextZoom = Math.min(
           160,
-          Math.max(60, Math.round((pinchStartRef.current.initialZoom * ratio) / 5) * 5)
+          Math.max(60, Math.round((pinchStartRef.current.initialZoom * ratio) / 5) * 5),
         );
         onZoomChange(nextZoom);
       }
@@ -494,39 +582,45 @@ function SeatMatrix({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onWheel={handleWheel}
-      className={`absolute inset-0 h-full w-full overflow-hidden select-none touch-none ${
-        isDragging ? "cursor-grabbing" : "cursor-grab"
+      className={`display-seat-canvas absolute overflow-hidden select-none touch-none ${
+        isDragging ? 'cursor-grabbing' : 'cursor-grab'
       }`}
       style={{
-        WebkitUserSelect: "none",
-        WebkitTouchCallout: "none",
+        WebkitUserSelect: 'none',
+        WebkitTouchCallout: 'none',
       }}
     >
       <div
-        className="flex h-full w-full items-center justify-center will-change-transform pr-[300px] pl-6 pt-8"
+        className="flex h-full w-full items-center justify-center will-change-transform"
         style={{
-          transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${zoom / 100})`,
-          transformOrigin: "center center",
-          transition: isDragging ? "none" : "transform 0.15s ease-out",
+          transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${(fitScale * zoom) / 100})`,
+          transformOrigin: 'center center',
+          transition: isDragging ? 'none' : 'transform 0.15s ease-out',
         }}
       >
         <div
-          className="grid min-w-[1030px]"
+          className="grid shrink-0"
           style={{
-            gridTemplateColumns: "repeat(" + String(data.classroom.gridCols) + ", 96px)",
-            gridTemplateRows: "repeat(" + String(data.classroom.gridRows) + ", 80px)",
-            columnGap: 0,
+            gridTemplateColumns: 'repeat(' + String(data.classroom.gridCols) + ', 96px)',
+            gridTemplateRows: 'repeat(' + String(data.classroom.gridRows) + ', 80px)',
+            columnGap: 16,
             rowGap: 16,
-            justifyContent: "space-between",
+            justifyContent: 'space-between',
           }}
         >
           {cells.map((cell) => {
-            const seat = seatLookup.get(String(cell.row) + "-" + String(cell.col));
-            const kind = getSeatKind(cell.row, cell.col, data.classroom.gridRows, data.classroom.gridCols, seat?.cellType);
+            const seat = seatLookup.get(String(cell.row) + '-' + String(cell.col));
+            const kind = getSeatKind(
+              cell.row,
+              cell.col,
+              data.classroom.gridRows,
+              data.classroom.gridCols,
+              seat?.cellType,
+            );
             const studentId = seat?.student?.id;
             return (
               <DisplaySeat
-                key={String(cell.row) + "-" + String(cell.col)}
+                key={String(cell.row) + '-' + String(cell.col)}
                 row={cell.row}
                 col={cell.col}
                 seat={seat}
@@ -540,6 +634,8 @@ function SeatMatrix({
                 rowSpan={cell.rowSpan}
                 scoreFeedback={studentId ? scoreFeedbacks.get(studentId)?.delta : undefined}
                 scoreFeedbackKey={studentId ? scoreFeedbacks.get(studentId)?.token : undefined}
+                onSelectStudent={onSelectStudent}
+                selected={studentId === selectedStudentId}
               />
             );
           })}
@@ -596,10 +692,6 @@ function ZoomController({
           复位
         </Button>
       ) : null}
-
-      <span className="hidden text-xs text-[#8c93a3] lg:inline-block">
-        👆 支持触屏单指拖动、双指缩放
-      </span>
     </div>
   );
 }
@@ -607,16 +699,16 @@ function ZoomController({
 function Avatar({ rank }: { rank: 1 | 2 | 3 }): React.ReactElement {
   const first = rank === 1;
   const third = rank === 3;
-  const imageSize = first ? 64 : 54;
+  const imageSize = first ? 80 : 66;
   const imageSource = `${import.meta.env.BASE_URL}top${rank}.png`;
   return (
     <div
       className={
         first
-          ? "flex size-[64px] shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full border-[3px] border-[#faad14] bg-[#fffbe6] text-[#d48806] shadow-[0_4px_12px_rgba(250,173,20,0.4)]"
+          ? 'flex size-20 shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full border-[3px] border-[#e4cea0] bg-[#faf5eb]'
           : third
-            ? "flex size-[54px] shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full border-[2.5px] border-[#ffbb96] bg-[#fff2e8] text-[#d4380d] shadow-[0_3px_8px_rgba(212,56,13,0.15)]"
-            : "flex size-[54px] shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full border-[2.5px] border-[#adc6ff] bg-[#f5f7fa] text-[#597ef7] shadow-[0_3px_8px_rgba(22,119,255,0.18)]"
+            ? 'flex size-[66px] shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full border-[3px] border-[#ddc7b9] bg-[#f9f2ed]'
+            : 'flex size-[66px] shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full border-[3px] border-[#d3dae4] bg-[#f5f7fa]'
       }
     >
       <img
@@ -625,75 +717,112 @@ function Avatar({ rank }: { rank: 1 | 2 | 3 }): React.ReactElement {
         width={imageSize}
         height={imageSize}
         className="block size-full aspect-square rounded-full object-cover"
-        style={{ width: "100%", height: "100%" }}
+        style={{ width: '100%', height: '100%' }}
       />
     </div>
   );
 }
 
-function TopRankPanel({ ranking }: { ranking: DisplayBootstrap["ranking"] }): React.ReactElement {
+function TopRankPanel({
+  ranking,
+  onSelectStudent,
+}: {
+  ranking: DisplayBootstrap['ranking'];
+  onSelectStudent: (id: string) => void;
+}): React.ReactElement {
   const top3 = ranking.top3.slice(0, 3);
   return (
-    <section className="flex h-[268px] shrink-0 w-full flex-col gap-3 rounded-2xl border border-[#e2e4ea] bg-white/95 p-4 shadow-[0_8px_24px_rgba(0,0,0,0.06)] backdrop-blur-md">
+    <section className="display-ranking-panel display-ranking-top">
       <div className="flex h-[22px] w-full items-center justify-between">
-        <h2 className="text-base font-bold text-[#1f1f1f]">课堂表现 TOP 榜</h2>
+        <h2 className="text-base font-bold text-[#1c2940]">课堂表现</h2>
+        <span className="text-[11px] text-slate-400">TOP 3</span>
       </div>
       {top3.length ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center gap-1 px-0 py-1">
+        <div className="flex min-h-0 flex-1 flex-col items-center gap-4 py-2">
           {top3[0] ? (
-            <div className="flex h-[112px] flex-col items-center gap-[2px]">
-              <CrownOutlined className="text-[18px] text-[#faad14]" aria-hidden="true" />
+            <button
+              onClick={() => onSelectStudent(top3[0].studentId)}
+              className="flex flex-col items-center gap-1"
+            >
               <Avatar rank={1} />
               <span className="text-sm font-bold text-[#1f1f1f]">{top3[0].name}</span>
               <span className="rounded-full bg-[#fff7e6] px-2 py-0.5 text-[11px] font-bold tabular-nums text-[#d46b08]">
                 {formatScore(top3[0].score)}
               </span>
-            </div>
+            </button>
           ) : null}
-          <div className="flex h-[74px] w-full items-center justify-center gap-[44px]">
+          <div className="flex w-full items-center justify-around gap-6">
             {top3[1] ? (
-              <div className="flex h-[74px] w-20 flex-col items-center gap-[2px]">
+              <button
+                onClick={() => onSelectStudent(top3[1].studentId)}
+                className="flex w-24 flex-col items-center gap-1"
+              >
                 <Avatar rank={2} />
                 <span className="text-xs font-bold text-[#1f1f1f]">{top3[1].name}</span>
-                <span className="text-[11px] font-bold tabular-nums text-[#d46b08]">{formatScore(top3[1].score)}</span>
-              </div>
-            ) : <div className="w-20" />}
+                <span className="text-[11px] font-bold tabular-nums text-[#d46b08]">
+                  {formatScore(top3[1].score)}
+                </span>
+              </button>
+            ) : (
+              <div className="w-20" />
+            )}
             {top3[2] ? (
-              <div className="flex h-[74px] w-20 flex-col items-center gap-[2px]">
+              <button
+                onClick={() => onSelectStudent(top3[2].studentId)}
+                className="flex w-24 flex-col items-center gap-1"
+              >
                 <Avatar rank={3} />
                 <span className="text-xs font-bold text-[#1f1f1f]">{top3[2].name}</span>
-                <span className="text-[11px] font-bold tabular-nums text-[#d46b08]">{formatScore(top3[2].score)}</span>
-              </div>
-            ) : <div className="w-20" />}
+                <span className="text-[11px] font-bold tabular-nums text-[#d46b08]">
+                  {formatScore(top3[2].score)}
+                </span>
+              </button>
+            ) : (
+              <div className="w-20" />
+            )}
           </div>
         </div>
-      ) : <div className="flex flex-1 items-center justify-center text-sm text-[#8c8c8c]">暂无排名数据</div>}
+      ) : (
+        <div className="flex flex-1 items-center justify-center text-sm text-[#8c8c8c]">
+          暂无排名数据
+        </div>
+      )}
     </section>
   );
 }
 
-function ProgressPanel({ ranking }: { ranking: DisplayBootstrap["ranking"] }): React.ReactElement {
+function ProgressPanel({ ranking }: { ranking: DisplayBootstrap['ranking'] }): React.ReactElement {
   return (
-    <section className="flex shrink-0 w-full flex-col gap-3 rounded-2xl border border-[#e2e4ea] bg-white/95 p-4 shadow-[0_8px_24px_rgba(0,0,0,0.06)] backdrop-blur-md">
+    <section className="display-ranking-panel display-ranking-progress">
       <div className="flex h-5 w-full items-center justify-between">
-        <h2 className="text-sm font-bold text-[#1f1f1f]">进步跃升榜 (较上周)</h2>
+        <h2 className="text-sm font-bold text-[#1c2940]">进步跃升</h2>
+        <span className="text-[11px] text-slate-400">较上周</span>
       </div>
       {ranking.progress.length ? (
         <div className="flex w-full flex-col gap-1.5">
           {ranking.progress.slice(0, 10).map((item, index) => (
-            <div key={item.studentId} className="flex h-9 w-full items-center justify-between rounded-lg border border-[#f0f0f0] bg-[#fafafa] px-3 py-2">
+            <div
+              key={item.studentId}
+              className="flex min-h-9 w-full items-center justify-between py-1"
+            >
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold tabular-nums text-[#8c8c8c]">{String(index + 1).padStart(2, "0")}</span>
+                <span className="text-[11px] font-bold tabular-nums text-[#8c8c8c]">
+                  {String(index + 1).padStart(2, '0')}
+                </span>
                 <span className="text-[13px] font-bold text-[#1f1f1f]">{item.name}</span>
               </div>
-              <div className="flex h-5 items-center gap-1.5 rounded border border-[#b7eb8f] bg-[#f6ffed] px-1.5 py-0.5 text-[11px] font-bold text-[#52c41a]">
+              <div className="flex h-5 items-center gap-1 text-xs font-medium text-[#25a887]">
                 <ArrowUpOutlined className="text-[11px]" aria-hidden="true" />
-                <span>{Math.abs(item.change)} 名</span>
+                <span>+{Math.abs(item.change)}</span>
               </div>
             </div>
           ))}
         </div>
-      ) : <div className="flex flex-1 items-center justify-center text-sm text-[#8c8c8c]">暂无进步数据</div>}
+      ) : (
+        <div className="flex flex-1 items-center justify-center text-sm text-[#8c8c8c]">
+          暂无进步数据
+        </div>
+      )}
     </section>
   );
 }
@@ -705,6 +834,8 @@ export function DisplaySurface(): React.ReactElement {
   const [data, setData] = useState<DisplayBootstrap | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<Highlight>(null);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [seatFitScale, setSeatFitScale] = useState(1);
   const [scoreFeedbacks, setScoreFeedbacks] = useState<Map<string, ScoreFeedback>>(new Map());
   const [zoom, setZoom] = useState(100);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -717,7 +848,9 @@ export function DisplaySurface(): React.ReactElement {
   const seatUpdateTimer = useRef<number | null>(null);
   const scoreFeedbackTimerRef = useRef<number | null>(null);
   const announcementActiveRef = useRef(false);
-  const announcementViewRef = useRef<{ zoom: number; offset: { x: number; y: number } } | null>(null);
+  const announcementViewRef = useRef<{ zoom: number; offset: { x: number; y: number } } | null>(
+    null,
+  );
   const seatUpdatePendingRef = useRef(false);
   const dataRef = useRef<DisplayBootstrap | null>(null);
   dataRef.current = data;
@@ -726,7 +859,7 @@ export function DisplaySurface(): React.ReactElement {
   useEffect(() => {
     const session = getDisplaySession();
     if (!session) {
-      navigate("/display/bind", { replace: true });
+      navigate('/display/bind', { replace: true });
       return;
     }
 
@@ -734,23 +867,23 @@ export function DisplaySurface(): React.ReactElement {
     let startupReported = false;
     const reportDisplayEvent = (
       eventName: string,
-      result: "SUCCESS" | "FAILURE" = "SUCCESS",
-      module = "runtime",
+      result: 'SUCCESS' | 'FAILURE' = 'SUCCESS',
+      module = 'runtime',
       errorCode?: string,
     ) => {
       void reportUsageEventBestEffort(
         (input, options) => service.reportUsageEvent(input, options),
         {
           eventName,
-          clientType: "DISPLAY",
+          clientType: 'DISPLAY',
           result,
           module,
           page: window.location.pathname,
-          appVersion: import.meta.env.VITE_APP_VERSION || "web",
+          appVersion: import.meta.env.VITE_APP_VERSION || 'web',
           browser: navigator.userAgent,
           errorCode,
         },
-        { auth: "display" },
+        { auth: 'display' },
       );
     };
     const refresh = async () => {
@@ -761,23 +894,23 @@ export function DisplaySurface(): React.ReactElement {
           setLoadError(null);
           if (!startupReported) {
             startupReported = true;
-            reportDisplayEvent("display.started", "SUCCESS", "display");
+            reportDisplayEvent('display.started', 'SUCCESS', 'display');
           }
         }
       } catch (error) {
         if (stopped) return;
         if (error instanceof ClassroomServiceError && error.status === 401) {
           clearDisplaySession();
-          navigate("/display/bind", { replace: true });
+          navigate('/display/bind', { replace: true });
           return;
         }
         reportDisplayEvent(
-          "display.load_failed",
-          "FAILURE",
-          "display",
-          error instanceof ClassroomServiceError ? error.code : "DISPLAY_LOAD_FAILED",
+          'display.load_failed',
+          'FAILURE',
+          'display',
+          error instanceof ClassroomServiceError ? error.code : 'DISPLAY_LOAD_FAILED',
         );
-        setLoadError(error instanceof Error ? error.message : "大屏数据加载失败");
+        setLoadError(error instanceof Error ? error.message : '大屏数据加载失败');
       }
     };
 
@@ -837,13 +970,13 @@ export function DisplaySurface(): React.ReactElement {
         seatUpdatePendingRef.current = true;
         setNameAnimationTargets(nextNames);
         setNameAnimationTrigger((trigger) => trigger + 1);
-      notification.open({
-        key: SEAT_UPDATE_NOTIFICATION_KEY,
-        title: "正在更新座位",
-        description: "座位信息即将完成更新",
-        duration: 0,
-        placement: "top",
-      });
+        notification.open({
+          key: SEAT_UPDATE_NOTIFICATION_KEY,
+          title: '正在更新座位',
+          description: '座位信息即将完成更新',
+          duration: 0,
+          placement: 'top',
+        });
         if (seatUpdateTimer.current !== null) window.clearTimeout(seatUpdateTimer.current);
         seatUpdateTimer.current = window.setTimeout(() => {
           if (stopped) return;
@@ -856,54 +989,67 @@ export function DisplaySurface(): React.ReactElement {
         if (stopped) return;
         if (error instanceof ClassroomServiceError && error.status === 401) {
           clearDisplaySession();
-          navigate("/display/bind", { replace: true });
+          navigate('/display/bind', { replace: true });
           return;
         }
-        setLoadError(error instanceof Error ? error.message : "大屏数据加载失败");
+        setLoadError(error instanceof Error ? error.message : '大屏数据加载失败');
       }
     };
 
     void refresh();
     const heartbeatTimer = window.setInterval(() => {
-      if (startupReported && document.visibilityState === "visible") {
-        reportDisplayEvent("display.heartbeat");
+      if (startupReported && document.visibilityState === 'visible') {
+        reportDisplayEvent('display.heartbeat');
       }
     }, DISPLAY_HEARTBEAT_INTERVAL_MS);
     let lastRealtimeStatus = realtime.getStatus();
     const unsubscribeRealtimeStatus = realtime.subscribeStatus((status) => {
-      const reconnected = status === "CONNECTED" && lastRealtimeStatus !== "CONNECTED";
-      const disconnected = status === "DISCONNECTED" && lastRealtimeStatus !== "DISCONNECTED";
+      const reconnected = status === 'CONNECTED' && lastRealtimeStatus !== 'CONNECTED';
+      const disconnected = status === 'DISCONNECTED' && lastRealtimeStatus !== 'DISCONNECTED';
       lastRealtimeStatus = status;
       if (reconnected) void refresh();
       if (disconnected) {
         reportDisplayEvent(
-          "display.realtime_disconnected",
-          "FAILURE",
-          "realtime",
-          "REALTIME_DISCONNECTED",
+          'display.realtime_disconnected',
+          'FAILURE',
+          'realtime',
+          'REALTIME_DISCONNECTED',
         );
       }
     });
     const subscriptions = [
-      realtime.subscribe("SCORE_CHANGED", session.classId, (event) => {
-        if (event.payload.studentId && typeof event.payload.delta === "number" && event.payload.delta !== 0) {
+      realtime.subscribe('SCORE_CHANGED', session.classId, (event) => {
+        if (
+          event.payload.studentId &&
+          typeof event.payload.delta === 'number' &&
+          event.payload.delta !== 0
+        ) {
           showScoreFeedback(event.payload.studentId, event.payload.delta);
         }
         void refresh();
       }),
-      realtime.subscribe("SCORE_REVERTED", session.classId, (event) => {
+      realtime.subscribe('SCORE_REVERTED', session.classId, (event) => {
         showScoreFeedback(event.payload.studentId, event.payload.delta);
         void refresh();
       }),
-      ...(['RANKING_CHANGED', 'DISPLAY_CONFIG_CHANGED', 'SCHEDULE_CHANGED'] as ClassEventType[])
-        .map((type) => realtime.subscribe(type, session.classId, () => void refresh())),
+      ...(
+        ['RANKING_CHANGED', 'DISPLAY_CONFIG_CHANGED', 'SCHEDULE_CHANGED'] as ClassEventType[]
+      ).map((type) => realtime.subscribe(type, session.classId, () => void refresh())),
     ];
     subscriptions.push(
-      realtime.subscribe("SEAT_LAYOUT_CHANGED", session.classId, () => void refreshAfterSeatAnimation()),
-      realtime.subscribe("STUDENT_CHANGED", session.classId, () => void refreshAfterSeatAnimation()),
+      realtime.subscribe(
+        'SEAT_LAYOUT_CHANGED',
+        session.classId,
+        () => void refreshAfterSeatAnimation(),
+      ),
+      realtime.subscribe(
+        'STUDENT_CHANGED',
+        session.classId,
+        () => void refreshAfterSeatAnimation(),
+      ),
     );
     subscriptions.push(
-      realtime.subscribe("RANDOM_PICKED", session.classId, (event) => {
+      realtime.subscribe('RANDOM_PICKED', session.classId, (event) => {
         if (announcementActiveRef.current) return;
         if (randomPickMarqueeTimer.current !== null) {
           window.clearInterval(randomPickMarqueeTimer.current);
@@ -915,8 +1061,9 @@ export function DisplaySurface(): React.ReactElement {
         }
         if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
 
-        const occupiedStudents = (dataRef.current?.layout.seats ?? [])
-          .flatMap((seat) => (seat.student ? [seat.student] : []));
+        const occupiedStudents = (dataRef.current?.layout.seats ?? []).flatMap((seat) =>
+          seat.student ? [seat.student] : [],
+        );
         const selectedStudent = {
           studentId: event.payload.studentId,
           name: event.payload.name,
@@ -935,9 +1082,7 @@ export function DisplaySurface(): React.ReactElement {
         let hopCount = 0;
         randomPickMarqueeTimer.current = window.setInterval(() => {
           hopCount += 1;
-          const student = occupiedStudents[
-            Math.floor(Math.random() * occupiedStudents.length)
-          ];
+          const student = occupiedStudents[Math.floor(Math.random() * occupiedStudents.length)];
           if (student) {
             setHighlight({ studentId: student.id, name: student.name });
           }
@@ -964,10 +1109,10 @@ export function DisplaySurface(): React.ReactElement {
         }, RANDOM_PICK_ANIMATION_DURATION_MS);
         void refresh();
       }),
-      realtime.subscribe("TEACHER_CONNECTED", session.classId, (event) => {
+      realtime.subscribe('TEACHER_CONNECTED', session.classId, (event) => {
         notification.open({
           title: `${event.payload.teacherName}老师已连接`,
-          placement: "top",
+          placement: 'top',
         });
       }),
     );
@@ -978,10 +1123,13 @@ export function DisplaySurface(): React.ReactElement {
       unsubscribeRealtimeStatus();
       subscriptions.forEach((unsubscribe) => unsubscribe());
       if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
-      if (randomPickMarqueeTimer.current !== null) window.clearInterval(randomPickMarqueeTimer.current);
-      if (randomPickSettleTimer.current !== null) window.clearTimeout(randomPickSettleTimer.current);
+      if (randomPickMarqueeTimer.current !== null)
+        window.clearInterval(randomPickMarqueeTimer.current);
+      if (randomPickSettleTimer.current !== null)
+        window.clearTimeout(randomPickSettleTimer.current);
       if (seatUpdateTimer.current !== null) window.clearTimeout(seatUpdateTimer.current);
-      if (scoreFeedbackTimerRef.current !== null) window.clearTimeout(scoreFeedbackTimerRef.current);
+      if (scoreFeedbackTimerRef.current !== null)
+        window.clearTimeout(scoreFeedbackTimerRef.current);
       scoreFeedbackTimerRef.current = null;
       setScoreFeedbacks(new Map());
       seatUpdatePendingRef.current = false;
@@ -992,18 +1140,22 @@ export function DisplaySurface(): React.ReactElement {
   if (!data) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#f4f5f8] text-sm text-[#667085]">
-        {loadError ?? "正在加载班级大屏…"}
+        {loadError ?? '正在加载班级大屏…'}
       </main>
     );
   }
 
-  const highlightedStudent = highlight && !data.layout.seats.some((seat) => seat.student?.id === highlight.studentId) ? highlight : null;
+  const highlightedStudent =
+    highlight && !data.layout.seats.some((seat) => seat.student?.id === highlight.studentId)
+      ? highlight
+      : null;
 
   return (
     <main
-      className="relative h-screen w-full overflow-hidden bg-[#f4f5f8] text-[#1f1f1f] select-none"
+      className="display-surface relative h-screen w-full overflow-hidden bg-[#f3f5f8] text-[#1f1f1f] select-none"
       style={{
-        fontFamily: '"Noto Sans SC", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
+        fontFamily:
+          '"Noto Sans SC", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
       }}
     >
       {/* 1. Fullscreen seating canvas (occupies full screen without margin/padding to browser edges) */}
@@ -1019,12 +1171,16 @@ export function DisplaySurface(): React.ReactElement {
         nameAnimationTrigger={nameAnimationTrigger}
         nameAnimationTargets={nameAnimationTargets}
         scoreFeedbacks={scoreFeedbacks}
+        onSelectStudent={setSelectedStudentId}
+        selectedStudentId={selectedStudentId}
+        onFitScaleChange={setSeatFitScale}
       />
 
       {/* 2. Floating Centered Top Header Bar */}
-      <header className="display-surface__header pointer-events-auto absolute top-5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3.5 rounded-2xl border border-[#e2e4ea] bg-white/95 px-5 py-2.5 shadow-[0_4px_16px_rgba(0,0,0,0.06)] backdrop-blur-md">
-        <h1 className="display-surface__classroom-name shrink-0 text-[18px] font-bold leading-none text-[#1f1f1f]">{data.classroom.name}</h1>
-        <div className="display-surface__header-divider h-4 w-px shrink-0 bg-[#e5e8ee]" />
+      <header className="display-main-header">
+        <h1 className="display-surface__classroom-name shrink-0 text-[18px] font-bold leading-none text-[#1f1f1f]">
+          {data.classroom.name}
+        </h1>
         <CourseTimeline schedule={data.schedule} />
       </header>
 
@@ -1042,10 +1198,32 @@ export function DisplaySurface(): React.ReactElement {
       </div>
 
       {/* 4. Floating Right-Side Ranking Cards (Vertically Centered) */}
-      <aside className="pointer-events-auto absolute top-1/2 right-6 -translate-y-1/2 z-10 flex w-[320px] max-h-[calc(100vh-40px)] flex-col gap-3.5 overflow-y-auto">
-        <TopRankPanel ranking={data.ranking} />
+      <aside className="display-sidebar">
+        <TopRankPanel ranking={data.ranking} onSelectStudent={setSelectedStudentId} />
         <ProgressPanel ranking={data.ranking} />
       </aside>
+      <button
+        className="display-open-scores"
+        onClick={() =>
+          setSelectedStudentId(
+            data.layout.seats.find((seat) => seat.student)?.student?.id ??
+              data.ranking.top3[0]?.studentId ??
+              null,
+          )
+        }
+        disabled={!data.layout.seats.some((seat) => seat.student) && !data.ranking.top3.length}
+      >
+        <BarChartOutlined /> 积分走势
+      </button>
+      {selectedStudentId ? (
+        <DisplayScoreDrawer
+          key={data.classroom.id}
+          bootstrap={data}
+          selectedStudentId={selectedStudentId}
+          onSelectStudent={setSelectedStudentId}
+          onClose={() => setSelectedStudentId(null)}
+        />
+      ) : null}
 
       {/* 5. Highlight / Random Pick Callout */}
       <AnimatePresence>
@@ -1066,13 +1244,15 @@ export function DisplaySurface(): React.ReactElement {
         onHighlightStart={(studentId, name, row, col) => {
           if (!announcementViewRef.current) announcementViewRef.current = { zoom, offset };
           if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
-          if (randomPickMarqueeTimer.current !== null) window.clearInterval(randomPickMarqueeTimer.current);
-          if (randomPickSettleTimer.current !== null) window.clearTimeout(randomPickSettleTimer.current);
+          if (randomPickMarqueeTimer.current !== null)
+            window.clearInterval(randomPickMarqueeTimer.current);
+          if (randomPickSettleTimer.current !== null)
+            window.clearTimeout(randomPickSettleTimer.current);
           setHighlight({ studentId, name });
           setZoom(100);
           setOffset({
-            x: Math.round(((data.classroom.gridCols - 1) / 2 - col) * 96),
-            y: Math.round(((data.classroom.gridRows - 1) / 2 - row) * 96),
+            x: Math.round(((data.classroom.gridCols - 1) / 2 - col) * 112 * seatFitScale),
+            y: Math.round(((data.classroom.gridRows - 1) / 2 - row) * 96 * seatFitScale),
           });
         }}
         onHighlightEnd={() => setHighlight(null)}
