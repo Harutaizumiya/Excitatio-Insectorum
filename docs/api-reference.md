@@ -233,7 +233,8 @@
 | GET  | `/classes/:classId/display-devices`                  | HEAD           | 无                          | 查询设备与在线状态             |
 | POST | `/classes/:classId/display-devices/:deviceId/revoke` | HEAD           | 无                          | 吊销设备和全部凭证             |
 | POST | `/display/auth/token`                                | Public         | `DeviceTokenRequest`        | 长期凭证换取短期 Access Token  |
-| GET  | `/display/bootstrap`                                 | DISPLAY        | 无                          | 获取班级、座位和隐私化排行状态 |
+| GET  | `/display/bootstrap`                                 | DISPLAY        | 无                          | 获取绑定班级、座位和当前榜单   |
+| GET  | `/display/score-trends`                              | DISPLAY        | 无                          | 获取绑定班级的真实积分走势     |
 
 每班最多两个 ACTIVE 大屏设备。在线判断窗口为最近 90 秒。
 

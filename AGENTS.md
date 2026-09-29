@@ -22,7 +22,7 @@
 
 - 前端按 `app`、`features`、`components`、`lib` 分层；业务逻辑放在对应 feature 或 service 中，通用 UI 放在 `components/ui` 或 `components/shared`。
 - `@tanstack/react-query` 管理 server state；页面局部交互、座位编辑草稿、弹窗/Sheet 和大屏显示模式使用 client state。
-- `/admin/*` 遵循 Refine + Ant Design 的管理后台模式；`/teacher/*` 遵循移动优先、Tailwind + shadcn/ui 的课堂操作模式；`/display/*` 遵循远距离可读、低干扰和隐私保护原则。
+- `/admin/*` 遵循 Refine + Ant Design 的管理后台模式；`/teacher/*` 遵循移动优先、Tailwind + shadcn/ui 的课堂操作模式；`/display/*` 遵循远距离可读、低干扰和其他个人信息保护原则。
 - 后端按领域模块组织（auth、classrooms、students、teachers、seating、scores、ranking、schedules、random-pick、realtime 等）。Controller 处理协议和权限入口，Service 承担业务规则，DTO 负责输入校验。
 - 跨领域写操作使用 Prisma transaction；事务成功后再发布 realtime 事件，不能广播可能已回滚的数据。
 - API 具体 Schema 和响应以 Elysia Swagger/OpenAPI 与前端契约为准；修改接口时同步更新校验、测试和相关前端 service。
@@ -33,7 +33,7 @@
 - **严禁在 UI 中出现多余的描述。** 每段文案都必须直接帮助用户完成当前任务；删除重复标题、无行动价值的解释、装饰性提示和实现细节。优先使用清晰的标题、按钮、状态和必要错误信息。
 - 管理后台强调清晰、高信息密度和低学习成本；危险操作必须二次确认。
 - 教师端强调单手操作和少层级；主要点击目标至少 `44×44px`，常用操作尽量在 1～2 次点击内完成。
-- 大屏使用大字号、高对比和短动画；不得展示学生具体积分、总分、负分次数或倒数排名，避免泄露不必要的个人信息。
+- 大屏使用大字号、高对比和短动画；学生积分、总分、负分次数及排名不作为隐私字段禁止展示。大屏仍须遵守设备绑定的班级边界和其他个人信息保护要求。
 - 加载、空状态和错误状态使用现有共享组件与页面模式；错误反馈要说明下一步行动，不重复堆叠背景说明。
 - 优先复用现有组件、tokens、hooks、service 和 query key；新增抽象前先确认已有实现不能满足需求。
 - 页面文案、交互和响应式行为以 `docs/06-ui-design.md` 为基线；若实际代码与文档不一致，先判断是否为有意变更，再同步必要文档。

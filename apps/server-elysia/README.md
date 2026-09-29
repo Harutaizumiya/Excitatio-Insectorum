@@ -20,4 +20,4 @@ claims、Prisma schema 和数据库迁移历史与前端契约保持一致。
 
 - Elysia 负责活动构建、开发启动和 Docker 生产入口。
 - 生产环境必须配置真实 `DATABASE_URL`、Redis 和随机 JWT/device secrets；开发环境才允许 Redis 内存回退。
-- 切换前需要按 `docs/07-manual-test-and-acceptance.md` 验证登录、邀请、积分、座位、设备绑定、Socket.IO 断线恢复和大屏隐私字段。
+- 切换前需要按 `docs/07-manual-test-and-acceptance.md` 验证登录、邀请、积分、座位、设备绑定、Socket.IO 断线恢复，以及大屏积分展示和设备班级隔离。
