@@ -29,6 +29,8 @@ export interface AppConfig {
   swaggerEnabled: boolean;
   scoreSettlementCron: string;
   seatRotationCron: string;
+  scoreTrendTermStartDate: string | null;
+  scoreTrendTermEndDate: string | null;
 }
 
 const nodeEnv = process.env.NODE_ENV || 'development';
@@ -74,6 +76,32 @@ if (isProduction && !process.env.CORS_ORIGIN) {
   throw new Error('CORS_ORIGIN must be configured in production');
 }
 
+const scoreTrendTermStartDate = process.env.SCORE_TREND_TERM_START_DATE?.trim() || null;
+const scoreTrendTermEndDate = process.env.SCORE_TREND_TERM_END_DATE?.trim() || null;
+const isCalendarDate = (value: string | null): value is string => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+};
+
+if (Boolean(scoreTrendTermStartDate) !== Boolean(scoreTrendTermEndDate)) {
+  throw new Error('SCORE_TREND_TERM_START_DATE and SCORE_TREND_TERM_END_DATE must be set together');
+}
+if (
+  scoreTrendTermStartDate &&
+  scoreTrendTermEndDate &&
+  (!isCalendarDate(scoreTrendTermStartDate) ||
+    !isCalendarDate(scoreTrendTermEndDate) ||
+    scoreTrendTermStartDate > scoreTrendTermEndDate)
+) {
+  throw new Error('Score trend term dates must be valid YYYY-MM-DD calendar dates');
+}
+
 export const config: AppConfig = {
   port: Number(process.env.PORT || 3000),
   nodeEnv,
@@ -100,4 +128,6 @@ export const config: AppConfig = {
   swaggerEnabled: process.env.SWAGGER_ENABLED !== 'false',
   scoreSettlementCron: process.env.SCORE_SETTLEMENT_CRON || '0 0 1 * *',
   seatRotationCron: process.env.SEAT_ROTATION_CRON || '5 0 * * 1',
+  scoreTrendTermStartDate,
+  scoreTrendTermEndDate,
 };

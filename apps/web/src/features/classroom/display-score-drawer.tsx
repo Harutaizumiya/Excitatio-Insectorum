@@ -5,6 +5,7 @@ import type { DisplayBootstrap } from '@/lib/domain';
 import {
   SCORE_RANGES,
   nearestRecord,
+  rangeEnd,
   rangeStart,
   scoreRange,
   type ScoreRange,
@@ -262,13 +263,19 @@ export function DisplayScoreDrawer({
   onSelectStudent,
   onClose,
   history,
+  historyLoading = false,
+  historyError = false,
+  onRetry,
 }: {
   bootstrap: DisplayBootstrap;
   selectedStudentId: string;
   onSelectStudent: (id: string) => void;
   onClose: () => void;
-  /** No history API exists for display devices yet. Only an explicit development fixture supplies this. */
+  /** Real display history or the isolated verification fixture. */
   history?: ScoreTimelineData;
+  historyLoading?: boolean;
+  historyError?: boolean;
+  onRetry?: () => void;
 }) {
   const realtime = useRealtimeClient();
   const [status, setStatus] = useState(realtime.getStatus());
@@ -305,16 +312,20 @@ export function DisplayScoreDrawer({
   const selected = students.find((student) => student.id === selectedStudentId) ?? students[0];
   const now = safeHistory?.asOf ?? Date.now();
   const start = rangeStart(range, now, safeHistory?.termStartAt);
+  const end = rangeEnd(range, now, safeHistory?.termEndAt);
   const source = safeHistory?.students.find((student) => student.id === selected?.id);
   const series = useMemo(
-    () => (source && start !== null ? scoreRange(source, start, now) : null),
-    [source, start, now],
+    () => (source && start !== null ? scoreRange(source, start, end, safeHistory?.periods) : null),
+    [source, start, end, safeHistory?.periods],
   );
   const weekStart = rangeStart('本周', now)!;
   const weekly = useMemo(
     () =>
       new Map(
-        safeHistory?.students.map((student) => [student.id, scoreRange(student, weekStart, now)]),
+        safeHistory?.students.map((student) => [
+          student.id,
+          scoreRange(student, weekStart, now, safeHistory.periods),
+        ]),
       ),
     [safeHistory, weekStart, now],
   );
@@ -324,9 +335,9 @@ export function DisplayScoreDrawer({
     const before = safeHistory.classAverage.filter((p) => p.at < from).at(-1);
     return [
       ...(before ? [{ at: from, score: before.score }] : []),
-      ...safeHistory.classAverage.filter((p) => p.at >= from && p.at <= now),
+      ...safeHistory.classAverage.filter((p) => p.at >= from && p.at <= end),
     ];
-  }, [safeHistory, series, compare, now]);
+  }, [safeHistory, series, compare, end]);
   const stopped = paused || hovering || focused || reducedMotion || Boolean(record);
   useEffect(() => realtime.subscribeStatus(setStatus), [realtime]);
   useEffect(() => {
@@ -369,11 +380,11 @@ export function DisplayScoreDrawer({
     setRecord(null);
     onSelectStudent(id);
   };
-  const current = record?.score ?? selected?.score;
+  const available = Boolean(safeHistory);
+  const current = record?.score ?? (available ? series?.current : selected?.score);
   const delta = series ? (record?.score ?? series.current) - series.initial : null;
   const percent =
     series && series.initial > 0 && delta !== null ? (delta / series.initial) * 100 : null;
-  const available = Boolean(safeHistory);
   return (
     <dialog
       ref={dialogRef}
@@ -508,15 +519,19 @@ export function DisplayScoreDrawer({
           <div className="score-updated">
             {series?.points.length ? (
               <span>
-                {date(series.points[0].at)} — {date(now)}
+                {date(series.points[0].at)} — {date(end)}
               </span>
             ) : null}
             <small>
-              {!history && status !== 'CONNECTED'
-                ? '更新暂停'
-                : safeHistory
-                  ? `更新于 ${date(now, true)}`
-                  : ''}
+              {historyLoading
+                ? '加载中'
+                : historyError
+                  ? '更新失败'
+                  : !history && status !== 'CONNECTED'
+                    ? '更新暂停'
+                    : safeHistory
+                      ? `更新于 ${date(now, true)}`
+                      : ''}
             </small>
           </div>
         </div>
@@ -545,7 +560,22 @@ export function DisplayScoreDrawer({
             班级均分
           </label>
         </div>
-        {!available ? (
+        {!available && historyLoading ? (
+          <div className="score-empty" role="status">
+            历史积分加载中
+          </div>
+        ) : !available && historyError ? (
+          <div className="score-empty" role="status">
+            <strong>历史积分加载失败</strong>
+            <button
+              className="rounded-md border border-[#4b4b53] bg-[#29292e] px-4 py-2 text-[#f0f0f3] disabled:opacity-50"
+              onClick={onRetry}
+              disabled={historyLoading}
+            >
+              重试
+            </button>
+          </div>
+        ) : !available ? (
           <div className="score-empty" role="status">
             <strong>历史积分暂不可用</strong>
             <span>当前可查看学生最新积分</span>

@@ -25,9 +25,9 @@ const periodSelect = {
 
 type PeriodRow = Prisma.ScorePeriodGetPayload<{ select: typeof periodSelect }>;
 
-const SCORE_INITIAL_VALUE = 100;
+export const SCORE_INITIAL_VALUE = 100;
 
-function getTaipeiMonthPeriod(reference: Date): { startAt: Date; endAt: Date } {
+export function getTaipeiMonthPeriod(reference: Date): { startAt: Date; endAt: Date } {
   if (Number.isNaN(reference.getTime())) throw new Error('Invalid reference date');
   const taipeiDate = new Date(reference.getTime() + 8 * 60 * 60 * 1000);
   const year = taipeiDate.getUTCFullYear();

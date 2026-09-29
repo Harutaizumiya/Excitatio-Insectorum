@@ -25,6 +25,7 @@ import type {
   DeviceTokenInput,
   DeviceTokenResult,
   DisplayBootstrap,
+  DisplayScoreTimeline,
   DisplayDevice,
   Dormitory,
   FeedbackCreateResult,
@@ -939,6 +940,20 @@ export class ApiClassroomService implements ClassroomService {
     }
 
     return bootstrap;
+  }
+
+  async getDisplayScoreTimeline(deviceId: string, classId: string): Promise<DisplayScoreTimeline> {
+    const session = getDisplaySession();
+    if (!session || session.deviceId !== deviceId) {
+      throw new ClassroomServiceError('DISPLAY_SESSION_MISSING', '请先完成大屏绑定', 401);
+    }
+    const timeline = await this.request<DisplayScoreTimeline>('/display/score-trends', undefined, {
+      auth: 'display',
+    });
+    if (timeline.classId !== classId) {
+      throw new ClassroomServiceError('DISPLAY_CLASS_MISMATCH', '大屏班级信息不匹配', 403);
+    }
+    return timeline;
   }
 
   async listAnnouncements(classId: string): Promise<Announcement[]> {

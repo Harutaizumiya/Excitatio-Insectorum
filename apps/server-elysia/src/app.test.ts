@@ -22,6 +22,14 @@ test('protected routes preserve the standard unauthorized envelope', async () =>
   assert.ok(body.requestId);
 });
 
+test('display score trends requires an active display-device token', async () => {
+  const response = await app.handle(new Request('http://localhost/api/v1/display/score-trends'));
+  assert.equal(response.status, 401);
+  const body = (await response.json()) as { code: string; requestId: string };
+  assert.equal(body.code, 'DISPLAY_DEVICE_REVOKED');
+  assert.ok(body.requestId);
+});
+
 test('invitation preview is public but rejects an unknown invitation token', async () => {
   const response = await app.handle(
     new Request('http://localhost/api/v1/auth/invitations/unknown-token/preview'),

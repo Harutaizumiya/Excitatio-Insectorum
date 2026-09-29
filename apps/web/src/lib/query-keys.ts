@@ -25,6 +25,8 @@ export const classroomQueryKeys = {
   displayDevices: (classId: string) => ['classrooms', classId, 'display-devices'] as const,
   announcements: (classId: string) => ['classrooms', classId, 'announcements'] as const,
   displayBootstrap: (deviceId: string) => ['display', deviceId, 'bootstrap'] as const,
+  displayScoreTimeline: (classId: string, deviceId: string) =>
+    ['display', classId, deviceId, 'score-trends'] as const,
   bindingSession: (bindingSessionId: string) =>
     ['display', 'binding-session', bindingSessionId] as const,
 };

@@ -3,6 +3,7 @@ import { prisma } from '../../plugins/prisma';
 import { authPlugin } from '../../plugins/auth';
 import { BusinessError } from '../../plugins/error-handler';
 import { displaysService } from './displays.service';
+import { displayScoreHistoryService } from './display-score-history.service';
 
 async function verifyHeadTeacher(classId: string, userId: string) {
   const link = await prisma.classTeacher.findFirst({
@@ -60,6 +61,20 @@ export const displaysController = new Elysia()
           requireDisplayDevice: true,
           detail: {
             summary: '获取大屏完整初始状态',
+            tags: ['Display'],
+            security: [{ 'access-token': [] }],
+          },
+        },
+      )
+      .get(
+        '/score-trends',
+        async ({ displayDevice }) => ({
+          data: await displayScoreHistoryService.getTimeline(displayDevice!.classId),
+        }),
+        {
+          requireDisplayDevice: true,
+          detail: {
+            summary: '获取当前大屏绑定班级的真实积分走势',
             tags: ['Display'],
             security: [{ 'access-token': [] }],
           },

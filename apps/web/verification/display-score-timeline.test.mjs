@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   rangeStart,
+  rangeEnd,
   scoreRange,
   nearestRecord,
 } from '../src/features/classroom/display-score-timeline.ts';
@@ -17,6 +18,8 @@ test('term boundary is never guessed', () => {
   assert.equal(rangeStart('本学期', 100), null);
   assert.equal(rangeStart('本学期', 100, 20), 20);
   assert.equal(rangeStart('全部', 100), -Infinity);
+  assert.equal(rangeEnd('本学期', 100, 90), 89);
+  assert.equal(rangeEnd('本周', 100, 90), 100);
 });
 const student = {
   id: 's',
@@ -64,4 +67,43 @@ test('record selection uses elapsed time rather than array spacing', () => {
   assert.equal(nearestRecord(student.records, 45)?.id, 'b');
   assert.equal(nearestRecord(student.records, 65)?.id, 'c');
   assert.equal(nearestRecord([], 1), null);
+});
+
+test('period resets are baselines, not ledger records, when building a multi-period range', () => {
+  const historyStudent = {
+    ...student,
+    records: [
+      { id: 'sep', periodId: 'sep', at: 90, score: 110, delta: 10, reason: '加分' },
+      { id: 'oct', periodId: 'oct', at: 110, score: 103, delta: 3, reason: '加分' },
+    ],
+  };
+  const periods = [
+    { id: 'sep', startAt: 0, endAt: 100, initialScore: 100 },
+    { id: 'oct', startAt: 100, endAt: 200, initialScore: 100 },
+  ];
+  const all = scoreRange(historyStudent, -Infinity, 150, periods);
+  assert.equal(all.initial, 100);
+  assert.equal(all.current, 103);
+  assert.equal(all.delta, 3);
+  assert.deepEqual(
+    all.points.map(({ at, score }) => [at, score]),
+    [
+      [0, 100],
+      [90, 110],
+      [100, 100],
+      [110, 103],
+      [150, 103],
+    ],
+  );
+  assert.deepEqual(
+    all.records.map(({ id }) => id),
+    ['sep', 'oct'],
+  );
+  const midMonth = scoreRange(historyStudent, 95, 150, periods);
+  assert.equal(midMonth.initial, 110);
+  assert.equal(midMonth.delta, -7);
+  assert.deepEqual(
+    midMonth.records.map(({ id }) => id),
+    ['oct'],
+  );
 });
