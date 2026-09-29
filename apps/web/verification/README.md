@@ -12,11 +12,13 @@ node --experimental-strip-types --test apps/web/verification/display-score-timel
 - 模拟页关闭抽屉后可选择历史不可用、全班无记录、班级边界不匹配，再重新打开。顾清和的期初为 0，选择“全部”验证百分比隐藏；苏沐晴没有流水，不能出现虚假走势。
 - 图表按住拖动查看记录，松开恢复最新值；键盘左右键/Home/End 提供同样记录状态，移出焦点恢复。滚动条不会改变主图学生，支持暂停/继续和手动滚动。
 
-## 交付边界
+## 生产数据边界
 
-真实 `/display/bootstrap` 只提供座位学生、前三名当前积分及课表。当前没有设备身份可访问的历史流水、完整全班名册、学期开始时间或各时间点班级均分接口。因此真实模式仅交付浅色主屏、真实当前积分、学生切换和明确的历史不可用状态。区间曲线、净变化/百分比、完整排名与均分比较只在开发 fixture 中验收，不代表真实历史功能已接通。
+`/display/bootstrap` 仍负责座位、当前榜单和课表；已实现的 `GET /api/v1/display/score-trends` 仅接受有效大屏设备 token，并从 token 读取班级。响应按已保存的周期期初及现有每月 100 分默认期初回放真实积分流水（含撤销行），为当前 ACTIVE 名单计算历史均分。没有流水时不生成积分曲线。
 
-本次没有新增 API、数据库模型或迁移，也没有改动生产配置。后续接入历史须由设备鉴权的服务端提供可信累计快照及统计口径。
+“本学期”依赖服务端 `SCORE_TREND_TERM_START_DATE` / `SCORE_TREND_TERM_END_DATE` 两个 Asia/Taipei 日期环境变量；结束日按包含全天处理。当前确认日期为 `2026-09-01` 至 `2027-01-31`。部署环境必须设置这两个值；未设置时其他范围仍可用，“本学期”显示无学期数据。
+
+`/verification/display-trends.html` 仍使用隔离模拟数据，只用于复验交互状态，不进入生产页面也不代替真实 API 联调。
 
 ## 2026-09-27 本地交接
 
@@ -28,7 +30,7 @@ node --experimental-strip-types --test apps/web/verification/display-score-timel
 - 截图目录：`C:/Users/Haruta/AppData/Local/Temp/display-ui-verification/`。主屏 `main-api-1280.png`、`main-api-1920-final.png`；真实抽屉 `drawer-api-1280.png`、`drawer-api-1920.png`；记录浮层 `drawer-record-1280.png`；fixture 关闭状态 `fixture-closed-1280.png`。
 - 1280×720：页面高 720；侧栏可视/内容高均 570；抽屉可视/内容高均 687，统计底部 704。1920×1080：页面高 1080；侧栏可视/内容高均 892；抽屉可视/内容高均 799，统计底部 1056。最终文件使用视口截图。
 
-## 检查
+## 2026-09-27 原 UI 交接检查
 
 - `pnpm --filter @repo/web typecheck`：通过。
 - `pnpm --filter @repo/web lint`：通过。
@@ -38,4 +40,10 @@ node --experimental-strip-types --test apps/web/verification/display-score-timel
 - 浏览器已确认真实 98 分显示及历史降级、学生选择、区间空态、零期初百分比隐藏、键盘记录查询/恢复、关闭抽屉布局；原任务独立确认暂停和键盘记录状态。
 - 没有运行根目录后端/数据库测试：本次没有修改这些包。没有宣称真机多指触控、实时点名中间动画或减少动态效果系统偏好经过完整端到端重测；已有实现保留，相关新增路径已做源码检查。
 
-视觉问题与修复记录见项目根目录 `design-qa.md`。原任务于2026-09-27独立确认本轮UI视觉验收通过；真实历史接口仍未接通。
+## 2026-09-29 历史 API 接入
+
+- 大屏走势通过 `GET /api/v1/display/score-trends` 读取；服务端从设备 token 限定班级，返回当前 ACTIVE 学生的流水、期初与班均分时间序列。
+- `SCORE_TREND_TERM_START_DATE=2026-09-01`、`SCORE_TREND_TERM_END_DATE=2027-01-31` 使用台北日历日期；目标部署环境需配置这两个值。
+- 后端类型检查、前后端 lint、前端类型检查/build、49 项 server 测试及 8 项走势范围测试通过。隔离 SQLite 的 Elysia 路由联调验证设备 token、query 班级隔离、用户 token 拒绝、真实流水和班均分；没有访问或迁移旧默认数据库。
+
+视觉问题与修复记录见项目根目录 `design-qa.md`。原任务于2026-09-27独立确认 UI 视觉验收通过；本轮历史数据 API 接入结果见上方 2026-09-29 记录。

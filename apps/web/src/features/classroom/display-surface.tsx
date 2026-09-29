@@ -2,6 +2,7 @@
 
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { App as AntApp } from 'antd';
 import {
@@ -22,6 +23,7 @@ import {
   type ClassEventType,
   type DisplayBootstrap,
   type Seat,
+  classroomQueryKeys,
 } from '@/lib';
 import { clearDisplaySession, getDisplaySession } from '@/lib/session';
 import { SeatCell } from '@/features/admin/seating/seat-cell';
@@ -831,7 +833,9 @@ export function DisplaySurface(): React.ReactElement {
   const navigate = useNavigate();
   const service = useClassroomService();
   const realtime = useRealtimeClient();
+  const queryClient = useQueryClient();
   const [data, setData] = useState<DisplayBootstrap | null>(null);
+  const [displayDeviceId] = useState(() => getDisplaySession()?.deviceId ?? '');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<Highlight>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -855,6 +859,19 @@ export function DisplaySurface(): React.ReactElement {
   const dataRef = useRef<DisplayBootstrap | null>(null);
   dataRef.current = data;
   const { notification } = AntApp.useApp();
+  const historyQuery = useQuery({
+    queryKey: classroomQueryKeys.displayScoreTimeline(data?.classroom.id ?? '', displayDeviceId),
+    queryFn: () => service.getDisplayScoreTimeline(displayDeviceId, data!.classroom.id),
+    enabled: Boolean(selectedStudentId && data && displayDeviceId),
+    refetchInterval: selectedStudentId ? 30_000 : false,
+  });
+
+  useEffect(() => {
+    if (!(historyQuery.error instanceof ClassroomServiceError) || historyQuery.error.status !== 401)
+      return;
+    clearDisplaySession();
+    navigate('/display/bind', { replace: true });
+  }, [historyQuery.error, navigate]);
 
   useEffect(() => {
     const session = getDisplaySession();
@@ -995,6 +1012,13 @@ export function DisplaySurface(): React.ReactElement {
         setLoadError(error instanceof Error ? error.message : '大屏数据加载失败');
       }
     };
+    const invalidateScoreTimeline = () => {
+      const classId = dataRef.current?.classroom.id;
+      if (!classId) return;
+      void queryClient.invalidateQueries({
+        queryKey: classroomQueryKeys.displayScoreTimeline(classId, session.deviceId),
+      });
+    };
 
     void refresh();
     const heartbeatTimer = window.setInterval(() => {
@@ -1026,10 +1050,12 @@ export function DisplaySurface(): React.ReactElement {
         ) {
           showScoreFeedback(event.payload.studentId, event.payload.delta);
         }
+        invalidateScoreTimeline();
         void refresh();
       }),
       realtime.subscribe('SCORE_REVERTED', session.classId, (event) => {
         showScoreFeedback(event.payload.studentId, event.payload.delta);
+        invalidateScoreTimeline();
         void refresh();
       }),
       ...(
@@ -1135,7 +1161,7 @@ export function DisplaySurface(): React.ReactElement {
       seatUpdatePendingRef.current = false;
       notification.destroy(SEAT_UPDATE_NOTIFICATION_KEY);
     };
-  }, [navigate, notification, realtime, service]);
+  }, [navigate, notification, queryClient, realtime, service]);
 
   if (!data) {
     return (
@@ -1220,6 +1246,10 @@ export function DisplaySurface(): React.ReactElement {
           key={data.classroom.id}
           bootstrap={data}
           selectedStudentId={selectedStudentId}
+          history={historyQuery.data}
+          historyLoading={historyQuery.isLoading}
+          historyError={Boolean(historyQuery.error)}
+          onRetry={() => void historyQuery.refetch()}
           onSelectStudent={setSelectedStudentId}
           onClose={() => setSelectedStudentId(null)}
         />
