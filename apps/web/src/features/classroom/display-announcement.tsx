@@ -44,11 +44,15 @@ export function DisplayAnnouncement({
   const playedCount = useRef(0);
   const replyKey = useRef(crypto.randomUUID());
   const soundReadyQueue = useRef<Promise<void>>(Promise.resolve());
+  const soundReadyRef = useRef(soundEnabled);
+  const syncVersion = useRef(0);
+  const inputPending = useRef(false);
   dataRef.current = data;
   callbacks.current = { onHighlightStart, onHighlightEnd, onFinish };
 
   const setSoundReady = useCallback(
     (ready: boolean) => {
+      soundReadyRef.current = ready;
       const request = soundReadyQueue.current.then(() => service.setDisplaySoundReady(ready));
       soundReadyQueue.current = request.then(
         () => undefined,
@@ -74,6 +78,7 @@ export function DisplayAnnouncement({
   };
 
   const clear = () => {
+    syncVersion.current += 1;
     if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
     highlightTimer.current = null;
     stopSpeech();
@@ -191,7 +196,10 @@ export function DisplayAnnouncement({
     if (itemRef.current?.id === next.id) {
       itemRef.current = next;
       setItem(next);
-      if (phaseRef.current === 'INPUT' && !delivery.inputActive) {
+      if (delivery.inputActive && phaseRef.current !== 'INPUT') {
+        stopSpeech();
+        setPhaseBoth('INPUT');
+      } else if (phaseRef.current === 'INPUT' && !delivery.inputActive) {
         setPhaseBoth('SHOW');
         if (playedCount.current < next.repeatCount) speak(next);
       }
@@ -245,15 +253,45 @@ export function DisplayAnnouncement({
     const speechSupported = 'speechSynthesis' in window;
     setSoundEnabled(speechSupported);
     void setSoundReady(speechSupported).catch(() => setSoundEnabled(false));
-    const sync = () =>
+    let disposed = false;
+    let syncing = false;
+    let syncAgain = false;
+    const sync = () => {
+      if (disposed) return;
+      if (syncing) {
+        syncAgain = true;
+        return;
+      }
+      syncing = true;
+      const version = ++syncVersion.current;
       void service
         .getCurrentAnnouncement()
-        .then((next) => adoptRef.current(next))
-        .catch(() => undefined);
+        .then((next) => {
+          if (
+            !disposed &&
+            version === syncVersion.current &&
+            (!inputPending.current ||
+              !next ||
+              !['WAITING_DISPLAY', 'DISPLAYING'].includes(next.status))
+          )
+            adoptRef.current(next);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          syncing = false;
+          if (syncAgain && !disposed) {
+            syncAgain = false;
+            sync();
+          }
+        });
+    };
     sync();
     const unsubEvent = realtime.subscribe('ANNOUNCEMENT_CHANGED', session.classId, sync);
     const unsubStatus = realtime.subscribeStatus((status) => {
-      if (status === 'CONNECTED') sync();
+      if (status === 'CONNECTED') {
+        void setSoundReady(soundReadyRef.current).catch(() => setSoundEnabled(false));
+        sync();
+      }
     });
     const interval = window.setInterval(() => {
       const currentTime = Date.now();
@@ -263,6 +301,7 @@ export function DisplayAnnouncement({
       if (
         current &&
         phaseRef.current === 'SHOW' &&
+        !inputPending.current &&
         delivery?.expiresAt &&
         currentTime >= new Date(delivery.expiresAt).getTime()
       ) {
@@ -272,6 +311,8 @@ export function DisplayAnnouncement({
       } else if (current) sync();
     }, 1_000);
     return () => {
+      disposed = true;
+      syncVersion.current += 1;
       unsubEvent();
       unsubStatus();
       window.clearInterval(interval);
@@ -281,6 +322,7 @@ export function DisplayAnnouncement({
       speechGeneration.current += 1;
       if ('speechSynthesis' in window) window.speechSynthesis.cancel();
       activeRef.current = false;
+      itemRef.current = null;
     };
   }, [service, realtime, activeRef, setSoundReady]);
 
@@ -314,29 +356,45 @@ export function DisplayAnnouncement({
   };
 
   const beginInput = async () => {
-    if (!item) return;
+    if (!item || inputPending.current) return;
+    const id = item.id;
+    inputPending.current = true;
+    syncVersion.current += 1;
     setError('');
     try {
-      const updated = await service.setAnnouncementInput(item.id, 'START');
+      const updated = await service.setAnnouncementInput(id, 'START');
+      if (itemRef.current?.id !== id) return;
       stopSpeech();
       itemRef.current = updated;
       setItem(updated);
       setPhaseBoth('INPUT');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '无法输入回复');
+      if (itemRef.current?.id === id)
+        setError(cause instanceof Error ? cause.message : '无法输入回复');
+    } finally {
+      inputPending.current = false;
+      syncVersion.current += 1;
     }
   };
 
   const returnToDisplay = async () => {
-    if (!item) return;
+    if (!item || inputPending.current) return;
+    const id = item.id;
+    inputPending.current = true;
+    syncVersion.current += 1;
     try {
-      const updated = await service.setAnnouncementInput(item.id, 'RETURN');
+      const updated = await service.setAnnouncementInput(id, 'RETURN');
+      if (itemRef.current?.id !== id) return;
       itemRef.current = updated;
       setItem(updated);
       setPhaseBoth('SHOW');
       if (playedCount.current < updated.repeatCount) speak(updated);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '返回失败，请重试');
+      if (itemRef.current?.id === id)
+        setError(cause instanceof Error ? cause.message : '返回失败，请重试');
+    } finally {
+      inputPending.current = false;
+      syncVersion.current += 1;
     }
   };
 

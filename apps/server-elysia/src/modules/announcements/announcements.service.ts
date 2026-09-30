@@ -273,13 +273,7 @@ export class AnnouncementsService {
   }
 
   async setSoundReady(deviceId: string, ready: boolean) {
-    await prisma.displayDevice.update({
-      where: { id: deviceId },
-      data: {
-        soundReady: ready,
-        soundReadyAt: ready ? new Date() : null,
-      },
-    });
+    await realtimeService.setDisplaySoundReady(deviceId, ready);
     return { ready };
   }
 
@@ -355,36 +349,48 @@ export class AnnouncementsService {
     assertDelivery(delivery);
     if (!delivery.displayedAt || !delivery.expiresAt)
       throw new BusinessError('ANNOUNCEMENT_NOT_DISPLAYED', '大屏尚未展示该喊话', 409);
-    const now = Date.now();
-    if (action === 'START') {
-      if (delivery.pauseUsed || delivery.expiresAt.getTime() <= now)
-        throw new BusinessError('ANNOUNCEMENT_PAUSE_USED', '输入时间已用完', 409);
-      const changed = await prisma.announcementDelivery.updateMany({
-        where: { id: delivery.id, pauseUsed: false },
-        data: {
-          pauseUsed: true,
-          inputStartedAt: new Date(now),
-          inputUntil: null,
-          pausedRemainingMs: delivery.expiresAt.getTime() - now,
-        },
+    const updated = await prisma.$transaction(async (tx) => {
+      // Lock the same announcement row as the timeout/end transitions before reading delivery state.
+      const active = await tx.announcement.updateMany({
+        where: { id, classId, status: 'DISPLAYING' },
+        data: { status: 'DISPLAYING' },
       });
-      if (!changed.count) throw new BusinessError('ANNOUNCEMENT_PAUSE_USED', '输入时间已用完', 409);
-    } else if (delivery.pausedRemainingMs !== null) {
-      const expiresAt =
-        (delivery.inputUntil ? Math.min(now, delivery.inputUntil.getTime()) : now) +
-        delivery.pausedRemainingMs;
-      if (expiresAt <= now) throw new BusinessError('ANNOUNCEMENT_ENDED', '该喊话已结束', 409);
-      await prisma.announcementDelivery.update({
-        where: { id: delivery.id },
-        data: {
-          expiresAt: new Date(expiresAt),
-          inputUntil: null,
-          pausedRemainingMs: null,
-        },
-      });
-    }
+      if (!active.count) throw new BusinessError('ANNOUNCEMENT_ENDED', '该喊话已结束', 409);
+      const live = await tx.announcementDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+      if (!live.displayedAt || !live.expiresAt)
+        throw new BusinessError('ANNOUNCEMENT_NOT_DISPLAYED', '大屏尚未展示该喊话', 409);
+      const now = Date.now();
+      if (action === 'START') {
+        if (live.pauseUsed || live.expiresAt.getTime() <= now)
+          throw new BusinessError('ANNOUNCEMENT_PAUSE_USED', '输入时间已用完', 409);
+        await tx.announcementDelivery.updateMany({
+          where: { id: live.id, pauseUsed: false },
+          data: {
+            pauseUsed: true,
+            inputStartedAt: new Date(now),
+            inputUntil: null,
+            pausedRemainingMs: live.expiresAt.getTime() - now,
+          },
+        });
+      } else if (live.pausedRemainingMs !== null) {
+        const expiresAt =
+          (live.inputUntil ? Math.min(now, live.inputUntil.getTime()) : now) +
+          live.pausedRemainingMs;
+        if (expiresAt <= now) throw new BusinessError('ANNOUNCEMENT_ENDED', '该喊话已结束', 409);
+        await tx.announcementDelivery.update({
+          where: { id: live.id },
+          data: { expiresAt: new Date(expiresAt), inputUntil: null, pausedRemainingMs: null },
+        });
+      }
+      return detail(
+        await tx.announcement.findUniqueOrThrow({
+          where: { id },
+          include: { deliveries: true, reply: true },
+        }),
+      );
+    });
     publish(classId, id);
-    return detail(await this.load(id));
+    return updated;
   }
 
   async reply(
@@ -430,8 +436,8 @@ export class AnnouncementsService {
         const acceptedAt = Date.now();
         const liveInputActive = Boolean(
           live &&
-            (live.pausedRemainingMs !== null ||
-              (live.inputUntil && live.inputUntil.getTime() > acceptedAt)),
+          (live.pausedRemainingMs !== null ||
+            (live.inputUntil && live.inputUntil.getTime() > acceptedAt)),
         );
         if (
           !live?.displayedAt ||
@@ -489,8 +495,31 @@ export class AnnouncementsService {
     reason: string,
   ) {
     const changed = await prisma.$transaction(async (tx) => {
+      if (status === 'TIMED_OUT') {
+        const active = await tx.announcement.updateMany({
+          where: { id: row.id, status: 'DISPLAYING' },
+          data: { status: 'DISPLAYING' },
+        });
+        if (!active.count) return 0;
+        const deliveries = await tx.announcementDelivery.findMany({
+          where: { announcementId: row.id },
+        });
+        const now = Date.now();
+        if (
+          deliveries.some(
+            (delivery) =>
+              delivery.inputUntil !== null ||
+              delivery.pausedRemainingMs !== null ||
+              (delivery.expiresAt !== null && delivery.expiresAt.getTime() > now),
+          )
+        )
+          return 0;
+      }
       const result = await tx.announcement.updateMany({
-        where: { id: row.id, status: { in: activeStatuses } },
+        where: {
+          id: row.id,
+          status: status === 'FAILED' ? 'WAITING_DISPLAY' : { in: activeStatuses },
+        },
         data: { status, endedAt: new Date(), endReason: reason },
       });
       if (result.count)
