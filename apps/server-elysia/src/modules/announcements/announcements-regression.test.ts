@@ -180,6 +180,87 @@ test('announcement pause, timeout, and reconnect regressions', { timeout: 30_000
     });
 
     await t.test(
+      'display acknowledgement cannot win after the receive timeout commits',
+      async () => {
+        const originalNow = Date.now;
+        const originalTransaction = prisma.$transaction.bind(prisma);
+        const baseTime = originalNow();
+        let logicalNow = baseTime;
+        let interceptDisplayTransaction = true;
+        let timeoutTriggered = false;
+        Date.now = () => logicalNow;
+        try {
+          const announcement = await service.create(teacher.id, classroom.id, {
+            ...input,
+            idempotencyKey: 'display-timeout-race',
+          });
+          await prisma.announcement.update({
+            where: { id: announcement.id },
+            data: { sentAt: new Date(baseTime - 9_999) },
+          });
+
+          const triggerTimeout = async () => {
+            if (timeoutTriggered) return;
+            timeoutTriggered = true;
+            logicalNow = baseTime + 2;
+            await service.tick();
+          };
+          prisma.$transaction = ((callback: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
+            if (!interceptDisplayTransaction) return originalTransaction(callback);
+            interceptDisplayTransaction = false;
+            const announcementDelegate = new Proxy(prisma.announcement, {
+              get(target, key) {
+                if (key === 'findFirst')
+                  return async (args: Prisma.AnnouncementFindFirstArgs) => {
+                    if (args.where?.id === announcement.id) {
+                      await triggerTimeout();
+                      return { id: announcement.id };
+                    }
+                    return target.findFirst(args);
+                  };
+                if (key === 'updateMany')
+                  return async (args: Prisma.AnnouncementUpdateManyArgs) => {
+                    if (
+                      args.where?.id === announcement.id &&
+                      args.where?.status === 'WAITING_DISPLAY'
+                    )
+                      await triggerTimeout();
+                    return target.updateMany(args);
+                  };
+                return Reflect.get(target, key);
+              },
+            });
+            const tx = {
+              announcement: announcementDelegate,
+              announcementDelivery: prisma.announcementDelivery,
+            } as unknown as Prisma.TransactionClient;
+            return Promise.resolve(callback(tx));
+          }) as typeof prisma.$transaction;
+
+          await assert.rejects(
+            service.displayed(device.id, classroom.id, announcement.id),
+            (error: unknown) =>
+              typeof error === 'object' &&
+              error !== null &&
+              'code' in error &&
+              error.code === 'ANNOUNCEMENT_ENDED',
+          );
+          assert.equal(timeoutTriggered, true);
+          const ended = await service.get(teacher.id, classroom.id, announcement.id);
+          assert.equal(ended.status, 'FAILED');
+          assert.equal(ended.deliveries[0].displayedAt, null);
+          assert.equal(
+            await prisma.announcementLock.count({ where: { classId: classroom.id } }),
+            0,
+          );
+        } finally {
+          Date.now = originalNow;
+          prisma.$transaction = originalTransaction;
+        }
+      },
+    );
+
+    await t.test(
       'a delayed disconnect reset cannot overwrite a newer readiness registration',
       async () => {
         const originalUpdate = prisma.displayDevice.update.bind(prisma.displayDevice);

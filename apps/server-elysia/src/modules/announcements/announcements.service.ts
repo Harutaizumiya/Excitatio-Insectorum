@@ -290,11 +290,18 @@ export class AnnouncementsService {
     }
     const now = new Date();
     const accepted = await prisma.$transaction(async (tx) => {
-      const active = await tx.announcement.findFirst({
-        where: { id, status: { in: activeStatuses } },
-        select: { id: true },
+      const acknowledged = await tx.announcement.updateMany({
+        where: { id, status: 'WAITING_DISPLAY' },
+        data: { status: 'DISPLAYING', acknowledgedAt: now },
       });
-      if (!active) throw new BusinessError('ANNOUNCEMENT_ENDED', '该喊话已结束', 409);
+      if (!acknowledged.count) {
+        const stillDisplaying = await tx.announcement.updateMany({
+          where: { id, status: 'DISPLAYING' },
+          data: { status: 'DISPLAYING' },
+        });
+        if (!stillDisplaying.count)
+          throw new BusinessError('ANNOUNCEMENT_ENDED', '该喊话已结束', 409);
+      }
       const updated = await tx.announcementDelivery.updateMany({
         where: { id: delivery.id, displayedAt: null },
         data: {
@@ -302,11 +309,6 @@ export class AnnouncementsService {
           expiresAt: new Date(now.getTime() + row.durationSeconds * 1_000),
         },
       });
-      if (updated.count)
-        await tx.announcement.updateMany({
-          where: { id, status: 'WAITING_DISPLAY' },
-          data: { status: 'DISPLAYING', acknowledgedAt: now },
-        });
       return updated.count;
     });
     if (accepted) publish(classId, id);
