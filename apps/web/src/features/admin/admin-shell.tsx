@@ -49,7 +49,7 @@ const pageTitleByPath: Record<string, string> = {
   "/admin": "班级概览",
   "/admin/students": "学生管理",
   "/admin/students/committee": "班委设置",
-  "/admin/dormitories": "住宿生管理",
+  "/admin/students/dormitories": "住宿生管理",
   "/admin/seating": "座位管理",
   "/admin/schedule": "课程表",
   "/admin/teachers": "任课教师",
@@ -394,6 +394,9 @@ function AdminShellContent({ children }: AdminShellProps) {
                   separator="/"
                   items={[
                     { title: <span style={{ color: "#6d7c92" }}>{classroomName}</span> },
+                    ...(pathname.startsWith("/admin/students/")
+                      ? [{ title: <Link to="/admin/students">学生管理</Link> }]
+                      : []),
                     { title: <span style={{ color: "#172b4d", fontWeight: 600 }}>{title}</span> },
                   ]}
                   style={{ fontSize: 13 }}

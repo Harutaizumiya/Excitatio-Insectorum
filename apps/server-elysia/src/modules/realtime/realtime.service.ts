@@ -11,6 +11,7 @@ import { PrincipalType, type AccessTokenClaims } from '../../plugins/auth';
 export class RealtimeService {
   private io?: SocketIOServer;
   private readonly clients = new Map<string, Socket>();
+  private readonly soundReadyUpdates = new Map<string, Promise<void>>();
 
   attach(httpServer: HTTPServer): void {
     this.io = new SocketIOServer(httpServer, {
@@ -133,6 +134,37 @@ export class RealtimeService {
 
       socket.on('disconnect', () => {
         this.clients.delete(socket.id);
+        if (principal?.type === PrincipalType.DISPLAY_DEVICE && classId) {
+          const stillConnected = this.getConnectedDisplayDeviceIds(classId).includes(principal.sub);
+          if (!stillConnected) {
+            void this.setDisplaySoundReady(principal.sub, false).catch(() => undefined);
+            void prisma.announcementDelivery
+              .findMany({
+                where: {
+                  deviceId: principal.sub,
+                  isPrimary: true,
+                  announcement: { status: { in: ['WAITING_DISPLAY', 'DISPLAYING'] } },
+                },
+                select: { id: true, announcementId: true },
+              })
+              .then(async (deliveries) => {
+                for (const delivery of deliveries) {
+                  await prisma.announcementDelivery.update({
+                    where: { id: delivery.id },
+                    data: { soundStatus: 'INTERRUPTED' },
+                  });
+                  this.publishClassEvent(classId, {
+                    id: randomUUID(),
+                    type: ClassEventType.ANNOUNCEMENT_CHANGED,
+                    classId,
+                    occurredAt: new Date().toISOString(),
+                    payload: { announcementId: delivery.announcementId },
+                  });
+                }
+              })
+              .catch(() => undefined);
+          }
+        }
       });
     });
 
@@ -148,6 +180,40 @@ export class RealtimeService {
     } catch (error) {
       console.error(`[Realtime] Failed to broadcast event ${event.id}:`, error);
     }
+  }
+
+  getConnectedDisplayDeviceIds(classId: string): string[] {
+    const ids = new Set<string>();
+    for (const client of this.clients.values()) {
+      const principal = client.data.principal as AccessTokenClaims | undefined;
+      if (
+        client.connected &&
+        client.data.classId === classId &&
+        principal?.type === PrincipalType.DISPLAY_DEVICE
+      ) {
+        ids.add(principal.sub);
+      }
+    }
+    return [...ids];
+  }
+
+  setDisplaySoundReady(deviceId: string, ready: boolean): Promise<void> {
+    // A disconnect reset must finish before a reconnect's readiness registration.
+    const previous = this.soundReadyUpdates.get(deviceId) ?? Promise.resolve();
+    const update = previous
+      .catch(() => undefined)
+      .then(async () => {
+        await prisma.displayDevice.update({
+          where: { id: deviceId },
+          data: { soundReady: ready, soundReadyAt: ready ? new Date() : null },
+        });
+      });
+    this.soundReadyUpdates.set(deviceId, update);
+    const cleanup = () => {
+      if (this.soundReadyUpdates.get(deviceId) === update) this.soundReadyUpdates.delete(deviceId);
+    };
+    void update.then(cleanup, cleanup);
+    return update;
   }
 
   disconnectUser(userId: string): void {

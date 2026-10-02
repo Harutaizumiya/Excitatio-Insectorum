@@ -15,25 +15,25 @@
 
 以下为本项目结算相关的全部触点（基于本次探索，无其它单元测试覆盖结算逻辑）：
 
-| 文件 | 位置 | 作用 | 本次处理 |
-|---|---|---|---|
-| `apps/server-elysia/src/modules/scores/score-periods.service.ts` | `ensureCurrentPeriod` L56 | 创建当前月周期 + **自动结算**过期周期 | 删除（结算逻辑移除，仅保留周期物化） |
-| 同上 | `ensurePeriodForDate` L68 | 按日期物化周期（含 backfill），**不结算** | 保留，作为唯一周期物化入口 |
-| 同上 | `settleBeforeCurrent` L100 | 手动兜底驱动 | 删除 |
-| 同上 | `settlePeriod` L110 | 单周期结算（事务 + 幂等） | 保留，供 cron 调用 |
-| 同上 | `getCurrentSummary`/`getSummary` | 查汇总时经 `ensureCurrentPeriod` | 改为经 `ensurePeriodForDate`，不再结算 |
-| `apps/server-elysia/src/modules/scores/score-events.service.ts` | L81-82 | 记分时先物化周期 | 删除 L81 冗余的 `ensureCurrentPeriod`，仅保留 L82 |
-| `apps/server-elysia/src/modules/scores/scores.service.ts` | L144, L197 | `createFromRule`/`createCustom` 取当前周期 | 改调 `ensurePeriodForDate(new Date())` |
-| `apps/server-elysia/src/modules/displays/displays.service.ts` | L335 | 大屏取数 | 不变（`getCurrentSummaryForDisplay` 本身不结算） |
-| `apps/server-elysia/src/modules/scores/scores.controller.ts` | L304-318 | 手动 `/score-periods/settle` 路由 | 删除 |
-| `apps/server-elysia/src/route-contract.test.ts` | L12,L17 | 路线数与 settle 断言 | 数量 62，删 L17 |
-| `apps/server-elysia/src/index.ts` | 启动 | 挂载服务 | 在此启动 cron job（`NODE_ENV!=='test'` 块内） |
-| `apps/server-elysia/src/config.ts` | — | 运行时配置 | 新增 `scoreSettlementCron` |
-| `apps/server-elysia/package.json` | deps | 依赖 | 新增 `croner` |
-| 前端 `apps/web/src/lib/classroom-service.ts` | L133 | 接口声明 | 删除 `settleScorePeriods` |
-| 前端 `apps/web/src/lib/api-classroom-service.ts` | L193-194, L704 | 实现 + 权限描述 | 删除 |
-| 前端 `apps/web/src/lib/domain.ts` | L362 `settledAt` | 周期视图字段 | **保留**（仍为周期数据） |
-| `docs/*`（04-api-design / api-reference 等含 settle 描述） | — | 文档 | 同步删除/更新 |
+| 文件                                                             | 位置                             | 作用                                       | 本次处理                                          |
+| ---------------------------------------------------------------- | -------------------------------- | ------------------------------------------ | ------------------------------------------------- |
+| `apps/server-elysia/src/modules/scores/score-periods.service.ts` | `ensureCurrentPeriod` L56        | 创建当前月周期 + **自动结算**过期周期      | 删除（结算逻辑移除，仅保留周期物化）              |
+| 同上                                                             | `ensurePeriodForDate` L68        | 按日期物化周期（含 backfill），**不结算**  | 保留，作为唯一周期物化入口                        |
+| 同上                                                             | `settleBeforeCurrent` L100       | 手动兜底驱动                               | 删除                                              |
+| 同上                                                             | `settlePeriod` L110              | 单周期结算（事务 + 幂等）                  | 保留，供 cron 调用                                |
+| 同上                                                             | `getCurrentSummary`/`getSummary` | 查汇总时经 `ensureCurrentPeriod`           | 改为经 `ensurePeriodForDate`，不再结算            |
+| `apps/server-elysia/src/modules/scores/score-events.service.ts`  | L81-82                           | 记分时先物化周期                           | 删除 L81 冗余的 `ensureCurrentPeriod`，仅保留 L82 |
+| `apps/server-elysia/src/modules/scores/scores.service.ts`        | L144, L197                       | `createFromRule`/`createCustom` 取当前周期 | 改调 `ensurePeriodForDate(new Date())`            |
+| `apps/server-elysia/src/modules/displays/displays.service.ts`    | L335                             | 大屏取数                                   | 不变（`getCurrentSummaryForDisplay` 本身不结算）  |
+| `apps/server-elysia/src/modules/scores/scores.controller.ts`     | L304-318                         | 手动 `/score-periods/settle` 路由          | 删除                                              |
+| `apps/server-elysia/src/route-contract.test.ts`                  | L12,L17                          | 路线数与 settle 断言                       | 数量 62，删 L17                                   |
+| `apps/server-elysia/src/index.ts`                                | 启动                             | 挂载服务                                   | 在此启动 cron job（`NODE_ENV!=='test'` 块内）     |
+| `apps/server-elysia/src/config.ts`                               | —                                | 运行时配置                                 | 新增 `scoreSettlementCron`                        |
+| `apps/server-elysia/package.json`                                | deps                             | 依赖                                       | 新增 `croner`                                     |
+| 前端 `apps/web/src/lib/classroom-service.ts`                     | L133                             | 接口声明                                   | 删除 `settleScorePeriods`                         |
+| 前端 `apps/web/src/lib/api-classroom-service.ts`                 | L193-194, L704                   | 实现 + 权限描述                            | 删除                                              |
+| 前端 `apps/web/src/lib/domain.ts`                                | L362 `settledAt`                 | 周期视图字段                               | **保留**（仍为周期数据）                          |
+| `docs/*`（04-api-design / api-reference 等含 settle 描述）       | —                                | 文档                                       | 同步删除/更新                                     |
 
 ## 3. 关键决策（已与用户确认）
 
@@ -43,6 +43,7 @@
 ## 4. 立项依据（为什么 croner 可行）
 
 croner（https://github.com/hexagon/croner）：
+
 - 支持 Node ≥18 与 Bun ≥1，本项目 Node ≥22，且 `app.ts` 已做 Bun/Node 双适配，均兼容。
 - 支持 `timezone`（结算月边界正是台北时区自然月）。
 - 支持异步函数、`protect`（防重入 overrun protection）、`catch`（错误处理）、TS 类型、0 依赖。
@@ -51,13 +52,16 @@ croner（https://github.com/hexagon/croner）：
 ## 5. 具体改动
 
 ### 5.1 依赖
+
 - `apps/server-elysia/package.json`：dependencies 新增 `"croner": "^10.0.0"`（用 `pnpm --filter @repo/server-elysia add croner` 安装）。
 
 ### 5.2 配置 `config.ts`
+
 - interface `AppConfig` 新增 `scoreSettlementCron: string`。
 - 实现：`scoreSettlementCron: process.env.SCORE_SETTLEMENT_CRON || '0 0 1 * *'`。
 
 ### 5.3 `score-periods.service.ts`
+
 - **删除** `ensureCurrentPeriod`（含其自动结算循环 L56-66）。
 - **删除** `settleBeforeCurrent`。
 - 新增公开方法：
@@ -75,6 +79,7 @@ croner（https://github.com/hexagon/croner）：
 - 其余私有方法（`getOrCreatePeriod`/`backfillLegacyRecords`/`buildSummary`/`rank`/`toPeriodView`/`parseRange`/`findSettlementOperator`/`publishSettlement`）保持不变。
 
 ### 5.4 新增 cron job：`apps/server-elysia/src/modules/scores/score-settlement.job.ts`
+
 ```ts
 import { Cron } from 'croner';
 import { config } from '../../config';
@@ -83,40 +88,55 @@ import { scorePeriodsService } from './score-periods.service';
 export function startScoreSettlementJob(): Cron {
   return new Cron(
     config.scoreSettlementCron,
-    { name: 'score-period-settlement', timezone: 'Asia/Taipei', protect: true, catch: (err) => console.error('[score-settlement] job error', err) },
+    {
+      name: 'score-period-settlement',
+      timezone: 'Asia/Taipei',
+      protect: true,
+      catch: (err) => console.error('[score-settlement] job error', err),
+    },
     async () => {
       const result = await scorePeriodsService.settleAllDuePeriods();
-      console.log(`[score-settlement] done settled=${result.settled} skipped=${result.skipped} failed=${result.failed}`);
+      console.log(
+        `[score-settlement] done settled=${result.settled} skipped=${result.skipped} failed=${result.failed}`,
+      );
     },
   );
 }
 ```
+
 - 默认 `0 0 1 * *`（每月 1 日 00:00，Asia/Taipei）——届时上一自然月已结束，符合 `getTaipeiMonthPeriod` 与 `endAt <= now` 的判定。`protect:true` 防止上一轮未跑完又触发；`catch` 兜住整体异常。
 
 ### 5.5 启动挂载 `index.ts`
+
 - 在 `NODE_ENV !== 'test'` 块内（`server.listen` 前后均可）调用 `startScoreSettlementJob()`，确保测试环境不启 cron（沿用现有测试隔离约定）。顶部引入该 job。
 
 ### 5.6 `score-events.service.ts`
+
 - 删除 L81 `await scorePeriodsService.ensureCurrentPeriod(classId, operatorId);`，仅保留 L82 `ensurePeriodForDate(classId, occurredAt)`。
 
 ### 5.7 `scores.service.ts`
+
 - L144、L197：`const period = await scorePeriodsService.ensureCurrentPeriod(classId, operatorId)` → `const period = await scorePeriodsService.ensurePeriodForDate(classId, new Date())`。
 
 ### 5.8 `scores.controller.ts`
+
 - 删除 `.post('/score-periods/settle', ...)` 块（L304-318）。
 - 更新 `getCurrentSummary` 调用：`scorePeriodsService.getCurrentSummary(classId)`（去 operator）。
 - 更新 `getSummary` 调用：`scorePeriodsService.getSummary(classId, query.from, query.to)`（去 operator）。
 - 确认 `TeacherRole` import 若不再被使用需移除（视清理后判断）。
 
 ### 5.9 `route-contract.test.ts`
+
 - 删除 L17 settle 断言；`routes.size` 由 `63` 改为 `62`。
 
 ### 5.10 前端清理
+
 - `apps/web/src/lib/classroom-service.ts`：删除 `settleScorePeriods` 接口声明（L133）。
 - `apps/web/src/lib/api-classroom-service.ts`：删除权限描述分支（L193-194）与方法实现 `settleScorePeriods`（L704 起）。
 - 已确认前端无组件调用 `settleScorePeriods`（仅定义处），删除安全。
 
 ### 5.11 文档同步
+
 - 用 `Grep 'score-periods/settle|settleScorePeriods|懒结算|自动结算' docs` 定位并更新 `docs/04-api-design.md`、`docs/api-reference.md`（若含 settle 接口描述则删除），并补充「结算由服务器定时任务每月初自动执行」的说明。比例适中，不改无关内容。
 
 ## 6. 假设与约束

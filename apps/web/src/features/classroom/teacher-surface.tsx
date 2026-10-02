@@ -61,6 +61,7 @@ import {
 } from "@/features/classroom/random-pick-animation";
 import type { CreateScoreEventInput, ScoreRecord, Seat, Student } from "@/lib";
 import { getActiveClassId, getUserSession } from "@/lib/session";
+import { TeacherAnnouncements } from "./teacher-announcements";
 
 function formatTime(date: string): string {
   try {
@@ -141,6 +142,7 @@ function TeacherMainContent(): ReactElement {
   // Selected student state for manual or picked evaluation
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const teacherName = useSyncExternalStore(
@@ -463,6 +465,24 @@ function TeacherMainContent(): ReactElement {
             </div>
           </Card>
         </div>
+
+        <Button
+          block
+          size="large"
+          onClick={() => setAnnouncementOpen(true)}
+          style={{ marginBottom: 14, minHeight: 44 }}
+        >
+          远程喊话
+        </Button>
+
+        <TeacherAnnouncements
+          open={announcementOpen}
+          onClose={() => setAnnouncementOpen(false)}
+          classId={classId}
+          className={classroomName}
+          students={students}
+          layout={layout}
+        />
 
         {/* Seat Area (Podium + Seat Grid) */}
         <section

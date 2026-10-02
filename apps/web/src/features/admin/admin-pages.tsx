@@ -755,7 +755,7 @@ function StudentsPage() {
             <Link to="/admin/students/committee">
               <Button icon={<TeamOutlined />}>班委设置</Button>
             </Link>
-            <Link to="/admin/dormitories">
+            <Link to="/admin/students/dormitories">
               <Button icon={<HomeOutlined />}>住宿生管理</Button>
             </Link>
             <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
