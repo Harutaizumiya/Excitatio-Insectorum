@@ -19,10 +19,21 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { Refine } from "@refinedev/core";
-import { App as AntApp, Avatar, Badge, Breadcrumb, Button, ConfigProvider, Layout, Space, Tag, Typography } from "antd";
+import {
+  App as AntApp,
+  Avatar,
+  Badge,
+  Breadcrumb,
+  Button,
+  ConfigProvider,
+  Layout,
+  Space,
+  Typography,
+} from "antd";
 import type { ReactNode } from "react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import webPackage from "../../../package.json";
 import { adminResources, cloneSeats, navItems, type AdminRoute } from "./admin-data";
 import { AdminNotificationDrawer } from "./admin-notification-drawer";
 import { FeedbackSubmitDrawer } from "./feedback/feedback-submit-drawer";
@@ -31,6 +42,8 @@ import { useClassroomService } from "@/components/providers/classroom-system-pro
 import { getUserSession, clearUserSession } from "@/lib/session";
 
 const { Header, Sider, Content } = Layout;
+const appVersion = import.meta.env.VITE_APP_VERSION || webPackage.version;
+const appVersionLabel = `v${appVersion.replace(/^v/i, "")}`;
 
 const iconByRoute: Record<AdminRoute, ReactNode> = {
   overview: <AppstoreOutlined />,
@@ -338,30 +351,20 @@ function AdminShellContent({ children }: AdminShellProps) {
                 </Space>
               </nav>
 
-              <div style={{ padding: "16px 12px", flexShrink: 0 }}>
-                <div
-                  style={{
-                    padding: collapsed ? "12px 8px" : "13px 14px",
-                    border: "1px solid #e6edf8",
-                    borderRadius: 14,
-                    background: "#f8fbff",
-                    textAlign: collapsed ? "center" : "left",
-                  }}
+              <div
+                style={{
+                  padding: "10px 18px 14px",
+                  flexShrink: 0,
+                  textAlign: collapsed ? "center" : "left",
+                }}
+              >
+                <Typography.Text
+                  type="secondary"
+                  aria-label={`版本 ${appVersionLabel}`}
+                  style={{ color: "#9aa7b8", fontSize: 11, letterSpacing: "0.02em" }}
                 >
-                  <Tag color="blue" style={{ margin: 0, border: 0, fontSize: 11 }}>
-                    {collapsed ? "7B" : "目前班級"}
-                  </Tag>
-                  {!collapsed && (
-                    <>
-                      <Typography.Text strong style={{ display: "block", marginTop: 8, color: "#1b2c48" }}>
-                        {classroomName}
-                      </Typography.Text>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        {teacherName} · 班主任
-                      </Typography.Text>
-                    </>
-                  )}
-                </div>
+                  {appVersionLabel}
+                </Typography.Text>
               </div>
             </div>
           </Sider>
