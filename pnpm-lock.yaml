@@ -111,6 +111,9 @@ importers:
       eslint:
         specifier: ^9.34.0
         version: 9.39.5(jiti@2.7.0)
+      socket.io-client:
+        specifier: ^4.8.3
+        version: 4.8.3
       tsx:
         specifier: ^4.19.3
         version: 4.23.13
@@ -223,6 +226,9 @@ importers:
       code-inspector-plugin:
         specifier: ^2.0.8
         version: 2.0.8
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       eslint:
         specifier: ^9
         version: 9.39.5(jiti@2.7.0)

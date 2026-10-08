@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.2",
@@ -48,6 +49,7 @@
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.1.1",
     "code-inspector-plugin": "^2.0.8",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "tailwindcss": "^4",
     "typescript": "^5.9.2",

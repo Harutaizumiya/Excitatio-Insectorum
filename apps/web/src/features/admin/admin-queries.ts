@@ -91,6 +91,18 @@ export function useAdminClassroom() {
   });
 }
 
+export function useSetAutoSeatRotation() {
+  const service = useClassroomService();
+  const classId = currentClassId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) =>
+      service.updateClassroom(classId, { autoSeatRotationEnabled: enabled }),
+    onSuccess: (classroom) =>
+      queryClient.setQueryData(adminQueryKeys.classroom(classId), classroom),
+  });
+}
+
 function displayDate(value: string | null | undefined): string {
   return value ? value.replace('T', ' ').slice(0, 19) : '未上线';
 }

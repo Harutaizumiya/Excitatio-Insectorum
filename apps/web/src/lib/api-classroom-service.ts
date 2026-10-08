@@ -4,6 +4,8 @@ import type {
   BindDisplayInput,
   BindDisplayResult,
   Classroom,
+  Announcement,
+  CreateAnnouncementInput,
   ClassSchedule,
   ClassroomBindingSessionStatus,
   ClassroomSummary,
@@ -937,6 +939,88 @@ export class ApiClassroomService implements ClassroomService {
     }
 
     return bootstrap;
+  }
+
+  async listAnnouncements(classId: string): Promise<Announcement[]> {
+    return this.request(`/classes/${classId}/announcements`);
+  }
+
+  async getAnnouncement(classId: string, id: string): Promise<Announcement> {
+    return this.request(`/classes/${classId}/announcements/${id}`);
+  }
+
+  async createAnnouncement(classId: string, input: CreateAnnouncementInput): Promise<Announcement> {
+    return this.request(`/classes/${classId}/announcements`, {
+      method: 'POST',
+      body: jsonBody(input),
+    });
+  }
+
+  async endAnnouncement(classId: string, id: string): Promise<Announcement> {
+    return this.request(`/classes/${classId}/announcements/${id}/end`, { method: 'POST' });
+  }
+
+  async getCurrentAnnouncement(): Promise<Announcement | null> {
+    return this.request('/display/announcements/current', undefined, { auth: 'display' });
+  }
+
+  async setDisplaySoundReady(ready: boolean): Promise<{ ready: boolean }> {
+    return this.request(
+      '/display/announcements/sound',
+      {
+        method: 'POST',
+        body: jsonBody({ ready }),
+      },
+      { auth: 'display' },
+    );
+  }
+
+  async confirmAnnouncementDisplayed(id: string): Promise<Announcement> {
+    return this.request(
+      `/display/announcements/${id}/displayed`,
+      { method: 'POST' },
+      { auth: 'display' },
+    );
+  }
+
+  async reportAnnouncementPlayback(
+    id: string,
+    status: 'PLAYING' | 'FAILED' | 'INTERRUPTED' | 'COMPLETED',
+    playedCount: number,
+  ): Promise<{ accepted: boolean }> {
+    return this.request(
+      `/display/announcements/${id}/playback`,
+      {
+        method: 'POST',
+        body: jsonBody({ status, playedCount }),
+      },
+      { auth: 'display' },
+    );
+  }
+
+  async setAnnouncementInput(id: string, action: 'START' | 'RETURN'): Promise<Announcement> {
+    return this.request(
+      `/display/announcements/${id}/input`,
+      {
+        method: 'POST',
+        body: jsonBody({ action }),
+      },
+      { auth: 'display' },
+    );
+  }
+
+  async replyAnnouncement(
+    id: string,
+    input: { type: 'QUICK' | 'CUSTOM'; text?: string; idempotencyKey: string },
+  ): Promise<Announcement> {
+    return this.request(
+      `/display/announcements/${id}/reply`,
+      {
+        method: 'POST',
+        body: jsonBody(input),
+      },
+      { auth: 'display' },
+    );
   }
 
   async login(input: LoginInput): Promise<LoginResult> {

@@ -175,11 +175,12 @@ INVITATION_REVOKED
   "grade": "高一",
   "schoolYear": "2026",
   "gridRows": 6,
-  "gridCols": 8
+  "gridCols": 8,
+  "autoSeatRotationEnabled": true
 }
 ```
 
-调整网格尺寸时必须校验当前 Seat 是否越界。
+调整网格尺寸时必须校验当前 Seat 是否越界。自动轮换设置可由班主任在座位管理中单独更新。
 
 ---
 
@@ -435,7 +436,7 @@ SEAT_LAYOUT_CHANGED
 - 修改 currentLayoutVersionId。
 - 广播 SEAT_LAYOUT_CHANGED。
 
-服务器每周一 00:05（Asia/Taipei）为每个有效班级自动创建轮换版本。同一行中已有学生的有效座位向右循环一格；过道、讲台、空格和未坐人的座位保持原位。`rotationWeekKey` 保证同班同周只执行一次。
+服务器每周一 00:05（Asia/Taipei）为启用自动轮换的有效班级创建轮换版本。班主任可在座位管理中开关此设置，默认开启以保持现有行为。关闭后跳过后续轮换。同一行中已有学生的有效座位向右循环一格；过道、讲台、空格和未坐人的座位保持原位。`rotationWeekKey` 保证同班同周只执行一次。设置通过 `PATCH /classes/:classId` 的 `autoSeatRotationEnabled` 字段保存。
 
 ---
 

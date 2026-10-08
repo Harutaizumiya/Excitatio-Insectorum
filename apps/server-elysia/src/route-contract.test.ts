@@ -9,7 +9,7 @@ test('Elysia exposes the complete versioned HTTP surface', () => {
       .filter((route) => route.includes('/api/v1/') && !route.endsWith('/health')),
   );
 
-  assert.equal(routes.size, 68);
+  assert.equal(routes.size, 78);
   for (const route of [
     'GET /api/v1/auth/invitations/:token/preview',
     'POST /api/v1/classes/:classId/score-events',
@@ -29,6 +29,12 @@ test('Elysia exposes the complete versioned HTTP surface', () => {
     'GET /api/v1/classes/:classId/feedback/:feedbackId',
     'PATCH /api/v1/classes/:classId/feedback/:feedbackId',
     'GET /api/v1/classes/:classId/analytics/summary',
+    'POST /api/v1/classes/:classId/announcements',
+    'GET /api/v1/classes/:classId/announcements',
+    'POST /api/v1/classes/:classId/announcements/:id/end',
+    'GET /api/v1/display/announcements/current',
+    'POST /api/v1/display/announcements/:id/displayed',
+    'POST /api/v1/display/announcements/:id/reply',
   ]) {
     assert.ok(routes.has(route), `missing route: ${route}`);
   }

@@ -19,7 +19,17 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { Refine } from "@refinedev/core";
-import { App as AntApp, Avatar, Badge, Breadcrumb, Button, ConfigProvider, Layout, Space, Tag, Typography } from "antd";
+import {
+  App as AntApp,
+  Avatar,
+  Badge,
+  Breadcrumb,
+  Button,
+  ConfigProvider,
+  Layout,
+  Space,
+  Typography,
+} from "antd";
 import type { ReactNode } from "react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -31,6 +41,7 @@ import { useClassroomService } from "@/components/providers/classroom-system-pro
 import { getUserSession, clearUserSession } from "@/lib/session";
 
 const { Header, Sider, Content } = Layout;
+const appVersionLabel = "26H2";
 
 const iconByRoute: Record<AdminRoute, ReactNode> = {
   overview: <AppstoreOutlined />,
@@ -49,7 +60,7 @@ const pageTitleByPath: Record<string, string> = {
   "/admin": "班级概览",
   "/admin/students": "学生管理",
   "/admin/students/committee": "班委设置",
-  "/admin/dormitories": "住宿生管理",
+  "/admin/students/dormitories": "住宿生管理",
   "/admin/seating": "座位管理",
   "/admin/schedule": "课程表",
   "/admin/teachers": "任课教师",
@@ -338,30 +349,20 @@ function AdminShellContent({ children }: AdminShellProps) {
                 </Space>
               </nav>
 
-              <div style={{ padding: "16px 12px", flexShrink: 0 }}>
-                <div
-                  style={{
-                    padding: collapsed ? "12px 8px" : "13px 14px",
-                    border: "1px solid #e6edf8",
-                    borderRadius: 14,
-                    background: "#f8fbff",
-                    textAlign: collapsed ? "center" : "left",
-                  }}
+              <div
+                style={{
+                  padding: "10px 18px 14px",
+                  flexShrink: 0,
+                  textAlign: collapsed ? "center" : "left",
+                }}
+              >
+                <Typography.Text
+                  type="secondary"
+                  aria-label={`版本 ${appVersionLabel}`}
+                  style={{ color: "#9aa7b8", fontSize: 11, letterSpacing: "0.02em" }}
                 >
-                  <Tag color="blue" style={{ margin: 0, border: 0, fontSize: 11 }}>
-                    {collapsed ? "7B" : "目前班級"}
-                  </Tag>
-                  {!collapsed && (
-                    <>
-                      <Typography.Text strong style={{ display: "block", marginTop: 8, color: "#1b2c48" }}>
-                        {classroomName}
-                      </Typography.Text>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        {teacherName} · 班主任
-                      </Typography.Text>
-                    </>
-                  )}
-                </div>
+                  {appVersionLabel}
+                </Typography.Text>
               </div>
             </div>
           </Sider>
@@ -394,6 +395,9 @@ function AdminShellContent({ children }: AdminShellProps) {
                   separator="/"
                   items={[
                     { title: <span style={{ color: "#6d7c92" }}>{classroomName}</span> },
+                    ...(pathname.startsWith("/admin/students/")
+                      ? [{ title: <Link to="/admin/students">学生管理</Link> }]
+                      : []),
                     { title: <span style={{ color: "#172b4d", fontWeight: 600 }}>{title}</span> },
                   ]}
                   style={{ fontSize: 13 }}
