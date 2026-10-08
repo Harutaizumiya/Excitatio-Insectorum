@@ -1,0 +1,75 @@
+{
+  "objective": "按教师端迁移微信小程序 PRD 实现代码并验证提交推送",
+  "mode": "durable",
+  "transport": "native collaboration agents (required by current platform instructions)",
+  "plannedWorkers": 3,
+  "reservedSlots": 1,
+  "createdWorkers": 4,
+  "decisions": {
+    "binding": "持有效专用邀请及微信身份，教师确认后直接绑定，不增加班主任审批",
+    "conflicts": "禁止自动账号合并、覆盖绑定或换绑，联系班主任人工核验",
+    "rollout": "保留 Web；微信默认关闭；不部署生产，不迁移用户数据库"
+  },
+  "workers": [
+    {
+      "agentId": "/root/mini_runtime",
+      "model": "gpt-6-luna",
+      "thinking": "xhigh",
+      "role": "小程序编译和运行时",
+      "ownership": "apps/teacher-miniprogram except pages/components/features",
+      "status": "interrupted_usage_limit",
+      "attempts": 1,
+      "adopted": true,
+      "archived": false,
+      "integration": "主 Agent 已接手收尾并通过根验证"
+    },
+    {
+      "agentId": "/root/mini_pages",
+      "model": "gpt-6-luna",
+      "thinking": "xhigh",
+      "role": "小程序业务页面",
+      "ownership": "apps/teacher-miniprogram/src/{pages,components,features}",
+      "status": "interrupted_usage_limit",
+      "attempts": 1,
+      "adopted": true,
+      "archived": false,
+      "integration": "主 Agent 已接手收尾并通过根验证"
+    },
+    {
+      "agentId": "/root/wechat_backend",
+      "model": "gpt-6-luna",
+      "thinking": "xhigh",
+      "role": "微信身份及邀请后端",
+      "ownership": "auth; teachers; config; database schemas and new migrations",
+      "status": "completed",
+      "attempts": 2,
+      "adopted": true,
+      "archived": false
+    },
+    {
+      "agentId": "/root/critical_review",
+      "model": "gpt-6-sol",
+      "thinking": "high",
+      "role": "复杂身份与客户端竞态复核",
+      "ownership": "read-only",
+      "status": "completed",
+      "attempts": 2,
+      "adopted": true,
+      "findings": [
+        "退出与refresh竞态",
+        "异步首屏与换班实时连接",
+        "跨账号待确认喊话恢复",
+        "退出丢失去重键，已改为脱敏只读核查回执"
+      ],
+      "archived": false
+    }
+  ],
+  "validation": [
+    "根 typecheck --only: 3/3 passed",
+    "根 lint --only: 3/3 passed",
+    "根 test --only: server 67, mini 26, web 6 passed",
+    "根 build --only: 4/4 passed; Taro产物域名已核对",
+    "SQLite/PostgreSQL schema validate passed; temporary SQLite migration tested"
+  ],
+  "blockers": ["未配置真实微信凭据、正式域名与真机验收环境"]
+}

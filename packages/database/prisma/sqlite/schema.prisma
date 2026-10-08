@@ -29,6 +29,11 @@ enum InvitationStatus {
   REVOKED
 }
 
+enum TeacherInvitationPurpose {
+  WEB_ACTIVATION
+  WECHAT_BINDING
+}
+
 enum StudentStatus {
   ACTIVE
   INACTIVE
@@ -125,6 +130,7 @@ model User {
   passwordHash   String
   status         UserStatus          @default(ACTIVE)
   classLinks     ClassTeacher[]
+  wechatIdentities WechatTeacherIdentity[]
   sessions       Session[]
   createdLayouts SeatLayoutVersion[] @relation("LayoutCreator")
   createdRules   ScoreRule[]         @relation("RuleCreator")
@@ -242,12 +248,38 @@ model TeacherInvitation {
   expiresAt      DateTime
   usedAt         DateTime?
   status         InvitationStatus @default(PENDING)
+  purpose        TeacherInvitationPurpose @default(WEB_ACTIVATION)
   classTeacher   ClassTeacher     @relation(fields: [classTeacherId], references: [id], onDelete: Restrict)
   createdAt      DateTime         @default(now())
 
   @@index([classTeacherId])
   @@index([expiresAt])
   @@index([status, expiresAt])
+}
+
+model WechatTeacherIdentity {
+  id        String   @id @default(cuid())
+  appId     String
+  openId    String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+
+  @@unique([appId, openId])
+  @@unique([appId, userId])
+  @@index([userId])
+}
+
+model WechatBindingTicket {
+  id          String   @id @default(cuid())
+  ticketHash  String   @unique
+  appId       String
+  openId      String
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([expiresAt])
 }
 
 model Student {

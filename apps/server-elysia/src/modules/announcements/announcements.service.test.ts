@@ -81,6 +81,33 @@ test('announcements are class locked, idempotent, and accept only the first assi
     assert.equal(first.text, '张三，请到办公室');
     assert.equal(first.status, 'WAITING_DISPLAY');
     assert.equal((await announcementsService.create(teacher.id, classroom.id, input)).id, first.id);
+    assert.equal(
+      (await announcementsService.getByKey(teacher.id, classroom.id, input.idempotencyKey)).id,
+      first.id,
+    );
+    const notFound = (error: unknown) =>
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'ANNOUNCEMENT_NOT_FOUND';
+    await assert.rejects(
+      announcementsService.getByKey(otherTeacher.id, classroom.id, input.idempotencyKey),
+      notFound,
+    );
+    await assert.rejects(
+      announcementsService.getByKey(teacher.id, classroom.id, 'missing-key'),
+      notFound,
+    );
+    await assert.rejects(
+      announcementsService.getByKey(teacher.id, otherClass.id, input.idempotencyKey),
+    );
+    await prisma.classTeacher.create({
+      data: { classId: otherClass.id, teacherId: teacher.id, role: 'SUBJECT_TEACHER' },
+    });
+    await assert.rejects(
+      announcementsService.getByKey(teacher.id, otherClass.id, input.idempotencyKey),
+      notFound,
+    );
     await assert.rejects(
       announcementsService.create(otherTeacher.id, classroom.id, {
         ...input,

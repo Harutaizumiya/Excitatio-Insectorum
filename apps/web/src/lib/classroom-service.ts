@@ -59,6 +59,7 @@ import type {
   StudentImportResult,
   StudentListQuery,
   TeacherInvitation,
+  WechatTeacherInvitation,
   TokenPair,
   UpdateClassroomInput,
   UpdateScoreRuleInput,
@@ -127,6 +128,14 @@ export interface ClassroomService {
     input: UpdateTeacherInput,
   ): Promise<ClassTeacher>;
   createTeacherInvitation(classId: string, classTeacherId: string): Promise<TeacherInvitation>;
+  createWechatTeacherInvitation(
+    classId: string,
+    classTeacherId: string,
+  ): Promise<WechatTeacherInvitation>;
+  revokeWechatTeacherInvitations(
+    classId: string,
+    classTeacherId: string,
+  ): Promise<{ revoked: true }>;
   revokeTeacher(classId: string, classTeacherId: string): Promise<{ revoked: true }>;
   deleteTeacher(classId: string, classTeacherId: string): Promise<{ deleted: true }>;
   restoreTeacher(classId: string, classTeacherId: string): Promise<{ restored: true }>;

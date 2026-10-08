@@ -161,6 +161,8 @@ export interface TeacherIdentity {
 }
 
 export interface ClassTeacher {
+  wechatBound?: boolean;
+  wechatInvitationExpiresAt?: IsoDateTime | null;
   id: string;
   classId: string;
   teacherId: string;
@@ -196,6 +198,12 @@ export interface CreateTeacherResult {
 export interface TeacherInvitation {
   inviteUrl: string;
   expiresAt: IsoDateTime;
+}
+
+export interface WechatTeacherInvitation {
+  miniProgramPath: string;
+  expiresAt: IsoDateTime;
+  codeImage?: string;
 }
 
 export interface NamedEntity {

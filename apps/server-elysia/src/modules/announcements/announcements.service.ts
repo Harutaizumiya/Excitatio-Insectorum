@@ -252,6 +252,18 @@ export class AnnouncementsService {
     return detail(row);
   }
 
+  async getByKey(userId: string, classId: string, idempotencyKey: string) {
+    await studentsService.assertAccess(userId, classId);
+    const row = await prisma.announcement.findUnique({
+      where: { teacherId_idempotencyKey: { teacherId: userId, idempotencyKey } },
+      include: { deliveries: true, reply: true },
+    });
+    if (!row || row.classId !== classId) {
+      throw new BusinessError('ANNOUNCEMENT_NOT_FOUND', '未找到本人的喊话结果', 404);
+    }
+    return detail(row);
+  }
+
   async current(deviceId: string, classId: string) {
     const delivery = await prisma.announcementDelivery.findFirst({
       where: { deviceId, announcement: { classId, status: { in: activeStatuses } } },

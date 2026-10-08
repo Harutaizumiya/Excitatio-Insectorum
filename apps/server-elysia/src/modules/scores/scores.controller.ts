@@ -7,6 +7,20 @@ import { scorePeriodsService } from './score-periods.service';
 
 export const scoresController = new Elysia({ prefix: '/classes/:classId' })
   .use(authPlugin)
+  .get(
+    '/score-events/by-key/:businessKey',
+    async ({ user, params: { classId, businessKey } }) => ({
+      data: await scoreEventsService.getByBusinessKey(classId, user!.sub, businessKey),
+    }),
+    {
+      requireUser: true,
+      params: t.Object({
+        classId: t.String(),
+        businessKey: t.String({ minLength: 1, maxLength: 255 }),
+      }),
+      detail: { summary: '核查本人积分事件登记结果', tags: ['Score Periods'] },
+    },
+  )
   .post(
     '/score-events',
     async ({ user, params: { classId }, body }) => {

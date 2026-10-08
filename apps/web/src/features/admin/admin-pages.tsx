@@ -28,6 +28,7 @@ import {
 import { SeatingPage } from "./seating/seating-page";
 import { SchedulePage } from "./schedule/schedule-page";
 import { DormitoriesPage } from "./dormitories/dormitories-page";
+import { WechatTeacherControls } from "./wechat-teacher-controls";
 import { StudentImportModal, type ImportStudentPayload } from "./student-import";
 import {
   Alert,
@@ -1123,6 +1124,7 @@ function TeachersPage() {
               </Descriptions.Item>
               <Descriptions.Item label="最后活跃">{detail.lastActiveAt ?? "尚未活跃"}</Descriptions.Item>
             </Descriptions>
+            <WechatTeacherControls key={detail.id} teacher={teachers.find((teacher) => teacher.id === detail.id) ?? detail} />
             <Space wrap style={{ marginTop: 22 }}>
               {detail.status !== "DISABLED" && (
                 <Button icon={<ReloadOutlined />} onClick={() => void generateInvitation(detail.id)}>

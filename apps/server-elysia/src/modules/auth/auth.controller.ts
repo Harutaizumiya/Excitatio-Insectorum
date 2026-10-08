@@ -90,4 +90,31 @@ export const authController = new Elysia({ prefix: '/auth' })
         tags: ['Auth'],
       },
     },
+  )
+  .post('/wechat/login', async ({ body }) => ({ data: await authService.wechatLogin(body.code) }), {
+    body: t.Object({ code: t.String({ minLength: 1, maxLength: 256 }) }),
+    detail: { summary: '微信小程序登录或获取绑定状态', tags: ['Auth'] },
+  })
+  .post(
+    '/wechat/bind',
+    async ({ body }) => ({
+      data: await authService.bindWechatIdentity(body.ticket, body.token),
+    }),
+    {
+      body: t.Object({
+        ticket: t.String({ minLength: 1, maxLength: 256 }),
+        token: t.String({ minLength: 1, maxLength: 256 }),
+      }),
+      detail: { summary: '将微信身份绑定到受邀教师账号', tags: ['Auth'] },
+    },
+  )
+  .get(
+    '/wechat/invitations/:token/preview',
+    async ({ params: { token } }) => ({
+      data: await authService.getWechatInvitationPreview(token),
+    }),
+    {
+      params: t.Object({ token: t.String({ minLength: 1, maxLength: 256 }) }),
+      detail: { summary: '预览小程序教师绑定邀请', tags: ['Auth'] },
+    },
   );

@@ -20,6 +20,17 @@ export const announcementsController = new Elysia()
         },
       )
       .get(
+        '/by-key/:idempotencyKey',
+        async ({ user, params: { classId, idempotencyKey } }) => ({
+          data: await announcementsService.getByKey(user!.sub, classId, idempotencyKey),
+        }),
+        {
+          requireUser: true,
+          params: t.Object({ classId: t.String(), idempotencyKey: key }),
+          detail: { summary: '核查本人喊话发送结果', tags: ['Announcements'] },
+        },
+      )
+      .get(
         '/:id',
         async ({ user, params: { classId, id } }) => ({
           data: await announcementsService.get(user!.sub, classId, id),

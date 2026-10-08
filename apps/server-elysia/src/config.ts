@@ -25,6 +25,12 @@ export interface AppConfig {
   invitationExpiresIn: string;
   deviceAccessExpiresIn: string;
   deviceBindingSecret: string;
+  wechatEnabled: boolean;
+  wechatAppId: string;
+  wechatAppSecret: string;
+  wechatRequestTimeoutMs: number;
+  wechatBindingTicketExpiresInSeconds: number;
+  wechatMiniProgramEnvVersion: 'develop' | 'trial' | 'release';
   corsOrigins: string[];
   swaggerEnabled: boolean;
   scoreSettlementCron: string;
@@ -33,6 +39,19 @@ export interface AppConfig {
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 const isProduction = nodeEnv === 'production';
+const wechatEnabled = process.env.WECHAT_ENABLED === 'true';
+const wechatAppId = process.env.WECHAT_APP_ID?.trim() || '';
+const wechatAppSecret = process.env.WECHAT_APP_SECRET?.trim() || '';
+const wechatMiniProgramEnvVersion = ['develop', 'trial', 'release'].includes(
+  process.env.WECHAT_MINIPROGRAM_ENV_VERSION || 'release',
+)
+  ? ((process.env.WECHAT_MINIPROGRAM_ENV_VERSION || 'release') as 'develop' | 'trial' | 'release')
+  : 'release';
+
+function positiveInteger(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
 
 function requiredProductionValue(name: string, fallback: string): string {
   const value = process.env[name] || fallback;
@@ -73,6 +92,11 @@ if (isProduction && !process.env.REDIS_URL) {
 if (isProduction && !process.env.CORS_ORIGIN) {
   throw new Error('CORS_ORIGIN must be configured in production');
 }
+if (wechatEnabled && isProduction && (!wechatAppId || !wechatAppSecret)) {
+  throw new Error(
+    'WECHAT_APP_ID and WECHAT_APP_SECRET must be configured when WECHAT_ENABLED=true',
+  );
+}
 
 export const config: AppConfig = {
   port: Number(process.env.PORT || 3000),
@@ -93,6 +117,12 @@ export const config: AppConfig = {
     'DEVICE_BINDING_ENCRYPTION_SECRET',
     'replace-with-a-third-32-character-random-secret',
   ),
+  wechatEnabled,
+  wechatAppId,
+  wechatAppSecret,
+  wechatRequestTimeoutMs: positiveInteger('WECHAT_REQUEST_TIMEOUT_MS', 5000),
+  wechatBindingTicketExpiresInSeconds: positiveInteger('WECHAT_BINDING_TICKET_TTL_SECONDS', 300),
+  wechatMiniProgramEnvVersion,
   corsOrigins: (process.env.CORS_ORIGIN || 'http://localhost:3001,http://localhost:3002')
     .split(',')
     .map((origin) => origin.trim())

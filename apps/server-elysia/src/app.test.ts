@@ -1,6 +1,34 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import { app } from './app';
+import test, { after } from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// HTTP contract tests must not depend on, or migrate, the developer's database.
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const testDirectory = await mkdtemp(join(tmpdir(), 'excitatio-http-contract-'));
+process.env.DATABASE_URL = `file:${join(testDirectory, 'contract.db').replaceAll('\\', '/')}`;
+execFileSync(
+  process.execPath,
+  [
+    resolve(repositoryRoot, 'packages/database/scripts/run-sqlite-prisma.mjs'),
+    'migrate',
+    'deploy',
+    '--schema',
+    resolve(repositoryRoot, 'packages/database/prisma/sqlite/schema.prisma'),
+  ],
+  { cwd: repositoryRoot, env: process.env, stdio: 'pipe' },
+);
+const { app } = await import('./app');
+const { prisma } = await import('./plugins/prisma');
+after(async () => {
+  await prisma.$disconnect();
+  if (dirname(resolve(testDirectory)) !== resolve(tmpdir()))
+    throw new Error('Invalid test directory');
+  await rm(testDirectory, { recursive: true, force: true });
+});
 
 test('health endpoint keeps the standard API envelope', async () => {
   const response = await app.handle(new Request('http://localhost/api/v1/health'));

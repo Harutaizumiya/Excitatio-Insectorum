@@ -1,0 +1,44 @@
+{
+  "name": "@repo/teacher-miniprogram",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "taro build --type weapp --watch",
+    "build": "node scripts/verify-production-origins.cjs && taro build --type weapp",
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/lib/transport.test.ts src/lib/realtime.test.ts src/features/score-events.test.ts src/features/announcements.test.ts src/features/students.test.ts src/lib/socket-io.integration.test.ts"
+  },
+  "dependencies": {
+    "@babel/runtime": "7.24.4",
+    "@tarojs/components": "4.3.0",
+    "@tarojs/helper": "4.3.0",
+    "@tarojs/plugin-framework-react": "4.3.0",
+    "@tarojs/plugin-platform-weapp": "4.3.0",
+    "@tarojs/react": "4.3.0",
+    "@tarojs/runtime": "4.3.0",
+    "@tarojs/shared": "4.3.0",
+    "@tarojs/service": "4.3.0",
+    "@tarojs/taro": "4.3.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@babel/core": "7.24.4",
+    "@babel/plugin-transform-class-properties": "7.25.9",
+    "@babel/preset-react": "7.24.1",
+    "@types/node": "22.20.5",
+    "@tarojs/cli": "4.3.0",
+    "@tarojs/taro-loader": "4.3.0",
+    "@tarojs/webpack5-runner": "4.3.0",
+    "@types/react": "18.3.12",
+    "babel-preset-taro": "4.3.0",
+    "eslint": "^9.0.0",
+    "less": "4.9.1",
+    "tsx": "4.20.6",
+    "typescript": "5.9.2",
+    "socket.io": "4.8.3",
+    "webpack": "5.91.0"
+  }
+}

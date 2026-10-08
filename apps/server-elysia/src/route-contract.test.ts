@@ -9,9 +9,15 @@ test('Elysia exposes the complete versioned HTTP surface', () => {
       .filter((route) => route.includes('/api/v1/') && !route.endsWith('/health')),
   );
 
-  assert.equal(routes.size, 78);
+  assert.equal(routes.size, 85);
   for (const route of [
     'GET /api/v1/auth/invitations/:token/preview',
+    'POST /api/v1/auth/wechat/login',
+    'POST /api/v1/auth/wechat/bind',
+    'GET /api/v1/auth/wechat/invitations/:token/preview',
+    'POST /api/v1/classes/:classId/teachers/:classTeacherId/wechat-invitations',
+    'POST /api/v1/classes/:classId/teachers/:classTeacherId/wechat-invitations/revoke',
+    'GET /api/v1/classes/:classId/score-events/by-key/:businessKey',
     'POST /api/v1/classes/:classId/score-events',
     'GET /api/v1/classes/:classId/dormitories',
     'POST /api/v1/classes/:classId/dormitories',
@@ -31,6 +37,7 @@ test('Elysia exposes the complete versioned HTTP surface', () => {
     'GET /api/v1/classes/:classId/analytics/summary',
     'POST /api/v1/classes/:classId/announcements',
     'GET /api/v1/classes/:classId/announcements',
+    'GET /api/v1/classes/:classId/announcements/by-key/:idempotencyKey',
     'POST /api/v1/classes/:classId/announcements/:id/end',
     'GET /api/v1/display/announcements/current',
     'POST /api/v1/display/announcements/:id/displayed',

@@ -6,6 +6,7 @@ import {
   Prisma,
   PrismaClient,
   RelationStatus,
+  TeacherInvitationPurpose,
   TeacherRole,
   UserStatus,
 } from '@prisma/client';
@@ -14,6 +15,7 @@ import { authPlugin } from '../../plugins/auth';
 import { BusinessError } from '../../plugins/error-handler';
 import { realtimeService } from '../realtime/realtime.service';
 import { config } from '../../config';
+import { authService } from '../auth/auth.service';
 
 function invitationHash(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -41,6 +43,84 @@ async function assertHeadTeacher(prisma: PrismaClient, userId: string, classId: 
   return access;
 }
 
+export async function replacePendingTeacherInvitation(
+  prisma: PrismaClient,
+  input: {
+    classId: string;
+    classTeacherId: string;
+    actorId: string;
+    token: string;
+    expiresAt: Date;
+    purpose: TeacherInvitationPurpose;
+    appId?: string;
+  },
+) {
+  return prisma.$transaction(async (tx) => {
+    const lockedRelation = await tx.classTeacher.updateMany({
+      where: {
+        id: input.classTeacherId,
+        classId: input.classId,
+        role: TeacherRole.SUBJECT_TEACHER,
+        status: RelationStatus.ACTIVE,
+      },
+      data: { updatedAt: new Date() },
+    });
+    if (lockedRelation.count !== 1) {
+      throw new BusinessError('CLASS_TEACHER_NOT_FOUND', '任课教师关系不存在', 404);
+    }
+
+    const headTeacher = await tx.classTeacher.findFirst({
+      where: {
+        classId: input.classId,
+        teacherId: input.actorId,
+        role: TeacherRole.HEAD_TEACHER,
+        status: RelationStatus.ACTIVE,
+        teacher: { status: UserStatus.ACTIVE },
+      },
+      select: { id: true },
+    });
+    if (!headTeacher) {
+      throw new BusinessError('FORBIDDEN_ROLE', '仅班主任有权进行此项操作', 403);
+    }
+
+    const relation = await tx.classTeacher.findUnique({
+      where: { id: input.classTeacherId },
+      include: { teacher: { select: { status: true } } },
+    });
+    if (!relation || relation.teacher.status !== UserStatus.ACTIVE) {
+      throw new BusinessError('CLASS_TEACHER_NOT_FOUND', '任课教师关系不存在', 404);
+    }
+    if (input.purpose === TeacherInvitationPurpose.WECHAT_BINDING && input.appId) {
+      const existingIdentity = await tx.wechatTeacherIdentity.findUnique({
+        where: { appId_userId: { appId: input.appId, userId: relation.teacherId } },
+        select: { id: true },
+      });
+      if (existingIdentity) {
+        throw new BusinessError('TEACHER_WECHAT_ALREADY_BOUND', '该教师账号已绑定微信', 409);
+      }
+    }
+
+    await tx.teacherInvitation.updateMany({
+      where: {
+        classTeacherId: input.classTeacherId,
+        purpose: input.purpose,
+        status: InvitationStatus.PENDING,
+        usedAt: null,
+      },
+      data: { status: InvitationStatus.REVOKED },
+    });
+    return tx.teacherInvitation.create({
+      data: {
+        classTeacherId: input.classTeacherId,
+        tokenHash: invitationHash(input.token),
+        expiresAt: input.expiresAt,
+        status: InvitationStatus.PENDING,
+        purpose: input.purpose,
+      },
+    });
+  });
+}
+
 export const teachersController = new Elysia({ prefix: '/classes/:classId/teachers' })
   .use(prismaPlugin)
   .use(authPlugin)
@@ -51,8 +131,19 @@ export const teachersController = new Elysia({ prefix: '/classes/:classId/teache
       const data = await prisma.classTeacher.findMany({
         where: { classId },
         include: {
-          teacher: { select: { id: true, name: true, status: true } },
+          teacher: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              wechatIdentities: {
+                where: config.wechatAppId ? { appId: config.wechatAppId } : undefined,
+                select: { id: true },
+              },
+            },
+          },
           invitations: {
+            where: { purpose: TeacherInvitationPurpose.WEB_ACTIVATION },
             select: { status: true, expiresAt: true, usedAt: true, createdAt: true },
             orderBy: { createdAt: 'desc' },
             take: 1,
@@ -60,7 +151,35 @@ export const teachersController = new Elysia({ prefix: '/classes/:classId/teache
         },
         orderBy: { createdAt: 'asc' },
       });
-      return { data };
+      const pendingWechatInvitations = await prisma.teacherInvitation.findMany({
+        where: {
+          classTeacherId: { in: data.map((relation) => relation.id) },
+          purpose: TeacherInvitationPurpose.WECHAT_BINDING,
+          status: InvitationStatus.PENDING,
+          usedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        select: { classTeacherId: true, expiresAt: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      const wechatExpiryByRelation = new Map<string, string>();
+      for (const invitation of pendingWechatInvitations) {
+        if (!wechatExpiryByRelation.has(invitation.classTeacherId)) {
+          wechatExpiryByRelation.set(invitation.classTeacherId, invitation.expiresAt.toISOString());
+        }
+      }
+      return {
+        data: data.map(({ teacher, ...relation }) => ({
+          ...relation,
+          teacher: {
+            id: teacher.id,
+            name: teacher.name,
+            status: teacher.status,
+          },
+          wechatBound: teacher.wechatIdentities.length > 0,
+          wechatInvitationExpiresAt: wechatExpiryByRelation.get(relation.id) ?? null,
+        })),
+      };
     },
     {
       requireUser: true,
@@ -286,13 +405,13 @@ export const teachersController = new Elysia({ prefix: '/classes/:classId/teache
 
       const token = randomBytes(32).toString('base64url');
       const expiresAt = new Date(Date.now() + 24 * 3600 * 1000);
-      await prisma.teacherInvitation.create({
-        data: {
-          classTeacherId,
-          tokenHash: invitationHash(token),
-          expiresAt,
-          status: InvitationStatus.PENDING,
-        },
+      await replacePendingTeacherInvitation(prisma, {
+        classId,
+        classTeacherId,
+        actorId: user!.sub,
+        token,
+        expiresAt,
+        purpose: TeacherInvitationPurpose.WEB_ACTIVATION,
       });
 
       return {
@@ -306,5 +425,117 @@ export const teachersController = new Elysia({ prefix: '/classes/:classId/teache
       requireUser: true,
       params: t.Object({ classId: t.String(), classTeacherId: t.String() }),
       detail: { summary: '生成一次性教师邀请', tags: ['Teachers'] },
+    },
+  )
+  .post(
+    '/:classTeacherId/wechat-invitations',
+    async ({ prisma, user, params: { classId, classTeacherId } }) => {
+      await assertHeadTeacher(prisma, user!.sub, classId);
+      const relation = await prisma.classTeacher.findFirst({
+        where: {
+          id: classTeacherId,
+          classId,
+          role: TeacherRole.SUBJECT_TEACHER,
+          status: RelationStatus.ACTIVE,
+          teacher: { status: UserStatus.ACTIVE },
+        },
+        include: {
+          teacher: {
+            select: {
+              wechatIdentities: {
+                where: config.wechatAppId ? { appId: config.wechatAppId } : undefined,
+                select: { id: true },
+              },
+            },
+          },
+        },
+      });
+      if (!relation) {
+        throw new BusinessError('CLASS_TEACHER_NOT_FOUND', '任课教师关系不存在', 404);
+      }
+      if (relation.teacher.wechatIdentities.length > 0) {
+        throw new BusinessError('TEACHER_WECHAT_ALREADY_BOUND', '该教师账号已绑定微信', 409);
+      }
+
+      const token = randomBytes(24).toString('base64url');
+      const codeImage = await authService.generateWechatInvitationCode(token);
+      const expiresAt = new Date(Date.now() + 24 * 3600 * 1000);
+      await replacePendingTeacherInvitation(prisma, {
+        classId,
+        classTeacherId,
+        actorId: user!.sub,
+        token,
+        expiresAt,
+        purpose: TeacherInvitationPurpose.WECHAT_BINDING,
+        appId: config.wechatAppId,
+      });
+
+      return {
+        data: {
+          token,
+          miniProgramPath: `pages/login/index?scene=${encodeURIComponent(token)}`,
+          codeImage,
+          expiresAt: expiresAt.toISOString(),
+        },
+      };
+    },
+    {
+      requireUser: true,
+      params: t.Object({ classId: t.String(), classTeacherId: t.String() }),
+      detail: { summary: '生成小程序教师绑定邀请', tags: ['Teachers'] },
+    },
+  )
+  .post(
+    '/:classTeacherId/wechat-invitations/revoke',
+    async ({ prisma, user, params: { classId, classTeacherId } }) => {
+      await assertHeadTeacher(prisma, user!.sub, classId);
+      const relation = await prisma.classTeacher.findFirst({
+        where: { id: classTeacherId, classId, role: TeacherRole.SUBJECT_TEACHER },
+        select: { id: true },
+      });
+      if (!relation) {
+        throw new BusinessError('CLASS_TEACHER_NOT_FOUND', '任课教师关系不存在', 404);
+      }
+      await prisma.$transaction(async (tx) => {
+        const lockedRelation = await tx.classTeacher.updateMany({
+          where: {
+            id: classTeacherId,
+            classId,
+            role: TeacherRole.SUBJECT_TEACHER,
+          },
+          data: { updatedAt: new Date() },
+        });
+        if (lockedRelation.count !== 1) {
+          throw new BusinessError('CLASS_TEACHER_NOT_FOUND', '任课教师关系不存在', 404);
+        }
+        const headTeacher = await tx.classTeacher.findFirst({
+          where: {
+            classId,
+            teacherId: user!.sub,
+            role: TeacherRole.HEAD_TEACHER,
+            status: RelationStatus.ACTIVE,
+            teacher: { status: UserStatus.ACTIVE },
+          },
+          select: { id: true },
+        });
+        if (!headTeacher) {
+          throw new BusinessError('FORBIDDEN_ROLE', '仅班主任有权进行此项操作', 403);
+        }
+        await tx.teacherInvitation.updateMany({
+          where: {
+            classTeacherId,
+            purpose: TeacherInvitationPurpose.WECHAT_BINDING,
+            status: InvitationStatus.PENDING,
+            usedAt: null,
+          },
+          data: { status: InvitationStatus.REVOKED },
+        });
+      });
+      return { data: { revoked: true } };
+    },
+    {
+      requireUser: true,
+      params: t.Object({ classId: t.String(), classTeacherId: t.String() }),
+      detail: { summary: '撤销小程序教师绑定邀请', tags: ['Teachers'] },
     },
   );

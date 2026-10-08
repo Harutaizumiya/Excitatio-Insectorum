@@ -251,12 +251,8 @@ export class ScoreEventsService {
     operatorId: string,
     dto: CreateScoreEventInput,
   ): EventWithResults {
-    if (existing.classId !== classId)
-      throw new BusinessError(
-        'SCORE_EVENT_BUSINESS_KEY_CONFLICT',
-        '事件业务键已被其他班级使用',
-        409,
-      );
+    if (existing.classId !== classId || existing.operatorId !== operatorId)
+      throw new BusinessError('SCORE_EVENT_BUSINESS_KEY_CONFLICT', '事件业务键已用于其他登记', 409);
     if (dto.dormitoryId) {
       const sameRequest =
         existing.type === ScoreEventType.DORM_HYGIENE &&
@@ -272,8 +268,45 @@ export class ScoreEventsService {
           '事件业务键与已有登记不一致',
           409,
         );
+    } else {
+      const parameters = JSON.parse(existing.parameters ?? '{}') as Record<string, unknown>;
+      const sameRequest =
+        existing.type === dto.type &&
+        !existing.sourceDormitoryId &&
+        existing.reason === (dto.reason?.trim() || null) &&
+        existing.participants.length === dto.studentIds.length &&
+        existing.participants.every((item) => dto.studentIds.includes(item.studentId)) &&
+        parameters.rank === dto.rank &&
+        parameters.minutesLate === dto.minutesLate &&
+        parameters.manualDelta === dto.manualDelta &&
+        (parameters.isOrganizer ?? false) === (dto.isOrganizer ?? false) &&
+        (parameters.specialContribution ?? false) === (dto.specialContribution ?? false) &&
+        (dto.subject === undefined || parameters.subject === dto.subject) &&
+        (dto.occurredAt === undefined ||
+          existing.occurredAt.getTime() === new Date(dto.occurredAt).getTime());
+      if (!sameRequest)
+        throw new BusinessError(
+          'SCORE_EVENT_BUSINESS_KEY_CONFLICT',
+          '事件业务键与已有登记不一致',
+          409,
+        );
     }
     return existing;
+  }
+
+  async getByBusinessKey(classId: string, operatorId: string, businessKey: string) {
+    const access = await this.db.classTeacher.findFirst({
+      where: { classId, teacherId: operatorId, status: RelationStatus.ACTIVE },
+      select: { teacherId: true },
+    });
+    if (!access) throw new BusinessError('FORBIDDEN_CLASS_ACCESS', '无权访问该班级', 403);
+    const event = await this.db.scoreEvent.findUnique({
+      where: { businessKey },
+      include: eventInclude,
+    });
+    if (!event || event.classId !== classId || event.operatorId !== operatorId)
+      throw new BusinessError('SCORE_EVENT_NOT_FOUND', '未查到本次登记，请稍后再次核查', 404);
+    return this.toResponse(event);
   }
 
   private validateEventInput(dto: CreateScoreEventInput): void {

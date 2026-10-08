@@ -37,6 +37,8 @@ export interface Student extends Omit<
 export type TeacherStatus = 'ACTIVE' | 'PENDING' | 'DISABLED';
 
 export interface Teacher {
+  wechatBound?: boolean;
+  wechatInvitationExpiresAt?: string | null;
   id: string;
   name: string;
   subject: string;

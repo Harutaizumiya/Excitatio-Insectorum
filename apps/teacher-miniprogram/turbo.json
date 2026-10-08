@@ -1,0 +1,14 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "env": ["TARO_APP_API_ORIGIN", "TARO_APP_SOCKET_ORIGIN"]
+    },
+    "dev": {
+      "env": ["TARO_APP_API_ORIGIN", "TARO_APP_SOCKET_ORIGIN"],
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

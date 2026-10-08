@@ -140,6 +140,8 @@ function mapTeacher(relation: ClassTeacher): Teacher {
         ? 'PENDING'
         : 'ACTIVE';
   return {
+    wechatBound: relation.wechatBound,
+    wechatInvitationExpiresAt: relation.wechatInvitationExpiresAt,
     id: relation.id,
     name: relation.teacher.name,
     subject: relation.subject ?? '',

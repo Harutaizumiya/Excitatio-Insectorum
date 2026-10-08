@@ -61,6 +61,7 @@ import type {
   StudentImportResult,
   StudentListQuery,
   TeacherInvitation,
+  WechatTeacherInvitation,
   TokenPair,
   UpdateClassroomInput,
   UpdateFeedbackInput,
@@ -626,6 +627,26 @@ export class ApiClassroomService implements ClassroomService {
       {
         method: 'POST',
       },
+    );
+  }
+
+  async createWechatTeacherInvitation(
+    classId: string,
+    classTeacherId: string,
+  ): Promise<WechatTeacherInvitation> {
+    return this.request<WechatTeacherInvitation>(
+      `/classes/${encodeURIComponent(classId)}/teachers/${encodeURIComponent(classTeacherId)}/wechat-invitations`,
+      { method: 'POST' },
+    );
+  }
+
+  async revokeWechatTeacherInvitations(
+    classId: string,
+    classTeacherId: string,
+  ): Promise<{ revoked: true }> {
+    return this.request<{ revoked: true }>(
+      `/classes/${encodeURIComponent(classId)}/teachers/${encodeURIComponent(classTeacherId)}/wechat-invitations/revoke`,
+      { method: 'POST' },
     );
   }
 
