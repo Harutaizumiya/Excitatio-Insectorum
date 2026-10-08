@@ -33,7 +33,6 @@ import {
 import type { ReactNode } from "react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import webPackage from "../../../package.json";
 import { adminResources, cloneSeats, navItems, type AdminRoute } from "./admin-data";
 import { AdminNotificationDrawer } from "./admin-notification-drawer";
 import { FeedbackSubmitDrawer } from "./feedback/feedback-submit-drawer";
@@ -42,8 +41,7 @@ import { useClassroomService } from "@/components/providers/classroom-system-pro
 import { getUserSession, clearUserSession } from "@/lib/session";
 
 const { Header, Sider, Content } = Layout;
-const appVersion = import.meta.env.VITE_APP_VERSION || webPackage.version;
-const appVersionLabel = `v${appVersion.replace(/^v/i, "")}`;
+const appVersionLabel = "26H2";
 
 const iconByRoute: Record<AdminRoute, ReactNode> = {
   overview: <AppstoreOutlined />,
