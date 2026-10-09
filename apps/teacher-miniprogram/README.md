@@ -4,7 +4,9 @@ Standalone WeChat mini-program built with Taro 4.3.0, React 18, and TypeScript. 
 
 ## Development
 
-Run `pnpm --filter @repo/teacher-miniprogram dev` and open `apps/teacher-miniprogram` in WeChat DevTools. The checked-in `project.config.json` points `miniprogramRoot` to the generated `dist/` directory and uses the `touristappid` placeholder; set a real AppID in your local DevTools project settings. Keep URL checking enabled; local-only DevTools overrides belong in the ignored `project.private.config.json`. Development defaults the API and socket origins to localhost. Production builds require an HTTPS `TARO_APP_API_ORIGIN` ending in `/api/v1`; set `TARO_APP_SOCKET_ORIGIN` only to override the derived WSS origin.
+Copy `.env.example` to `.env.development.local` and set `TARO_APP_API_ORIGIN` and, optionally, `TARO_APP_SOCKET_ORIGIN`. Taro reads these values at build time and embeds them in `dist/`; restart the dev build after changing the file. For a physical device, use the development computer's LAN IP instead of `127.0.0.1` and allow that host in WeChat DevTools request/socket domain checks.
+
+Run `pnpm --filter @repo/teacher-miniprogram dev` and open `apps/teacher-miniprogram` in WeChat DevTools. The checked-in `project.config.json` points `miniprogramRoot` to the generated `dist/` directory and uses the `touristappid` placeholder; set a real AppID in your local DevTools project settings. Keep URL checking enabled; local-only DevTools overrides belong in the ignored `project.private.config.json`. Production builds require an HTTPS `TARO_APP_API_ORIGIN` ending in `/api/v1`; set `TARO_APP_SOCKET_ORIGIN` only to override the derived WSS origin.
 
 Use `pnpm --filter @repo/teacher-miniprogram typecheck`, `lint`, `test`, and `build` for package checks. The test script exercises the transport, auth/session races, class isolation, realtime lifecycle/protocol, and feature helpers.
 
