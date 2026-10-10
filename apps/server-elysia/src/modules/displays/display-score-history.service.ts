@@ -24,6 +24,7 @@ type RecordRow = {
   delta: number;
   reason: string | null;
   recordType?: ScoreRecordType;
+  revertedRecordId?: string | null;
   occurredAt: Date | null;
   createdAt: Date;
 };
@@ -97,6 +98,14 @@ function recordTime(record: RecordRow): number {
   return (record.occurredAt ?? record.createdAt).getTime();
 }
 
+function replayTime(record: RecordRow, recordsById: Map<string, RecordRow>): number {
+  if (record.recordType === ScoreRecordType.REVERT && record.revertedRecordId) {
+    const revertedRecord = recordsById.get(record.revertedRecordId);
+    if (revertedRecord) return recordTime(revertedRecord);
+  }
+  return recordTime(record);
+}
+
 export function buildDisplayScoreTimeline(input: {
   classId: string;
   asOf: Date;
@@ -143,11 +152,13 @@ export function buildDisplayScoreTimeline(input: {
   }));
   const studentById = new Map(studentData.map((student) => [student.id, student]));
   const recordGroups = new Map<string, RecordRow[]>();
+  const recordsById = new Map(input.records.map((record) => [record.id, record] as const));
   for (const record of input.records) {
     if (!activeIds.has(record.studentId)) continue;
     const period = record.periodId ? periodById.get(record.periodId) : undefined;
     if (!period) continue;
-    const at = recordTime(record);
+    if (recordTime(record) > asOf) continue;
+    const at = replayTime(record, recordsById);
     if (at > asOf || at < period.startAt || at >= period.endAt) continue;
     const key = String(period.startAt);
     const group = recordGroups.get(key) ?? [];
@@ -164,14 +175,14 @@ export function buildDisplayScoreTimeline(input: {
 
     const records = (recordGroups.get(String(period.startAt)) ?? []).sort(
       (left, right) =>
-        recordTime(left) - recordTime(right) ||
+        replayTime(left, recordsById) - replayTime(right, recordsById) ||
         left.createdAt.getTime() - right.createdAt.getTime() ||
         left.id.localeCompare(right.id),
     );
     let cursor = 0;
     while (cursor < records.length) {
-      const at = recordTime(records[cursor]);
-      while (cursor < records.length && recordTime(records[cursor]) === at) {
+      const at = replayTime(records[cursor], recordsById);
+      while (cursor < records.length && replayTime(records[cursor], recordsById) === at) {
         const record = records[cursor];
         const score = (scoreByStudent.get(record.studentId) ?? period.initialScore) + record.delta;
         scoreByStudent.set(record.studentId, score);
@@ -237,6 +248,7 @@ export class DisplayScoreHistoryService {
                 delta: true,
                 reason: true,
                 recordType: true,
+                revertedRecordId: true,
                 occurredAt: true,
                 createdAt: true,
               },
