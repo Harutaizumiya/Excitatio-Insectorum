@@ -42,7 +42,7 @@ test('range baseline is preceding cumulative snapshot, boundary record remains v
   );
   assert.deepEqual(
     result.points.map((r) => r.at),
-    [20, 20, 80, 90],
+    [20, 80, 90],
   );
   assert.equal(result.low, 103);
   assert.equal(result.high, 108);
@@ -106,4 +106,45 @@ test('period resets are baselines, not ledger records, when building a multi-per
     midMonth.records.map(({ id }) => id),
     ['oct'],
   );
+});
+
+test('same-time corrections plot only the restated balance but keep both ledger rows inspectable', () => {
+  const originalAt = 90;
+  const corrected = {
+    ...student,
+    records: [
+      { id: 'original', periodId: 'sep', at: originalAt, score: 105, delta: 5 },
+      { id: 'revert', periodId: 'sep', at: originalAt, score: 100, delta: -5 },
+      { id: 'later', periodId: 'sep', at: 91, score: 102, delta: 2 },
+    ],
+  };
+  const periods = [{ id: 'sep', startAt: 0, endAt: 100, initialScore: 100 }];
+
+  const result = scoreRange(corrected, -Infinity, 95, periods);
+
+  assert.deepEqual(
+    result.points.map(({ at, score }) => [at, score]),
+    [
+      [0, 100],
+      [originalAt, 100],
+      [91, 102],
+      [95, 102],
+    ],
+  );
+  assert.equal(result.high, 102);
+  const fallback = scoreRange(corrected, -Infinity, 95);
+  assert.deepEqual(
+    fallback.points.map(({ at, score }) => [at, score]),
+    [
+      [0, 100],
+      [originalAt, 100],
+      [91, 102],
+      [95, 102],
+    ],
+  );
+  assert.deepEqual(
+    result.records.map(({ id }) => id),
+    ['original', 'revert', 'later'],
+  );
+  assert.equal(nearestRecord(result.records, originalAt)?.id, 'revert');
 });

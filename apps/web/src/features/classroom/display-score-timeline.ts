@@ -12,6 +12,18 @@ export type ScoreTimelineData = Omit<
   termEndAt?: number | null;
 };
 
+type TimelinePoint = { at: number; score: number };
+
+function collapseSameTimePoints(points: TimelinePoint[]): TimelinePoint[] {
+  const collapsed: TimelinePoint[] = [];
+  for (const point of points) {
+    const previous = collapsed.at(-1);
+    if (previous?.at === point.at) previous.score = point.score;
+    else collapsed.push({ ...point });
+  }
+  return collapsed;
+}
+
 export interface ScoreTimelinePeriod {
   id: string | null;
   startAt: number;
@@ -57,21 +69,23 @@ export function scoreRange(
     const visible = records.filter((record) => record.at >= start);
     const current = visible.at(-1)?.score ?? initial;
     const delta = current - initial;
+    const points = visible.length
+      ? collapseSameTimePoints([
+          { at: Math.max(start, student.initialAt), score: initial },
+          ...visible,
+          ...(visible.at(-1)!.at < end ? [{ at: end, score: current }] : []),
+        ])
+      : [];
+    const values = points.map((point) => point.score);
     return {
       initial,
       current,
       delta,
       percent: initial > 0 ? (delta / initial) * 100 : null,
       records: visible,
-      points: visible.length
-        ? [
-            { at: Math.max(start, student.initialAt), score: initial },
-            ...visible,
-            ...(visible.at(-1)!.at < end ? [{ at: end, score: current }] : []),
-          ]
-        : [],
-      high: Math.max(initial, ...visible.map((record) => record.score)),
-      low: Math.min(initial, ...visible.map((record) => record.score)),
+      points,
+      high: Math.max(initial, ...values),
+      low: Math.min(initial, ...values),
     };
   }
 
@@ -110,7 +124,7 @@ export function scoreRange(
     .sort((left, right) => left.at - right.at);
   let activePeriod = periodAtStart;
   let current = startScore;
-  const points: Array<{ at: number; score: number }> = [
+  const points: TimelinePoint[] = [
     { at: Math.max(start, activePeriod.startAt), score: startScore },
   ];
   for (const point of orderedPoints) {
@@ -122,16 +136,17 @@ export function scoreRange(
     points.push({ at: point.at, score: current });
   }
   if (points.at(-1)!.at < end) points.push({ at: end, score: current });
+  const collapsedPoints = collapseSameTimePoints(points);
   const initial = startScore;
   const delta = current - initial;
-  const values = points.map((point) => point.score);
+  const values = collapsedPoints.map((point) => point.score);
   return {
     initial,
     current,
     delta,
     percent: initial > 0 ? (delta / initial) * 100 : null,
     records: visible,
-    points: visible.length ? points : [],
+    points: visible.length ? collapsedPoints : [],
     high: Math.max(...values),
     low: Math.min(...values),
   };
@@ -162,7 +177,7 @@ function scoreAt(
 export function nearestRecord(records: ScoreTimelineRecord[], at: number) {
   return records.reduce<ScoreTimelineRecord | null>(
     (nearest, record) =>
-      !nearest || Math.abs(record.at - at) < Math.abs(nearest.at - at) ? record : nearest,
+      !nearest || Math.abs(record.at - at) <= Math.abs(nearest.at - at) ? record : nearest,
     null,
   );
 }
