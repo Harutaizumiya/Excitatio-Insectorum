@@ -225,16 +225,16 @@
 
 ### 4.11 Display
 
-| 方法 | 路径                                                 | 权限           | 请求                        | 用途                           |
-| ---- | ---------------------------------------------------- | -------------- | --------------------------- | ------------------------------ |
-| POST | `/display/binding-codes`                             | Public         | 无                          | 大屏创建六位绑定码和 nonce     |
-| POST | `/display/binding-sessions/:bindingSessionId/poll`   | Public + nonce | `PollBindingSessionRequest` | 一次性领取长期设备凭证         |
-| POST | `/classes/:classId/display-devices/bind`             | HEAD           | `BindDisplayRequest`        | 班主任绑定设备                 |
-| GET  | `/classes/:classId/display-devices`                  | HEAD           | 无                          | 查询设备与在线状态             |
-| POST | `/classes/:classId/display-devices/:deviceId/revoke` | HEAD           | 无                          | 吊销设备和全部凭证             |
-| POST | `/display/auth/token`                                | Public         | `DeviceTokenRequest`        | 长期凭证换取短期 Access Token  |
-| GET  | `/display/bootstrap`                                 | DISPLAY        | 无                          | 获取绑定班级、座位和当前榜单   |
-| GET  | `/display/score-trends`                              | DISPLAY        | 无                          | 获取绑定班级的真实积分走势     |
+| 方法 | 路径                                                 | 权限           | 请求                        | 用途                          |
+| ---- | ---------------------------------------------------- | -------------- | --------------------------- | ----------------------------- |
+| POST | `/display/binding-codes`                             | Public         | 无                          | 大屏创建六位绑定码和 nonce    |
+| POST | `/display/binding-sessions/:bindingSessionId/poll`   | Public + nonce | `PollBindingSessionRequest` | 一次性领取长期设备凭证        |
+| POST | `/classes/:classId/display-devices/bind`             | HEAD           | `BindDisplayRequest`        | 班主任绑定设备                |
+| GET  | `/classes/:classId/display-devices`                  | HEAD           | 无                          | 查询设备与在线状态            |
+| POST | `/classes/:classId/display-devices/:deviceId/revoke` | HEAD           | 无                          | 吊销设备和全部凭证            |
+| POST | `/display/auth/token`                                | Public         | `DeviceTokenRequest`        | 长期凭证换取短期 Access Token |
+| GET  | `/display/bootstrap`                                 | DISPLAY        | 无                          | 获取绑定班级、座位和当前榜单  |
+| GET  | `/display/score-trends`                              | DISPLAY        | 无                          | 获取绑定班级的真实积分走势    |
 
 每班最多两个 ACTIVE 大屏设备。在线判断窗口为最近 90 秒。
 
