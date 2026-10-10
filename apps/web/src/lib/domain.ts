@@ -584,6 +584,36 @@ export interface DisplayBootstrap {
   };
 }
 
+export interface DisplayScoreTimeline {
+  classId: string;
+  asOf: number;
+  termStartAt: number | null;
+  /** Exclusive Taiwan-calendar end boundary for the configured term. */
+  termEndAt: number | null;
+  periods: Array<{
+    id: string | null;
+    startAt: number;
+    endAt: number;
+    initialScore: number;
+  }>;
+  students: Array<{
+    id: string;
+    name: string;
+    currentScore: number;
+    initialAt: number;
+    initialScore: number;
+    records: Array<{
+      id: string;
+      periodId?: string | null;
+      at: number;
+      score: number;
+      delta: number;
+      reason: string;
+    }>;
+  }>;
+  classAverage: Array<{ at: number; score: number }>;
+}
+
 export interface LoginInput {
   account: string;
   password: string;

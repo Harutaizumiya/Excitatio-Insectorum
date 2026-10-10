@@ -24,6 +24,7 @@ import type {
   DeviceTokenInput,
   DeviceTokenResult,
   DisplayBootstrap,
+  DisplayScoreTimeline,
   DisplayDevice,
   Dormitory,
   FeedbackCreateResult,
@@ -185,6 +186,7 @@ export interface ClassroomService {
   revokeDisplayDevice(classId: string, deviceId: string): Promise<BindDisplayResult>;
   exchangeDeviceCredential(input: DeviceTokenInput): Promise<DeviceTokenResult>;
   getDisplayBootstrap(deviceId: string): Promise<DisplayBootstrap>;
+  getDisplayScoreTimeline(deviceId: string, classId: string): Promise<DisplayScoreTimeline>;
   listAnnouncements(classId: string): Promise<Announcement[]>;
   getAnnouncement(classId: string, id: string): Promise<Announcement>;
   createAnnouncement(classId: string, input: CreateAnnouncementInput): Promise<Announcement>;
