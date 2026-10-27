@@ -30,6 +30,7 @@ import {
   Space,
   Typography,
 } from "antd";
+import zhCN from "antd/locale/zh_CN";
 import type { ReactNode } from "react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -99,6 +100,7 @@ function getServerAdminTeacherNameSnapshot(): string {
 export function AdminShell({ children }: AdminShellProps) {
   return (
     <ConfigProvider
+      locale={zhCN}
       theme={{
         token: {
           colorPrimary: "#0a59f7",

@@ -31,6 +31,7 @@ import type {
   SaveClassScheduleInput,
   Student as ApiStudent,
   DisplayDevice as ApiDisplayDevice,
+  IsoDateTime,
 } from '@/lib';
 import { useClassroomService } from '@/components/providers/classroom-system-provider';
 import { getActiveClassId, getUserSession } from '@/lib/session';
@@ -670,12 +671,16 @@ export function useAdminScoreRecords() {
   };
 }
 
-export function useAdminScorePeriodSummary() {
+export function useAdminScorePeriodSummary(range?: { from?: IsoDateTime; to?: IsoDateTime }) {
   const service = useClassroomService();
   const classId = currentClassId();
   const query = useQuery({
-    queryKey: adminQueryKeys.scorePeriodSummary(classId),
-    queryFn: () => service.getCurrentScorePeriodSummary(classId),
+    queryKey: [
+      ...adminQueryKeys.scorePeriodSummary(classId),
+      range?.from ?? null,
+      range?.to ?? null,
+    ] as const,
+    queryFn: () => service.getScorePeriodSummary(classId, range),
     staleTime: 30_000,
   });
   return { summary: query.data, isLoading: query.isLoading, refetch: query.refetch };

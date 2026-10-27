@@ -490,7 +490,11 @@ export class ScorePeriodsService {
     const periodIds = periods.map((period) => period.id);
     const records = periodIds.length
       ? await this.db.scoreRecord.findMany({
-          where: { classId, periodId: { in: periodIds } },
+          where: {
+            classId,
+            periodId: { in: periodIds },
+            ...(range ? { occurredAt: { gte: range.startAt, lte: range.endAt } } : {}),
+          },
           select: { studentId: true, delta: true },
         })
       : [];

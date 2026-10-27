@@ -38,6 +38,7 @@ import {
   Checkbox,
   Col,
   Descriptions,
+  DatePicker,
   Divider,
   Drawer,
   Empty,
@@ -92,6 +93,8 @@ import {
 import type { CreateScoreEventInput } from "@/lib";
 import type { CommitteeAssignment, CommitteeAssignmentInput, UpdateCommitteeInput } from "@/lib";
 import { getUserSession } from "@/lib/session";
+
+const { RangePicker } = DatePicker;
 
 const cardStyle: CSSProperties = {
   border: "1px solid #e5ebf4",
@@ -1484,7 +1487,13 @@ function ScoreRulesPage() {
 function ScoreRecordsPage() {
   const { notification } = AntApp.useApp();
   const { records, refetch: refetchRecords, revertRecord: persistRevert } = useAdminScoreRecords();
-  const { summary, refetch: refetchSummary } = useAdminScorePeriodSummary();
+  const [periodRange, setPeriodRange] = useState<{
+    from: string;
+    to: string;
+  } | null>(null);
+  const { summary, refetch: refetchSummary } = useAdminScorePeriodSummary(
+    periodRange ?? undefined,
+  );
   const [studentKeyword, setStudentKeyword] = useState("");
   const [operatorId, setOperatorId] = useState("ALL");
   const [subject, setSubject] = useState("ALL");
@@ -1550,7 +1559,30 @@ function ScoreRecordsPage() {
         </div>
         <Table rowKey="id" columns={columns} dataSource={filteredRecords} scroll={{ x: 980 }} pagination={{ pageSize: 8, showSizeChanger: false }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无积分流水" /> }} />
       </Card>
-      <Card title="本月积分" style={{ ...cardStyle, marginTop: 16 }}>
+      <Card
+        title={periodRange ? "积分汇总" : "当前周期积分"}
+        extra={
+          <RangePicker
+            allowClear
+            format="YYYY-MM-DD"
+            placeholder={["开始日期", "结束日期"]}
+            onChange={(dates) => {
+              const from = dates?.[0];
+              const to = dates?.[1];
+              setPeriodRange(
+                from && to
+                  ? {
+                      from: from.startOf("day").toISOString(),
+                      to: to.endOf("day").toISOString(),
+                    }
+                  : null,
+              );
+            }}
+            disabledDate={(current) => current.valueOf() > Date.now()}
+          />
+        }
+        style={{ ...cardStyle, marginTop: 16 }}
+      >
         <Table
           rowKey="studentId"
           columns={scoreColumns}
