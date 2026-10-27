@@ -61,28 +61,32 @@ if [[ "$backup_integrity" != 'ok' ]]; then
 fi
 chmod 600 "$backup_file"
 
-echo "Pulling server image for $release_sha"
-if [[ -z "${GHCR_TOKEN:-}" || -z "${GHCR_USERNAME:-}" ]]; then
-  echo 'GHCR credentials are required to pull the release image.' >&2
-  exit 1
-fi
+if docker image inspect "$NEW_IMAGE" >/dev/null 2>&1; then
+  echo "Image already present locally: $NEW_IMAGE"
+else
+  echo "Pulling server image for $release_sha"
+  if [[ -z "${GHCR_TOKEN:-}" || -z "${GHCR_USERNAME:-}" ]]; then
+    echo 'GHCR credentials are required to pull the release image.' >&2
+    exit 1
+  fi
 
-docker_auth_dir="$(mktemp -d /tmp/excitatio-docker-auth.XXXXXXXXXX)"
-export DOCKER_CONFIG="$docker_auth_dir"
-cleanup_registry_auth() {
-  docker logout ghcr.io >/dev/null 2>&1 || true
+  docker_auth_dir="$(mktemp -d /tmp/excitatio-docker-auth.XXXXXXXXXX)"
+  export DOCKER_CONFIG="$docker_auth_dir"
+  cleanup_registry_auth() {
+    docker logout ghcr.io >/dev/null 2>&1 || true
+    rm -f -- "$docker_auth_dir/config.json"
+    rmdir -- "$docker_auth_dir" 2>/dev/null || true
+  }
+  trap cleanup_registry_auth EXIT
+
+  printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+  docker pull "$NEW_IMAGE"
+  docker logout ghcr.io
   rm -f -- "$docker_auth_dir/config.json"
-  rmdir -- "$docker_auth_dir" 2>/dev/null || true
-}
-trap cleanup_registry_auth EXIT
-
-printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
-docker pull "$NEW_IMAGE"
-docker logout ghcr.io
-rm -f -- "$docker_auth_dir/config.json"
-rmdir -- "$docker_auth_dir"
-trap - EXIT
-unset DOCKER_CONFIG GHCR_TOKEN GHCR_USERNAME
+  rmdir -- "$docker_auth_dir"
+  trap - EXIT
+  unset DOCKER_CONFIG GHCR_TOKEN GHCR_USERNAME
+fi
 docker image inspect "$NEW_IMAGE" >/dev/null
 
 docker image tag "$old_image_id" "$rollback_tag"
