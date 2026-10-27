@@ -25,6 +25,8 @@ import type {
   CreateScoreEventInput,
   UpdateCommitteeInput,
   ScoreRule as ApiScoreRule,
+  ScoreSettlementConfig,
+  SaveScoreSettlementConfigInput,
   SeatLayout,
   SeatLayoutVersionSummary,
   ScheduleTemplateDraft,
@@ -44,6 +46,8 @@ export const adminQueryKeys = {
   dormitories: (classId: string) => ['admin', classId, 'dormitories'] as const,
   teachers: (classId: string) => ['admin', classId, 'teachers'] as const,
   scoreRules: (classId: string) => ['admin', classId, 'score-rules'] as const,
+  scoreSettlementConfig: (classId: string) =>
+    ['admin', classId, 'score-settlement-config'] as const,
   scoreRecords: (classId: string) => ['admin', classId, 'score-records'] as const,
   scorePeriodSummary: (classId: string) => ['admin', classId, 'score-period-summary'] as const,
   committee: (classId: string) => ['admin', classId, 'committee'] as const,
@@ -604,6 +608,34 @@ export function useAdminScoreRules() {
     toggleRule: toggleRuleMutation.mutateAsync,
     deleteRule: deleteRuleMutation.mutateAsync,
     isLoading: query.isLoading,
+  };
+}
+
+export function useAdminScoreSettlementConfig() {
+  const service = useClassroomService();
+  const classId = currentClassId();
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: adminQueryKeys.scoreSettlementConfig(classId),
+    queryFn: async (): Promise<ScoreSettlementConfig> =>
+      service.getScoreSettlementConfig(classId),
+    staleTime: STALE_TIME,
+  });
+  const saveMutation = useMutation({
+    mutationFn: (input: SaveScoreSettlementConfigInput) =>
+      service.saveScoreSettlementConfig(classId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: adminQueryKeys.scoreSettlementConfig(classId),
+      });
+      void queryClient.invalidateQueries({ queryKey: adminQueryKeys.scorePeriodSummary(classId) });
+    },
+  });
+  return {
+    config: query.data ?? null,
+    saveConfig: saveMutation.mutateAsync,
+    isLoading: query.isLoading,
+    isSaving: saveMutation.isPending,
   };
 }
 

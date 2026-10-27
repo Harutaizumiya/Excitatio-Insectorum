@@ -53,12 +53,14 @@ import {
   Select,
   Space,
   Statistic,
+  Switch,
   Table,
   Tag,
   Typography,
 } from "antd";
 import { App as AntApp } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import dayjs from "dayjs";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router-dom";
@@ -86,6 +88,7 @@ import {
   useAdminScoreRecords,
   useAdminScorePeriodSummary,
   useAdminScoreRules,
+  useAdminScoreSettlementConfig,
   useAdminSeating,
   useAdminStudents,
   useAdminTeachers,
@@ -1201,8 +1204,16 @@ interface ScoreRuleFormValues {
 function ScoreRulesPage() {
   const { notification } = AntApp.useApp();
   const { rules, saveRule: persistRule, toggleRule: persistToggle, deleteRule: persistDelete } = useAdminScoreRules();
+  const {
+    config: settlementConfig,
+    saveConfig: persistSettlement,
+    isSaving: settlementSaving,
+  } = useAdminScoreSettlementConfig();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ScoreRule | null>(null);
+  const [settlementOpen, setSettlementOpen] = useState(false);
+  const [settlementEnabled, setSettlementEnabled] = useState(false);
+  const [settlementDates, setSettlementDates] = useState<string[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [selectedGroup, setSelectedGroup] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ENABLED" | "DISABLED">("ALL");
@@ -1264,6 +1275,22 @@ function ScoreRulesPage() {
   const deleteRule = async (rule: ScoreRule) => {
     await persistDelete(rule);
     notification.success({ title: "积分规则已删除" });
+  };
+
+  const openSettlement = () => {
+    setSettlementEnabled(settlementConfig?.enabled ?? false);
+    setSettlementDates(settlementConfig?.dates ?? []);
+    setSettlementOpen(true);
+  };
+
+  const saveSettlement = async () => {
+    if (settlementEnabled && settlementDates.length === 0) {
+      notification.error({ title: "请至少选择一个结算日期" });
+      return;
+    }
+    await persistSettlement({ enabled: settlementEnabled, dates: settlementDates });
+    notification.success({ title: "结算周期已保存" });
+    setSettlementOpen(false);
   };
 
   const columns: ColumnsType<ScoreRule> = [
@@ -1358,9 +1385,14 @@ function ScoreRulesPage() {
       <PageHeader
         title="积分规则"
         action={
-          <Button type="primary" icon={<PlusOutlined />} style={primaryButtonStyle} onClick={() => openRule()}>
-            新增规则
-          </Button>
+          <Space size={8}>
+            <Button icon={<ClockCircleOutlined />} onClick={openSettlement}>
+              结算周期
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} style={primaryButtonStyle} onClick={() => openRule()}>
+              新增规则
+            </Button>
+          </Space>
         }
       />
       <Card style={cardStyle} styles={{ body: { padding: 0 } }}>
@@ -1479,6 +1511,54 @@ function ScoreRulesPage() {
             <InputNumber style={{ width: "100%" }} precision={0} placeholder="例如：2 或 -2" />
           </Form.Item>
         </Form>
+      </Modal>
+      <Modal
+        title="结算周期"
+        open={settlementOpen}
+        onCancel={() => setSettlementOpen(false)}
+        onOk={() => void saveSettlement()}
+        okText="保存设置"
+        cancelText="取消"
+        confirmLoading={settlementSaving}
+      >
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          <Flex justify="space-between" align="center">
+            <Typography.Text strong>启用自动结算</Typography.Text>
+            <Switch checked={settlementEnabled} onChange={setSettlementEnabled} />
+          </Flex>
+          {settlementEnabled ? (
+            <>
+              <div>
+                <Typography.Text strong>结算日期</Typography.Text>
+                <div style={{ marginTop: 8 }}>
+                  <DatePicker
+                    multiple
+                    value={settlementDates.map((date) => dayjs(date))}
+                    onChange={(values) =>
+                      setSettlementDates(
+                        (values ?? []).map((value) => value.format("YYYY-MM-DD")).sort(),
+                      )
+                    }
+                    placeholder="选择一个或多个日期"
+                    style={{ width: "100%" }}
+                  />
+                </div>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  结算在所选日期 00:00 执行，可添加多个日期。
+                </Typography.Text>
+              </div>
+              {settlementConfig?.enabled && settlementConfig.nextSettlementAt ? (
+                <Typography.Text type="secondary">
+                  下次结算：{formatDateTime(settlementConfig.nextSettlementAt)}
+                </Typography.Text>
+              ) : null}
+            </>
+          ) : (
+            <Typography.Text type="secondary">
+              关闭后积分跨月连续累计，不会自动重置为 100 分。
+            </Typography.Text>
+          )}
+        </Space>
       </Modal>
     </div>
   );

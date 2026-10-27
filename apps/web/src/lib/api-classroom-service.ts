@@ -46,6 +46,8 @@ import type {
   RefreshInput,
   SaveSeatLayoutInput,
   SaveClassScheduleInput,
+  SaveScoreSettlementConfigInput,
+  ScoreSettlementConfig,
   ScoreRecord,
   ScoreEventResult,
   ScorePeriodSummary,
@@ -677,6 +679,25 @@ export class ApiClassroomService implements ClassroomService {
       `/classes/${encodeURIComponent(classId)}/score-rules/${encodeURIComponent(ruleId)}/disable`,
       {
         method: 'POST',
+      },
+    );
+  }
+
+  async getScoreSettlementConfig(classId: string): Promise<ScoreSettlementConfig> {
+    return this.request<ScoreSettlementConfig>(
+      `/classes/${encodeURIComponent(classId)}/score-settlement-config`,
+    );
+  }
+
+  async saveScoreSettlementConfig(
+    classId: string,
+    input: SaveScoreSettlementConfigInput,
+  ): Promise<ScoreSettlementConfig> {
+    return this.request<ScoreSettlementConfig>(
+      `/classes/${encodeURIComponent(classId)}/score-settlement-config`,
+      {
+        method: 'PUT',
+        body: jsonBody(input),
       },
     );
   }

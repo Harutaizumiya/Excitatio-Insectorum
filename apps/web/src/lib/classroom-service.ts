@@ -45,6 +45,8 @@ import type {
   RefreshInput,
   SaveSeatLayoutInput,
   SaveClassScheduleInput,
+  SaveScoreSettlementConfigInput,
+  ScoreSettlementConfig,
   ScoreRecord,
   ScoreEventResult,
   ScorePeriodSummary,
@@ -135,6 +137,11 @@ export interface ClassroomService {
   createScoreRule(classId: string, input: CreateScoreRuleInput): Promise<ScoreRule>;
   updateScoreRule(classId: string, ruleId: string, input: UpdateScoreRuleInput): Promise<ScoreRule>;
   disableScoreRule(classId: string, ruleId: string): Promise<ScoreRule>;
+  getScoreSettlementConfig(classId: string): Promise<ScoreSettlementConfig>;
+  saveScoreSettlementConfig(
+    classId: string,
+    input: SaveScoreSettlementConfigInput,
+  ): Promise<ScoreSettlementConfig>;
   listScoreRecords(
     classId: string,
     query?: ScoreRecordListQuery,
