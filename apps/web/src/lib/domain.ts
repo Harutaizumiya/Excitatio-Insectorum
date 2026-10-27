@@ -289,6 +289,18 @@ export interface UpdateScoreRuleInput {
   systemPolicyKey?: string | null;
 }
 
+export interface ScoreSettlementConfig {
+  enabled: boolean;
+  dates: string[];
+  nextSettlementAt: IsoDateTime | null;
+  updatedAt: IsoDateTime | null;
+}
+
+export interface SaveScoreSettlementConfigInput {
+  enabled: boolean;
+  dates: string[];
+}
+
 export type ScoreEventType =
   | 'LATE'
   | 'SCHOOL_UNIFORM'

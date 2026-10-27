@@ -38,6 +38,7 @@ import {
   Checkbox,
   Col,
   Descriptions,
+  DatePicker,
   Divider,
   Drawer,
   Empty,
@@ -52,12 +53,14 @@ import {
   Select,
   Space,
   Statistic,
+  Switch,
   Table,
   Tag,
   Typography,
 } from "antd";
 import { App as AntApp } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import dayjs from "dayjs";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router-dom";
@@ -85,6 +88,7 @@ import {
   useAdminScoreRecords,
   useAdminScorePeriodSummary,
   useAdminScoreRules,
+  useAdminScoreSettlementConfig,
   useAdminSeating,
   useAdminStudents,
   useAdminTeachers,
@@ -92,6 +96,8 @@ import {
 import type { CreateScoreEventInput } from "@/lib";
 import type { CommitteeAssignment, CommitteeAssignmentInput, UpdateCommitteeInput } from "@/lib";
 import { getUserSession } from "@/lib/session";
+
+const { RangePicker } = DatePicker;
 
 const cardStyle: CSSProperties = {
   border: "1px solid #e5ebf4",
@@ -1198,8 +1204,16 @@ interface ScoreRuleFormValues {
 function ScoreRulesPage() {
   const { notification } = AntApp.useApp();
   const { rules, saveRule: persistRule, toggleRule: persistToggle, deleteRule: persistDelete } = useAdminScoreRules();
+  const {
+    config: settlementConfig,
+    saveConfig: persistSettlement,
+    isSaving: settlementSaving,
+  } = useAdminScoreSettlementConfig();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ScoreRule | null>(null);
+  const [settlementOpen, setSettlementOpen] = useState(false);
+  const [settlementEnabled, setSettlementEnabled] = useState(false);
+  const [settlementDates, setSettlementDates] = useState<string[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [selectedGroup, setSelectedGroup] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ENABLED" | "DISABLED">("ALL");
@@ -1261,6 +1275,29 @@ function ScoreRulesPage() {
   const deleteRule = async (rule: ScoreRule) => {
     await persistDelete(rule);
     notification.success({ title: "积分规则已删除" });
+  };
+
+  const openSettlement = () => {
+    setSettlementEnabled(settlementConfig?.enabled ?? false);
+    setSettlementDates(settlementConfig?.dates ?? []);
+    setSettlementOpen(true);
+  };
+
+  const saveSettlement = async () => {
+    if (settlementEnabled && settlementDates.length === 0) {
+      notification.error({ title: "请至少选择一个结算日期" });
+      return;
+    }
+    try {
+      await persistSettlement({ enabled: settlementEnabled, dates: settlementDates });
+      notification.success({ title: "结算周期已保存" });
+      setSettlementOpen(false);
+    } catch (error) {
+      notification.error({
+        title: "保存结算周期失败",
+        description: error instanceof Error ? error.message : "网络异常，请重试",
+      });
+    }
   };
 
   const columns: ColumnsType<ScoreRule> = [
@@ -1355,9 +1392,14 @@ function ScoreRulesPage() {
       <PageHeader
         title="积分规则"
         action={
-          <Button type="primary" icon={<PlusOutlined />} style={primaryButtonStyle} onClick={() => openRule()}>
-            新增规则
-          </Button>
+          <Space size={8}>
+            <Button icon={<ClockCircleOutlined />} onClick={openSettlement}>
+              结算周期
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} style={primaryButtonStyle} onClick={() => openRule()}>
+              新增规则
+            </Button>
+          </Space>
         }
       />
       <Card style={cardStyle} styles={{ body: { padding: 0 } }}>
@@ -1477,6 +1519,57 @@ function ScoreRulesPage() {
           </Form.Item>
         </Form>
       </Modal>
+      <Modal
+        title="结算周期"
+        open={settlementOpen}
+        onCancel={() => setSettlementOpen(false)}
+        onOk={() => void saveSettlement()}
+        okText="保存设置"
+        cancelText="取消"
+        confirmLoading={settlementSaving}
+      >
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          <Flex justify="space-between" align="center">
+            <Typography.Text strong>启用自动结算</Typography.Text>
+            <Switch checked={settlementEnabled} onChange={setSettlementEnabled} />
+          </Flex>
+          {settlementEnabled ? (
+            <>
+              <div>
+                <Typography.Text strong>结算日期</Typography.Text>
+                <div style={{ marginTop: 8 }}>
+                  <DatePicker
+                    multiple
+                    value={settlementDates.map((date) => dayjs(date))}
+                    disabledDate={(current: dayjs.Dayjs) =>
+                      Boolean(current && current.endOf("day").valueOf() < Date.now())
+                    }
+                    onChange={(values) =>
+                      setSettlementDates(
+                        (values ?? []).map((value) => value.format("YYYY-MM-DD")).sort(),
+                      )
+                    }
+                    placeholder="选择一个或多个日期"
+                    style={{ width: "100%" }}
+                  />
+                </div>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  结算在所选日期 00:00 执行，可添加多个日期。
+                </Typography.Text>
+              </div>
+              {settlementConfig?.enabled && settlementConfig.nextSettlementAt ? (
+                <Typography.Text type="secondary">
+                  下次结算：{formatDateTime(settlementConfig.nextSettlementAt)}
+                </Typography.Text>
+              ) : null}
+            </>
+          ) : (
+            <Typography.Text type="secondary">
+              关闭后积分跨月连续累计，不会自动重置为 100 分。
+            </Typography.Text>
+          )}
+        </Space>
+      </Modal>
     </div>
   );
 }
@@ -1484,7 +1577,13 @@ function ScoreRulesPage() {
 function ScoreRecordsPage() {
   const { notification } = AntApp.useApp();
   const { records, refetch: refetchRecords, revertRecord: persistRevert } = useAdminScoreRecords();
-  const { summary, refetch: refetchSummary } = useAdminScorePeriodSummary();
+  const [periodRange, setPeriodRange] = useState<{
+    from: string;
+    to: string;
+  } | null>(null);
+  const { summary, refetch: refetchSummary } = useAdminScorePeriodSummary(
+    periodRange ?? undefined,
+  );
   const [studentKeyword, setStudentKeyword] = useState("");
   const [operatorId, setOperatorId] = useState("ALL");
   const [subject, setSubject] = useState("ALL");
@@ -1550,7 +1649,30 @@ function ScoreRecordsPage() {
         </div>
         <Table rowKey="id" columns={columns} dataSource={filteredRecords} scroll={{ x: 980 }} pagination={{ pageSize: 8, showSizeChanger: false }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无积分流水" /> }} />
       </Card>
-      <Card title="本月积分" style={{ ...cardStyle, marginTop: 16 }}>
+      <Card
+        title={periodRange ? "积分汇总" : "当前周期积分"}
+        extra={
+          <RangePicker
+            allowClear
+            format="YYYY-MM-DD"
+            placeholder={["开始日期", "结束日期"]}
+            onChange={(dates: [dayjs.Dayjs | null, dayjs.Dayjs | null] | null) => {
+              const from = dates?.[0];
+              const to = dates?.[1];
+              setPeriodRange(
+                from && to
+                  ? {
+                      from: from.startOf("day").toISOString(),
+                      to: to.endOf("day").toISOString(),
+                    }
+                  : null,
+              );
+            }}
+            disabledDate={(current: dayjs.Dayjs) => current.valueOf() > Date.now()}
+          />
+        }
+        style={{ ...cardStyle, marginTop: 16 }}
+      >
         <Table
           rowKey="studentId"
           columns={scoreColumns}

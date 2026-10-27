@@ -190,6 +190,13 @@
 | PATCH | `/classes/:classId/score-rules/:ruleId`         | HEAD           | `UpdateScoreRuleRequest` | 更新积分规则 |
 | POST  | `/classes/:classId/score-rules/:ruleId/disable` | HEAD           | 无                       | 停用积分规则 |
 
+| 方法 | 路径                                        | 权限           | 请求                          | 用途             |
+| ---- | ------------------------------------------- | -------------- | ----------------------------- | ---------------- |
+| GET  | `/classes/:classId/score-settlement-config` | HEAD / SUBJECT | 无                            | 查询结算周期配置 |
+| PUT  | `/classes/:classId/score-settlement-config` | HEAD           | `SaveSettlementConfigRequest` | 保存结算周期配置 |
+
+`SaveSettlementConfigRequest` 为 `{ enabled: boolean, dates: string[] }`，`dates` 为 `YYYY-MM-DD` 精确日期，启用时不能为空。
+
 ### 4.9 Score Records
 
 | 方法 | 路径                                        | 权限           | 请求                 | 用途             |
@@ -210,7 +217,7 @@
 | `page`       | integer >= 1   | 1      | 页码           |
 | `pageSize`   | integer 1..100 | 20     | 每页数量       |
 
-积分周期由服务器每月 1 日 00:00（Asia/Taipei）自动结算，不提供手动结算接口。
+积分周期由服务器按班级配置的精确日期于 00:00（Asia/Taipei）自动结算，支持多个日期；未启用配置或最后一个日期已过时跨自然月连续累计，不再重置初始分。不提供手动结算接口。
 
 任课教师只能撤销本人创建的积分记录；班主任可以撤销本班任意可撤销记录。
 

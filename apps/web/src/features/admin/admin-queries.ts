@@ -25,12 +25,15 @@ import type {
   CreateScoreEventInput,
   UpdateCommitteeInput,
   ScoreRule as ApiScoreRule,
+  ScoreSettlementConfig,
+  SaveScoreSettlementConfigInput,
   SeatLayout,
   SeatLayoutVersionSummary,
   ScheduleTemplateDraft,
   SaveClassScheduleInput,
   Student as ApiStudent,
   DisplayDevice as ApiDisplayDevice,
+  IsoDateTime,
 } from '@/lib';
 import { useClassroomService } from '@/components/providers/classroom-system-provider';
 import { getActiveClassId, getUserSession } from '@/lib/session';
@@ -43,6 +46,8 @@ export const adminQueryKeys = {
   dormitories: (classId: string) => ['admin', classId, 'dormitories'] as const,
   teachers: (classId: string) => ['admin', classId, 'teachers'] as const,
   scoreRules: (classId: string) => ['admin', classId, 'score-rules'] as const,
+  scoreSettlementConfig: (classId: string) =>
+    ['admin', classId, 'score-settlement-config'] as const,
   scoreRecords: (classId: string) => ['admin', classId, 'score-records'] as const,
   scorePeriodSummary: (classId: string) => ['admin', classId, 'score-period-summary'] as const,
   committee: (classId: string) => ['admin', classId, 'committee'] as const,
@@ -606,6 +611,34 @@ export function useAdminScoreRules() {
   };
 }
 
+export function useAdminScoreSettlementConfig() {
+  const service = useClassroomService();
+  const classId = currentClassId();
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: adminQueryKeys.scoreSettlementConfig(classId),
+    queryFn: async (): Promise<ScoreSettlementConfig> => service.getScoreSettlementConfig(classId),
+    staleTime: STALE_TIME,
+  });
+  const saveMutation = useMutation({
+    mutationFn: (input: SaveScoreSettlementConfigInput) =>
+      service.saveScoreSettlementConfig(classId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: adminQueryKeys.scoreSettlementConfig(classId),
+      });
+      void queryClient.invalidateQueries({ queryKey: adminQueryKeys.scorePeriodSummary(classId) });
+      void queryClient.invalidateQueries({ queryKey: ['classrooms', classId, 'ranking'] });
+    },
+  });
+  return {
+    config: query.data ?? null,
+    saveConfig: saveMutation.mutateAsync,
+    isLoading: query.isLoading,
+    isSaving: saveMutation.isPending,
+  };
+}
+
 export function useAdminScoreRecords() {
   const service = useClassroomService();
   const classId = currentClassId();
@@ -670,12 +703,16 @@ export function useAdminScoreRecords() {
   };
 }
 
-export function useAdminScorePeriodSummary() {
+export function useAdminScorePeriodSummary(range?: { from?: IsoDateTime; to?: IsoDateTime }) {
   const service = useClassroomService();
   const classId = currentClassId();
   const query = useQuery({
-    queryKey: adminQueryKeys.scorePeriodSummary(classId),
-    queryFn: () => service.getCurrentScorePeriodSummary(classId),
+    queryKey: [
+      ...adminQueryKeys.scorePeriodSummary(classId),
+      range?.from ?? null,
+      range?.to ?? null,
+    ] as const,
+    queryFn: () => service.getScorePeriodSummary(classId, range),
     staleTime: 30_000,
   });
   return { summary: query.data, isLoading: query.isLoading, refetch: query.refetch };

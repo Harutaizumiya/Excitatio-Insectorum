@@ -1,5 +1,5 @@
 import { Elysia, t } from 'elysia';
-import { ScoreEventType, ScoreRecordType } from '@prisma/client';
+import { ScoreEventType, ScoreRecordType, TeacherRole } from '@prisma/client';
 import { scoresService } from './scores.service';
 import { authPlugin } from '../../plugins/auth';
 import { scoreEventsService, type CreateScoreEventInput } from './score-events.service';
@@ -103,6 +103,35 @@ export const scoresController = new Elysia({ prefix: '/classes/:classId' })
       requireUser: true,
       params: t.Object({ classId: t.String(), ruleId: t.String() }),
       detail: { summary: '停用积分规则', tags: ['Scores'] },
+    },
+  )
+  // Score Settlement Config
+  .get(
+    '/score-settlement-config',
+    async ({ user, params: { classId } }) => {
+      await scoresService.assertClassAccess(user!.sub, classId);
+      return { data: await scorePeriodsService.getSettlementConfig(classId) };
+    },
+    {
+      requireUser: true,
+      params: t.Object({ classId: t.String() }),
+      detail: { summary: '查询班级积分结算周期配置', tags: ['Scores'] },
+    },
+  )
+  .put(
+    '/score-settlement-config',
+    async ({ user, params: { classId }, body }) => {
+      await scoresService.assertClassAccess(user!.sub, classId, [TeacherRole.HEAD_TEACHER]);
+      return { data: await scorePeriodsService.saveSettlementConfig(classId, body) };
+    },
+    {
+      requireUser: true,
+      params: t.Object({ classId: t.String() }),
+      body: t.Object({
+        enabled: t.Boolean(),
+        dates: t.Array(t.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }), { maxItems: 100 }),
+      }),
+      detail: { summary: '保存班级积分结算周期配置', tags: ['Scores'] },
     },
   )
   // Score Records

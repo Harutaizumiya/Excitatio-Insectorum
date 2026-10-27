@@ -98,6 +98,6 @@ export const config: AppConfig = {
     .map((origin) => origin.trim())
     .filter(Boolean),
   swaggerEnabled: process.env.SWAGGER_ENABLED !== 'false',
-  scoreSettlementCron: process.env.SCORE_SETTLEMENT_CRON || '0 0 1 * *',
+  scoreSettlementCron: process.env.SCORE_SETTLEMENT_CRON || '0 0 * * *',
   seatRotationCron: process.env.SEAT_ROTATION_CRON || '5 0 * * 1',
 };

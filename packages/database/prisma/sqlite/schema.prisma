@@ -157,6 +157,7 @@ model Classroom {
   layouts                SeatLayoutVersion[] @relation("ClassroomLayoutVersions")
   scoreRules             ScoreRule[]
   scorePeriods           ScorePeriod[]
+  scoreSettlementConfig  ScoreSettlementConfig?
   scoreEvents            ScoreEvent[]
   scoreRecords           ScoreRecord[]
   committeeAssignments   ClassCommitteeAssignment[]
@@ -346,6 +347,18 @@ model ScoreRule {
   @@index([classId, enabled])
   @@index([classId, systemPolicyKey])
   @@index([createdBy])
+}
+
+model ScoreSettlementConfig {
+  id        String    @id @default(cuid())
+  classId   String    @unique
+  enabled   Boolean   @default(false)
+  dates     String
+  classroom Classroom @relation(fields: [classId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([enabled])
 }
 
 model ScorePeriod {

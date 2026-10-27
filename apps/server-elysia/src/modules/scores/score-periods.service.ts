@@ -26,6 +26,7 @@ const periodSelect = {
 type PeriodRow = Prisma.ScorePeriodGetPayload<{ select: typeof periodSelect }>;
 
 const SCORE_INITIAL_VALUE = 100;
+const CONTINUOUS_PERIOD_END = new Date('9999-12-31T23:59:59.999Z');
 
 function getTaipeiMonthPeriod(reference: Date): { startAt: Date; endAt: Date } {
   if (Number.isNaN(reference.getTime())) throw new Error('Invalid reference date');
@@ -36,6 +37,72 @@ function getTaipeiMonthPeriod(reference: Date): { startAt: Date; endAt: Date } {
     startAt: new Date(Date.UTC(year, month, 1) - 8 * 60 * 60 * 1000),
     endAt: new Date(Date.UTC(year, month + 1, 1) - 8 * 60 * 60 * 1000),
   };
+}
+
+const SETTLEMENT_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+export function normalizeSettlementDates(dates: string[]): string[] {
+  const normalized = dates.filter((value) => {
+    if (typeof value !== 'string' || !SETTLEMENT_DATE_PATTERN.test(value)) return false;
+    const year = Number(value.slice(0, 4));
+    const month = Number(value.slice(5, 7));
+    const day = Number(value.slice(8, 10));
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    return parsed.toISOString().slice(0, 10) === value;
+  });
+  return [...new Set(normalized)].sort();
+}
+
+function settlementInstant(date: string): number {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  return Date.UTC(year, month - 1, day) - 8 * 60 * 60 * 1000;
+}
+
+function getSettlementInstants(dates: string[]): number[] {
+  return normalizeSettlementDates(dates)
+    .map(settlementInstant)
+    .sort((left, right) => left - right);
+}
+
+export function computeSettlementBoundary(
+  dates: string[],
+  reference: Date,
+): { startAt: Date | null; endAt: Date } {
+  const instants = getSettlementInstants(dates);
+  if (instants.length === 0) throw new Error('Settlement dates cannot be empty');
+  if (Number.isNaN(reference.getTime())) throw new Error('Invalid reference date');
+  const referenceTime = reference.getTime();
+  const startAt = [...instants].reverse().find((instant) => instant <= referenceTime);
+  const endAt = instants.find((instant) => instant > referenceTime);
+  return {
+    startAt: startAt === undefined ? null : new Date(startAt),
+    endAt: endAt === undefined ? CONTINUOUS_PERIOD_END : new Date(endAt),
+  };
+}
+
+export function isSettlementBoundary(dates: string[], instant: Date): boolean {
+  return getSettlementInstants(dates).includes(instant.getTime());
+}
+
+function getNextSettlementAt(dates: string[], reference: Date): Date | null {
+  const referenceTime = reference.getTime();
+  const next = getSettlementInstants(dates).find((instant) => instant > referenceTime);
+  return next === undefined ? null : new Date(next);
+}
+
+function parseSettlementDates(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return normalizeSettlementDates(
+      parsed.filter((value): value is string => typeof value === 'string'),
+    );
+  } catch {
+    return [];
+  }
 }
 
 function roleBonus(role: string): number {
@@ -194,7 +261,100 @@ export class ScorePeriodsService {
 
   async ensurePeriodForDate(classId: string, reference: Date) {
     await this.backfillLegacyRecords(classId);
-    return this.getOrCreatePeriod(classId, getTaipeiMonthPeriod(reference));
+    const config = await this.db.scoreSettlementConfig.findUnique({
+      where: { classId },
+      select: { enabled: true, dates: true },
+    });
+    const dates = config?.enabled ? parseSettlementDates(config.dates) : [];
+    if (dates.length > 0) {
+      return this.getOrCreateSettlementPeriod(
+        classId,
+        reference,
+        computeSettlementBoundary(dates, reference),
+      );
+    }
+    return this.getOrCreateContinuousPeriod(classId, reference);
+  }
+
+  async getSettlementConfig(classId: string) {
+    const config = await this.db.scoreSettlementConfig.findUnique({
+      where: { classId },
+      select: { enabled: true, dates: true, updatedAt: true },
+    });
+    const dates = parseSettlementDates(config?.dates);
+    const enabled = config?.enabled ?? false;
+    return {
+      enabled,
+      dates,
+      nextSettlementAt: enabled && dates.length > 0 ? getNextSettlementAt(dates, new Date()) : null,
+      updatedAt: config?.updatedAt ?? null,
+    };
+  }
+
+  async saveSettlementConfig(classId: string, input: { enabled: boolean; dates: string[] }) {
+    const dates = normalizeSettlementDates(input.dates);
+    if (input.enabled && dates.length === 0) {
+      throw new BusinessError('INVALID_SETTLEMENT_DATES', '请至少选择一个结算日期', 400);
+    }
+    const now = new Date();
+    const config = await this.db.$transaction(async (tx) => {
+      const saved = await tx.scoreSettlementConfig.upsert({
+        where: { classId },
+        update: { enabled: input.enabled, dates: JSON.stringify(dates) },
+        create: { classId, enabled: input.enabled, dates: JSON.stringify(dates) },
+        select: { enabled: true, dates: true, updatedAt: true },
+      });
+      const open = await tx.scorePeriod.findFirst({
+        where: { classId, status: ScorePeriodStatus.OPEN },
+        orderBy: { startAt: 'desc' },
+        select: periodSelect,
+      });
+
+      if (!input.enabled) {
+        if (open && open.endAt.getTime() !== CONTINUOUS_PERIOD_END.getTime()) {
+          await this.replaceOpenPeriodEnd(tx, classId, open, CONTINUOUS_PERIOD_END);
+        }
+        return saved;
+      }
+
+      const nextEndAt = computeSettlementBoundary(dates, now).endAt;
+      if (open) {
+        if (open.endAt.getTime() !== nextEndAt.getTime()) {
+          await this.replaceOpenPeriodEnd(tx, classId, open, nextEndAt);
+        }
+      } else {
+        await tx.scorePeriod.upsert({
+          where: { classId_startAt_endAt: { classId, startAt: now, endAt: nextEndAt } },
+          update: {},
+          create: { classId, startAt: now, endAt: nextEndAt, initialScore: SCORE_INITIAL_VALUE },
+          select: { id: true },
+        });
+      }
+      return saved;
+    });
+    const savedDates = parseSettlementDates(config.dates);
+    return {
+      enabled: config.enabled,
+      dates: savedDates,
+      nextSettlementAt:
+        config.enabled && savedDates.length > 0 ? getNextSettlementAt(savedDates, now) : null,
+      updatedAt: config.updatedAt,
+    };
+  }
+
+  private async replaceOpenPeriodEnd(
+    tx: Prisma.TransactionClient,
+    classId: string,
+    open: PeriodRow,
+    endAt: Date,
+  ) {
+    const conflict = await tx.scorePeriod.findUnique({
+      where: { classId_startAt_endAt: { classId, startAt: open.startAt, endAt } },
+      select: { id: true },
+    });
+    if (!conflict) {
+      await tx.scorePeriod.update({ where: { id: open.id }, data: { endAt } });
+    }
   }
 
   async getCurrentSummary(classId: string) {
@@ -229,40 +389,69 @@ export class ScorePeriodsService {
     skipped: number;
     failed: number;
   }> {
-    const dueClasses = await this.db.scorePeriod.findMany({
-      where: { status: ScorePeriodStatus.OPEN, endAt: { lte: now } },
-      select: { classId: true },
-      distinct: ['classId'],
+    const configs = await this.db.scoreSettlementConfig.findMany({
+      where: { enabled: true },
+      select: { classId: true, dates: true, createdAt: true },
     });
     let settled = 0;
     let skipped = 0;
     let failed = 0;
 
-    for (const { classId } of dueClasses) {
+    for (const config of configs) {
+      const dates = parseSettlementDates(config.dates);
+      if (dates.length === 0) continue;
       const headTeacher = await this.db.classTeacher.findFirst({
-        where: { classId, status: RelationStatus.ACTIVE, role: TeacherRole.HEAD_TEACHER },
+        where: {
+          classId: config.classId,
+          status: RelationStatus.ACTIVE,
+          role: TeacherRole.HEAD_TEACHER,
+        },
         select: { teacherId: true },
       });
       if (!headTeacher) {
         skipped += 1;
-        console.warn(`[score-settlement] skipped class without active head teacher: ${classId}`);
+        console.warn(
+          `[score-settlement] skipped class without active head teacher: ${config.classId}`,
+        );
         continue;
       }
 
       const periods = await this.db.scorePeriod.findMany({
-        where: { classId, status: ScorePeriodStatus.OPEN, endAt: { lte: now } },
+        where: { classId: config.classId, status: ScorePeriodStatus.OPEN, endAt: { lte: now } },
         orderBy: { startAt: 'asc' },
         select: periodSelect,
       });
-      for (const period of periods) {
+      const duePeriods = periods.filter(
+        (period) =>
+          period.endAt.getTime() > config.createdAt.getTime() &&
+          isSettlementBoundary(dates, period.endAt),
+      );
+      for (const period of duePeriods) {
         try {
-          await this.settlePeriod(classId, period.id, headTeacher.teacherId);
+          await this.settlePeriod(config.classId, period.id, headTeacher.teacherId);
           settled += 1;
         } catch (error) {
           failed += 1;
           console.error('[score-settlement] failed period', {
-            classId,
+            classId: config.classId,
             periodId: period.id,
+            error,
+          });
+        }
+      }
+
+      if (duePeriods.length > 0) {
+        const lastPeriod = duePeriods[duePeriods.length - 1];
+        try {
+          const boundary = computeSettlementBoundary(dates, lastPeriod.endAt);
+          await this.getOrCreatePeriod(config.classId, {
+            startAt: boundary.startAt ?? lastPeriod.endAt,
+            endAt: boundary.endAt,
+          });
+        } catch (error) {
+          console.error('[score-settlement] failed to open next period', {
+            classId: config.classId,
+            periodId: lastPeriod.id,
             error,
           });
         }
@@ -454,6 +643,63 @@ export class ScorePeriodsService {
     });
   }
 
+  private async getOrCreateContinuousPeriod(classId: string, reference: Date) {
+    const current = await this.db.scorePeriod.findFirst({
+      where: { classId, status: ScorePeriodStatus.OPEN, startAt: { lte: reference } },
+      orderBy: { startAt: 'desc' },
+      select: periodSelect,
+    });
+    if (current) {
+      if (current.endAt.getTime() === CONTINUOUS_PERIOD_END.getTime()) return current;
+      return this.db.scorePeriod.update({
+        where: { id: current.id },
+        data: { endAt: CONTINUOUS_PERIOD_END },
+        select: periodSelect,
+      });
+    }
+    return this.db.scorePeriod.create({
+      data: {
+        classId,
+        startAt: reference,
+        endAt: CONTINUOUS_PERIOD_END,
+        initialScore: SCORE_INITIAL_VALUE,
+      },
+      select: periodSelect,
+    });
+  }
+
+  private async getOrCreateSettlementPeriod(
+    classId: string,
+    reference: Date,
+    boundary: { startAt: Date | null; endAt: Date },
+  ) {
+    const current = await this.db.scorePeriod.findFirst({
+      where: { classId, status: ScorePeriodStatus.OPEN, startAt: { lte: reference } },
+      orderBy: { startAt: 'desc' },
+      select: periodSelect,
+    });
+    if (current) {
+      if (current.endAt.getTime() === boundary.endAt.getTime()) return current;
+      const conflict = await this.db.scorePeriod.findUnique({
+        where: {
+          classId_startAt_endAt: { classId, startAt: current.startAt, endAt: boundary.endAt },
+        },
+        select: { id: true },
+      });
+      if (!conflict) {
+        return this.db.scorePeriod.update({
+          where: { id: current.id },
+          data: { endAt: boundary.endAt },
+          select: periodSelect,
+        });
+      }
+    }
+    return this.getOrCreatePeriod(classId, {
+      startAt: boundary.startAt ?? reference,
+      endAt: boundary.endAt,
+    });
+  }
+
   private async backfillLegacyRecords(classId: string) {
     const legacyRecords = await this.db.scoreRecord.findMany({
       where: { classId, periodId: null },
@@ -490,7 +736,11 @@ export class ScorePeriodsService {
     const periodIds = periods.map((period) => period.id);
     const records = periodIds.length
       ? await this.db.scoreRecord.findMany({
-          where: { classId, periodId: { in: periodIds } },
+          where: {
+            classId,
+            periodId: { in: periodIds },
+            ...(range ? { occurredAt: { gte: range.startAt, lte: range.endAt } } : {}),
+          },
           select: { studentId: true, delta: true },
         })
       : [];
@@ -500,7 +750,7 @@ export class ScorePeriodsService {
         record.studentId,
         (deltaByStudent.get(record.studentId) ?? 0) + record.delta,
       );
-    const baseScore = periods.reduce((total, period) => total + period.initialScore, 0);
+    const baseScore = periods.length > 0 ? SCORE_INITIAL_VALUE : 0;
     const ranked = this.rank(
       activeStudents.map((student) => ({
         studentId: student.id,

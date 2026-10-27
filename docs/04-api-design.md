@@ -477,6 +477,41 @@ Request：
 
 权限：HEAD_TEACHER。
 
+### GET /classes/:classId/score-settlement-config
+
+权限：
+
+- HEAD_TEACHER
+- SUBJECT_TEACHER
+
+Response：
+
+```json
+{
+  "data": {
+    "enabled": true,
+    "dates": ["2026-11-01", "2026-11-15"],
+    "nextSettlementAt": "2026-11-01T00:00:00.000+08:00",
+    "updatedAt": "..."
+  }
+}
+```
+
+### PUT /classes/:classId/score-settlement-config
+
+权限：HEAD_TEACHER。
+
+Request：
+
+```json
+{
+  "enabled": true,
+  "dates": ["2026-11-01", "2026-11-15"]
+}
+```
+
+`dates` 为精确日期（`YYYY-MM-DD`）集合，启用时不能为空；按所选日期 00:00（Asia/Taipei）结算，最后一个日期过后周期连续累计。关闭后周期跨自然月连续累计，不再重置初始分。
+
 ---
 
 ## 9. Score Record API
@@ -602,7 +637,7 @@ RANKING_CHANGED
 
 ---
 
-积分周期由服务器在每月 1 日 00:00（Asia/Taipei）自动结算。汇总查询和日常记分只物化周期，不再触发历史结算，也不提供手动结算接口。
+积分周期按班级在积分规则中配置的精确结算日期于 00:00（Asia/Taipei）自动结算，支持配置多个日期；未启用配置或最后一个日期已过的班级跨自然月连续累计，不再自动重置初始分。汇总查询和日常记分只物化周期，不再触发历史结算，也不提供手动结算接口。
 
 ---
 

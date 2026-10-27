@@ -9,10 +9,12 @@ test('Elysia exposes the complete versioned HTTP surface', () => {
       .filter((route) => route.includes('/api/v1/') && !route.endsWith('/health')),
   );
 
-  assert.equal(routes.size, 78);
+  assert.equal(routes.size, 80);
   for (const route of [
     'GET /api/v1/auth/invitations/:token/preview',
     'POST /api/v1/classes/:classId/score-events',
+    'GET /api/v1/classes/:classId/score-settlement-config',
+    'PUT /api/v1/classes/:classId/score-settlement-config',
     'GET /api/v1/classes/:classId/dormitories',
     'POST /api/v1/classes/:classId/dormitories',
     'PATCH /api/v1/classes/:classId/dormitories/:dormitoryId',
