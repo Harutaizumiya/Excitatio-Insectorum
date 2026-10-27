@@ -236,15 +236,28 @@ test('due settlement follows configured settlement dates and isolates failures',
     { classId: 'class-failed', periodId: 'period-fail', operatorId: 'teacher-class-failed' },
   ]);
   assert.deepEqual(
-    openedBoundaries.map((item) => [item.classId, item.startAt.toISOString(), item.endAt.toISOString()]),
-    [['class-ok', '2026-09-30T16:00:00.000Z', '2026-10-14T16:00:00.000Z'],
-      ['class-failed', '2026-09-30T16:00:00.000Z', '2026-10-31T16:00:00.000Z']],
+    openedBoundaries.map((item) => [
+      item.classId,
+      item.startAt.toISOString(),
+      item.endAt.toISOString(),
+    ]),
+    [
+      ['class-ok', '2026-09-30T16:00:00.000Z', '2026-10-14T16:00:00.000Z'],
+      ['class-failed', '2026-09-30T16:00:00.000Z', '2026-10-31T16:00:00.000Z'],
+    ],
   );
 });
 
 test('settlement boundaries follow explicit dates', () => {
   assert.deepEqual(
-    normalizeSettlementDates(['2026-11-15', '2026-10-01', '2026-11-15', '2026-02-30', 'bad', '2026-13-01']),
+    normalizeSettlementDates([
+      '2026-11-15',
+      '2026-10-01',
+      '2026-11-15',
+      '2026-02-30',
+      'bad',
+      '2026-13-01',
+    ]),
     ['2026-10-01', '2026-11-15'],
   );
 
@@ -274,7 +287,7 @@ test('settlement boundaries follow explicit dates', () => {
   assert.equal(isSettlementBoundary(['2026-10-15'], new Date('2026-10-15T00:00:00+08:00')), true);
 });
 
-test('first enabling splits the running period at the current time', async () => {
+test('first enabling updates open period end to the next settlement boundary without creating orphaned periods', async () => {
   const updatedEnds: Date[] = [];
   const createdPeriods: Array<{ startAt: Date; endAt: Date }> = [];
   const openPeriod = {
@@ -306,23 +319,16 @@ test('first enabling splits the running period at the current time', async () =>
     $transaction: async (callback: (client: unknown) => Promise<unknown>) => callback(tx),
   } as unknown as PrismaClient);
 
-  const before = Date.now();
   const result = await service.saveSettlementConfig('class-1', {
     enabled: true,
     dates: ['2099-01-15'],
   });
-  const after = Date.now();
 
   assert.equal(result.enabled, true);
   assert.deepEqual(result.dates, ['2099-01-15']);
   assert.equal(updatedEnds.length, 1);
-  assert.ok(updatedEnds[0]!.getTime() >= before && updatedEnds[0]!.getTime() <= after);
-  assert.equal(createdPeriods.length, 1);
-  assert.equal(createdPeriods[0]!.startAt.getTime(), updatedEnds[0]!.getTime());
-  assert.equal(
-    isSettlementBoundary(['2099-01-15'], createdPeriods[0]!.endAt),
-    true,
-  );
+  assert.equal(isSettlementBoundary(['2099-01-15'], updatedEnds[0]!), true);
+  assert.equal(createdPeriods.length, 0);
 });
 
 test('range summary only counts records inside the selected days', async () => {
@@ -377,4 +383,37 @@ test('range summary only counts records inside the selected days', async () => {
       ['student-2', 99],
     ],
   );
+});
+
+test('getOrCreateSettlementPeriod reuses running open period', async () => {
+  const existingPeriod = {
+    id: 'open-period-1',
+    startAt: new Date('2026-10-01T00:00:00.000Z'),
+    endAt: new Date('2026-11-01T00:00:00.000Z'),
+    initialScore: 100,
+    status: ScorePeriodStatus.OPEN,
+    settledAt: null,
+  };
+  let created = false;
+  const service = new ScorePeriodsService({
+    scorePeriod: {
+      findFirst: async () => existingPeriod,
+      upsert: async () => {
+        created = true;
+        return { id: 'should-not-be-called' };
+      },
+    },
+  } as unknown as PrismaClient);
+
+  const period = await service['getOrCreateSettlementPeriod'](
+    'class-1',
+    new Date('2026-10-15T00:00:00.000Z'),
+    {
+      startAt: new Date('2026-10-01T00:00:00.000Z'),
+      endAt: new Date('2026-11-01T00:00:00.000Z'),
+    },
+  );
+
+  assert.equal(period.id, 'open-period-1');
+  assert.equal(created, false);
 });

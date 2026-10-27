@@ -190,10 +190,10 @@
 | PATCH | `/classes/:classId/score-rules/:ruleId`         | HEAD           | `UpdateScoreRuleRequest` | 更新积分规则 |
 | POST  | `/classes/:classId/score-rules/:ruleId/disable` | HEAD           | 无                       | 停用积分规则 |
 
-| 方法 | 路径                                         | 权限           | 请求                              | 用途             |
-| ---- | -------------------------------------------- | -------------- | --------------------------------- | ---------------- |
-| GET  | `/classes/:classId/score-settlement-config`   | HEAD / SUBJECT | 无                                | 查询结算周期配置 |
-| PUT  | `/classes/:classId/score-settlement-config`   | HEAD           | `SaveSettlementConfigRequest`     | 保存结算周期配置 |
+| 方法 | 路径                                        | 权限           | 请求                          | 用途             |
+| ---- | ------------------------------------------- | -------------- | ----------------------------- | ---------------- |
+| GET  | `/classes/:classId/score-settlement-config` | HEAD / SUBJECT | 无                            | 查询结算周期配置 |
+| PUT  | `/classes/:classId/score-settlement-config` | HEAD           | `SaveSettlementConfigRequest` | 保存结算周期配置 |
 
 `SaveSettlementConfigRequest` 为 `{ enabled: boolean, dates: string[] }`，`dates` 为 `YYYY-MM-DD` 精确日期，启用时不能为空。
 

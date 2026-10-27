@@ -286,8 +286,7 @@ export class ScorePeriodsService {
     return {
       enabled,
       dates,
-      nextSettlementAt:
-        enabled && dates.length > 0 ? getNextSettlementAt(dates, new Date()) : null,
+      nextSettlementAt: enabled && dates.length > 0 ? getNextSettlementAt(dates, new Date()) : null,
       updatedAt: config?.updatedAt ?? null,
     };
   }
@@ -299,10 +298,6 @@ export class ScorePeriodsService {
     }
     const now = new Date();
     const config = await this.db.$transaction(async (tx) => {
-      const existing = await tx.scoreSettlementConfig.findUnique({
-        where: { classId },
-        select: { enabled: true },
-      });
       const saved = await tx.scoreSettlementConfig.upsert({
         where: { classId },
         update: { enabled: input.enabled, dates: JSON.stringify(dates) },
@@ -323,21 +318,7 @@ export class ScorePeriodsService {
       }
 
       const nextEndAt = computeSettlementBoundary(dates, now).endAt;
-      // 首次启用时从当前时刻切分周期，避免新周期追溯发放启用前的奖励。
-      if (!existing?.enabled && open && open.startAt.getTime() < now.getTime()) {
-        const splitEndAt = isSettlementBoundary(dates, now)
-          ? new Date(now.getTime() - 1)
-          : now;
-        await tx.scorePeriod.update({ where: { id: open.id }, data: { endAt: splitEndAt } });
-        await tx.scorePeriod.upsert({
-          where: {
-            classId_startAt_endAt: { classId, startAt: now, endAt: nextEndAt },
-          },
-          update: {},
-          create: { classId, startAt: now, endAt: nextEndAt, initialScore: SCORE_INITIAL_VALUE },
-          select: { id: true },
-        });
-      } else if (open) {
+      if (open) {
         if (open.endAt.getTime() !== nextEndAt.getTime()) {
           await this.replaceOpenPeriodEnd(tx, classId, open, nextEndAt);
         }
@@ -356,9 +337,7 @@ export class ScorePeriodsService {
       enabled: config.enabled,
       dates: savedDates,
       nextSettlementAt:
-        config.enabled && savedDates.length > 0
-          ? getNextSettlementAt(savedDates, now)
-          : null,
+        config.enabled && savedDates.length > 0 ? getNextSettlementAt(savedDates, now) : null,
       updatedAt: config.updatedAt,
     };
   }
@@ -694,9 +673,6 @@ export class ScorePeriodsService {
     reference: Date,
     boundary: { startAt: Date | null; endAt: Date },
   ) {
-    if (boundary.startAt) {
-      return this.getOrCreatePeriod(classId, { startAt: boundary.startAt, endAt: boundary.endAt });
-    }
     const current = await this.db.scorePeriod.findFirst({
       where: { classId, status: ScorePeriodStatus.OPEN, startAt: { lte: reference } },
       orderBy: { startAt: 'desc' },
@@ -718,7 +694,10 @@ export class ScorePeriodsService {
         });
       }
     }
-    return this.getOrCreatePeriod(classId, { startAt: reference, endAt: boundary.endAt });
+    return this.getOrCreatePeriod(classId, {
+      startAt: boundary.startAt ?? reference,
+      endAt: boundary.endAt,
+    });
   }
 
   private async backfillLegacyRecords(classId: string) {
@@ -771,7 +750,7 @@ export class ScorePeriodsService {
         record.studentId,
         (deltaByStudent.get(record.studentId) ?? 0) + record.delta,
       );
-    const baseScore = periods.reduce((total, period) => total + period.initialScore, 0);
+    const baseScore = periods.length > 0 ? SCORE_INITIAL_VALUE : 0;
     const ranked = this.rank(
       activeStudents.map((student) => ({
         studentId: student.id,

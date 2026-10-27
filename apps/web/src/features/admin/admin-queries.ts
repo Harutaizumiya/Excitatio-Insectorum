@@ -617,8 +617,7 @@ export function useAdminScoreSettlementConfig() {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: adminQueryKeys.scoreSettlementConfig(classId),
-    queryFn: async (): Promise<ScoreSettlementConfig> =>
-      service.getScoreSettlementConfig(classId),
+    queryFn: async (): Promise<ScoreSettlementConfig> => service.getScoreSettlementConfig(classId),
     staleTime: STALE_TIME,
   });
   const saveMutation = useMutation({
@@ -629,6 +628,7 @@ export function useAdminScoreSettlementConfig() {
         queryKey: adminQueryKeys.scoreSettlementConfig(classId),
       });
       void queryClient.invalidateQueries({ queryKey: adminQueryKeys.scorePeriodSummary(classId) });
+      void queryClient.invalidateQueries({ queryKey: ['classrooms', classId, 'ranking'] });
     },
   });
   return {

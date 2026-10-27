@@ -1288,9 +1288,16 @@ function ScoreRulesPage() {
       notification.error({ title: "请至少选择一个结算日期" });
       return;
     }
-    await persistSettlement({ enabled: settlementEnabled, dates: settlementDates });
-    notification.success({ title: "结算周期已保存" });
-    setSettlementOpen(false);
+    try {
+      await persistSettlement({ enabled: settlementEnabled, dates: settlementDates });
+      notification.success({ title: "结算周期已保存" });
+      setSettlementOpen(false);
+    } catch (error) {
+      notification.error({
+        title: "保存结算周期失败",
+        description: error instanceof Error ? error.message : "网络异常，请重试",
+      });
+    }
   };
 
   const columns: ColumnsType<ScoreRule> = [
@@ -1534,6 +1541,9 @@ function ScoreRulesPage() {
                   <DatePicker
                     multiple
                     value={settlementDates.map((date) => dayjs(date))}
+                    disabledDate={(current: dayjs.Dayjs) =>
+                      Boolean(current && current.endOf("day").valueOf() < Date.now())
+                    }
                     onChange={(values) =>
                       setSettlementDates(
                         (values ?? []).map((value) => value.format("YYYY-MM-DD")).sort(),
@@ -1646,7 +1656,7 @@ function ScoreRecordsPage() {
             allowClear
             format="YYYY-MM-DD"
             placeholder={["开始日期", "结束日期"]}
-            onChange={(dates) => {
+            onChange={(dates: [dayjs.Dayjs | null, dayjs.Dayjs | null] | null) => {
               const from = dates?.[0];
               const to = dates?.[1];
               setPeriodRange(
@@ -1658,7 +1668,7 @@ function ScoreRecordsPage() {
                   : null,
               );
             }}
-            disabledDate={(current) => current.valueOf() > Date.now()}
+            disabledDate={(current: dayjs.Dayjs) => current.valueOf() > Date.now()}
           />
         }
         style={{ ...cardStyle, marginTop: 16 }}

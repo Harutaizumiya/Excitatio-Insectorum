@@ -2,7 +2,7 @@ CREATE TABLE "ScoreSettlementConfig" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "classId" TEXT NOT NULL,
     "enabled" BOOLEAN NOT NULL DEFAULT false,
-    "days" TEXT NOT NULL,
+    "dates" TEXT NOT NULL,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "ScoreSettlementConfig_classId_fkey"
